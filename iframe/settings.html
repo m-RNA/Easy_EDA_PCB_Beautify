@@ -305,9 +305,11 @@
 				</div>
 			</div>
 
-			<div class="button-group">
-				<button type="button" class="btn btn-secondary" id="cancelBtn">取消</button>
-				<button type="submit" class="btn btn-primary">保存</button>
+			<div class="button-group" style="justify-content: space-between;">
+				<div style="font-size: 12px; color: #666; display: flex; align-items: center;">
+					<span id="saveStatus">✅ 设置即时生效</span>
+				</div>
+				<button type="button" class="btn btn-secondary" id="cancelBtn">关闭</button>
 			</div>
 		</form>
 	</div>
@@ -390,13 +392,14 @@
 				// 更新显示
 				cornerRadiusInput.value = newValue.toFixed(2);
 				unitDisplay.textContent = newUnit;
+
+				// 触发保存
+				saveSettings();
 			});
 		}
 
-		// 保存设置
-		form.addEventListener('submit', async (e) => {
-			e.preventDefault();
-
+		// 自动保存设置
+		async function saveSettings() {
 			// 获取选中的单位
 			let selectedUnit = 'mm';
 			for (const radio of unitRadios) {
@@ -419,39 +422,32 @@
 			};
 
 			try {
+				const statusEl = document.getElementById('saveStatus');
+				if (statusEl) statusEl.textContent = '💾 保存中...';
+
 				// 检查 eda API 是否可用
-				if (typeof eda === 'undefined' || !eda.sys_Storage) {
-					throw new Error('EDA Storage API 不可用');
+				if (typeof eda !== 'undefined' && eda.sys_Storage) {
+					await eda.sys_Storage.setExtensionAllUserConfigs(settings);
+					console.log('设置已自动保存:', settings);
 				}
-
-				// 保存设置
-				const result = await eda.sys_Storage.setExtensionAllUserConfigs(settings);
-				console.log('设置已保存:', settings, 'result:', result);
-
-				// 显示成功消息
-				if (eda.sys_Message && typeof eda.sys_Message.showToastMessage === 'function') {
-					eda.sys_Message.showToastMessage('配置已保存', 'success');
+				
+				if (statusEl) {
+					statusEl.textContent = '✅ 已保存';
+					setTimeout(() => { statusEl.textContent = '✅ 设置即时生效'; }, 2000);
 				}
-
-				// 延迟关闭窗口
-				setTimeout(() => {
-					if (eda.sys_IFrame && typeof eda.sys_IFrame.closeIFrame === 'function') {
-						eda.sys_IFrame.closeIFrame('settings');
-					}
-					else {
-						window.close();
-					}
-				}, 800);
 			}
 			catch (error) {
-				console.error('保存设置失败:', error);
-				const errorMsg = `保存设置失败: ${error.message || error}`;
-				alert(errorMsg);
-				if (eda && eda.sys_Dialog && typeof eda.sys_Dialog.showInformationMessage === 'function') {
-					eda.sys_Dialog.showInformationMessage(errorMsg, '错误');
-				}
+				console.error('保存失败:', error);
+				const statusEl = document.getElementById('saveStatus');
+				if (statusEl) statusEl.textContent = '❌ 保存失败';
 			}
-		});
+		}
+
+		// 绑定事件实现自动保存
+		cornerRadiusInput.addEventListener('change', saveSettings); 
+		cornerRadiusInput.addEventListener('blur', saveSettings);
+		syncTeardropsCheckbox.addEventListener('change', saveSettings);
+		debugCheckbox.addEventListener('change', saveSettings);
 
 		// 取消按钮
 		cancelBtn.addEventListener('click', () => {

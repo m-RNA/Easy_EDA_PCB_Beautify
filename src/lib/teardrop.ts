@@ -218,7 +218,7 @@ async function createTeardropForTrack(pin: any, track: any, settings: any) {
 	};
 
 	// 生成贝塞尔曲线点集，模拟泪滴的平滑曲线
-	const polyPoints: any[] = ['L'];
+	const polyPoints: any[] = [];
 
 	// 连接到 P1 -> P_Track -> P2 -> P_Near -> P1
 	// 使用贝塞尔插值 P1 -> P_Track 和 P2 -> P_Track

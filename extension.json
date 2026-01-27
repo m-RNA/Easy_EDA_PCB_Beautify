@@ -1,8 +1,8 @@
 {
 	"name": "pro-api-sdk",
 	"uuid": "3911cc55444d4833b5762da1521fe616",
-	"displayName": "圆滑布线&泪滴-熔化PCB",
-	"description": "嘉立创EDA & EasyEDA 专业版扩展 API 开发工具",
+	"displayName": "圆滑布线-泪滴-熔化PCB",
+	"description": "基于圆弧平滑融化，可以自己再次修改，支持撤销",
 	"version": "1.0.0",
 	"publisher": "",
 	"engines": {
@@ -13,12 +13,12 @@
 		"type": "extension-store",
 		"url": ""
 	},
-	"categories": "Other",
+	"categories": "pcb",
 	"keywords": [
 		"SDK"
 	],
 	"images": {
-		"logo": "./images/logo.png"
+		"logo": "./images/logo_new.svg"
 	},
 	"homepage": "",
 	"bugs": "",
@@ -35,6 +35,11 @@
 						"id": "SmoothRouting",
 						"title": "圆滑布线",
 						"registerFn": "smoothRouting"
+					},
+					{
+						"id": "UndoSmooth",
+						"title": "撤销 (Undo)",
+						"registerFn": "undoSmooth"
 					},
 					{
 						"id": "AddTeardrops",

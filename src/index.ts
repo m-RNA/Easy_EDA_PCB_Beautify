@@ -11,7 +11,7 @@
  * https://prodocs.lceda.cn/cn/api/guide/
  */
 
-import { smoothRouting as smoothTask } from './lib/smooth';
+import { smoothRouting as smoothTask, undoLastOperation as undoTask } from './lib/smooth';
 import { addTeardrops as teardropTask } from './lib/teardrop';
 
 export function activate(_status?: 'onStartupFinished', _arg?: string): void { }
@@ -40,6 +40,20 @@ export async function smoothRouting() {
 				'Smooth Error',
 			);
 		}
+	}
+}
+
+/**
+ * 撤销操作
+ */
+export async function undoSmooth() {
+	try {
+		await undoTask();
+	}
+	catch (e: any) {
+		console.error('Undo Error:', e);
+		if (eda.sys_Log)
+			eda.sys_Log.add(e.message, 'error' as any);
 	}
 }
 

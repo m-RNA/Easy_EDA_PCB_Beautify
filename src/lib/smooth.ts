@@ -4,6 +4,101 @@ import { dist, getAngleBetween, lerp } from './math';
 import { getSettings } from './settings';
 import { addTeardrops } from './teardrop';
 
+// 存储撤销栈
+interface UndoState {
+	createdIds: string[];
+	deletedPrimitives: any[];
+}
+
+// 使用全局对象存储撤销栈，防止模块热重载导致丢失
+const GLOBAL_UNDO_KEY = '__JLC_EDA_SMOOTH_UNDO_STACK__';
+
+// @ts-expect-error globalThis is available
+if (typeof (globalThis as any)[GLOBAL_UNDO_KEY] === 'undefined') {
+	// @ts-expect-error globalThis is available
+	(globalThis as any)[GLOBAL_UNDO_KEY] = [];
+}
+// @ts-expect-error globalThis is available
+const undoStack = (globalThis as any)[GLOBAL_UNDO_KEY] as UndoState[];
+
+/**
+ * 撤销上一次平滑操作
+ */
+export async function undoLastOperation() {
+	if (undoStack.length === 0) {
+		if (eda.sys_Message && typeof eda.sys_Message.showToastMessage === 'function') {
+			eda.sys_Message.showToastMessage(eda.sys_I18n.text('没有可撤销的操作'));
+		}
+		return;
+	}
+
+	const state = undoStack.pop();
+	if (!state)
+		return;
+
+	if (eda.sys_LoadingAndProgressBar) {
+		if (typeof eda.sys_LoadingAndProgressBar.showLoading === 'function') {
+			eda.sys_LoadingAndProgressBar.showLoading();
+		}
+	}
+
+	try {
+		// 1. 删除本次操作创建的新对象
+		if (state.createdIds.length > 0) {
+			debugLog(`[Undo] 删除新创建的对象: ${state.createdIds.length} 个`);
+			try {
+				// 尝试逐个删除，确保兼容性
+				for (const id of state.createdIds) {
+					// 尝试删除 Line 或 Arc
+					// 由于Arc创建后也是图元，通常可以通过ID删除
+					// 如果 delete 接受数组，我们这里简单起见还是逐一删除，或者分批
+					await eda.pcb_PrimitiveLine.delete([id]);
+					// 某些情况下可能需要 pcb_PrimitiveArc.delete? 假设通用
+				}
+			}
+			catch (e: any) {
+				debugLog(`[Undo] 删除新对象失败: ${e.message}`);
+			}
+		}
+
+		// 2. 恢复被删除的旧对象
+		if (state.deletedPrimitives.length > 0) {
+			debugLog(`[Undo] 恢复旧对象: ${state.deletedPrimitives.length} 个`);
+			for (const prim of state.deletedPrimitives) {
+				try {
+					if (prim.type === 'Line' || prim.type === 'Track') {
+						await eda.pcb_PrimitiveLine.create(
+							prim.net,
+							prim.layer,
+							prim.startX,
+							prim.startY,
+							prim.endX,
+							prim.endY,
+							prim.lineWidth,
+						);
+					}
+					// Polyline暂未特殊处理，前面代码里Polyline已经被转成Line片段了
+				}
+				catch (e: any) {
+					debugLog(`[Undo] 恢复对象失败: ${e.message}`);
+				}
+			}
+		}
+
+		if (eda.sys_Message)
+			eda.sys_Message.showToastMessage(eda.sys_I18n.text('撤销成功'));
+	}
+	catch (e: any) {
+		if (eda.sys_Dialog)
+			eda.sys_Dialog.showInformationMessage(`撤销失败: ${e.message}`, 'Undo Error');
+	}
+	finally {
+		if (eda.sys_LoadingAndProgressBar && typeof eda.sys_LoadingAndProgressBar.destroyLoading === 'function') {
+			eda.sys_LoadingAndProgressBar.destroyLoading();
+		}
+	}
+}
+
 /**
  * 圆滑布线核心逻辑 (基于圆弧)
  */
@@ -45,37 +140,46 @@ export async function smoothRouting() {
 		// 过滤支持的类型：Track, Line, Polyline
 		const filtered = primitives.filter(
 			(p: any) => {
-				if (!p || typeof p.getState_PrimitiveType !== 'function')
+				if (!p)
 					return false;
-				const type = p.getState_PrimitiveType();
+				let type = '';
+				if (typeof p.getState_PrimitiveType === 'function') {
+					type = p.getState_PrimitiveType();
+				}
+				else if (p.primitiveType) {
+					type = p.primitiveType;
+				}
+
 				return type === 'Line' || type === 'Track' || type === 'Polyline';
 			},
 		);
 
 		if (settings.debug) {
 			debugLog(`[Smooth Debug] 过滤后得到 ${filtered.length} 个对象`);
-			if (filtered.length > 0 && filtered.length <= 3) {
-				filtered.forEach((t, i) => {
-					debugLog(`[Smooth Debug] 对象${i}:`, t.getState_PrimitiveType ? t.getState_PrimitiveType() : 'unknown');
-				});
-			}
 		}
 
 		// 将Polyline转换为Line段
 		for (const obj of filtered) {
-			const type = obj.getState_PrimitiveType();
+			let type = '';
+			if (typeof obj.getState_PrimitiveType === 'function') {
+				type = obj.getState_PrimitiveType();
+			}
+			else if (obj.primitiveType) {
+				type = obj.primitiveType;
+			}
+
 			if (type === 'Polyline') {
 				// Polyline需要特殊处理：提取多边形点并转换为线段
-				const polygon = obj.getState_Polygon?.();
+				const polygon = obj.getState_Polygon ? obj.getState_Polygon() : (obj.polygon || null);
 				if (polygon && polygon.polygon && Array.isArray(polygon.polygon)) {
 					const coords = polygon.polygon.filter((v: any) => typeof v === 'number');
-					const net = obj.getState_Net?.() || '';
-					const layer = obj.getState_Layer?.() || 1;
-					const lineWidth = obj.getState_LineWidth?.() || 10;
+					const net = obj.getState_Net ? obj.getState_Net() : (obj.net || '');
+					const layer = obj.getState_Layer ? obj.getState_Layer() : (obj.layer || 1);
+					const lineWidth = obj.getState_LineWidth ? obj.getState_LineWidth() : (obj.lineWidth || 10);
+					const primId = obj.getState_PrimitiveId ? obj.getState_PrimitiveId() : (obj.primitiveId || 'unknown');
 
 					if (settings.debug) {
-						debugLog(`[Smooth Debug] Polyline包含 ${coords.length / 2} 个点，将生成 ${Math.floor(coords.length / 2) - 1} 条线段`);
-						debugLog(`[Smooth Debug] Polyline属性: net=${net}, layer=${layer}, width=${lineWidth}`);
+						debugLog(`[Smooth Debug] Polyline包含 ${coords.length / 2} 个点`);
 					}
 
 					// 将Polyline的点转换为虚拟Track对象
@@ -94,7 +198,7 @@ export async function smoothRouting() {
 							getState_EndX: () => x2,
 							getState_EndY: () => y2,
 							getState_LineWidth: () => lineWidth,
-							getState_PrimitiveId: () => `${obj.getState_PrimitiveId()}_seg${i / 2}`,
+							getState_PrimitiveId: () => `${primId}_seg${i / 2}`,
 							_isPolylineSegment: true,
 							_originalPolyline: obj,
 						});
@@ -106,10 +210,6 @@ export async function smoothRouting() {
 				tracks.push(obj);
 			}
 		}
-	}
-
-	if (settings.debug) {
-		debugLog(`[Smooth Debug] 总共得到 ${tracks.length} 条导线/线段`);
 	}
 
 	if (tracks.length < 1) {
@@ -143,12 +243,12 @@ export async function smoothRouting() {
 			groups.get(key)?.push(track);
 		}
 
-		if (settings.debug) {
-			debugLog(`[Smooth Debug] 分组完成，共 ${groups.size} 个组`);
-		}
-
 		let processedPaths = 0;
 		let createdArcs = 0;
+		let clampedCorners = 0;
+
+		const allCreatedIds: string[] = [];
+		const allDeletedPrimitives: any[] = [];
 
 		for (const [key, group] of groups) {
 			const [net, layer] = key.split('#@#');
@@ -166,10 +266,6 @@ export async function smoothRouting() {
 				track: t,
 			}));
 
-			if (settings.debug) {
-				debugLog(`[Smooth Debug] 组 net=${net}, layer=${layer}: 提取到 ${segs.length} 个线段`);
-			}
-
 			// 构建邻接表
 			const connections = new Map<string, typeof segs[0][]>();
 			for (const seg of segs) {
@@ -185,14 +281,19 @@ export async function smoothRouting() {
 
 			// 提取所有连续路径
 			const used = new Set<string>();
-			const paths: { points: Point[]; ids: string[]; width: number }[] = [];
+			interface PathData {
+				points: Point[];
+				orderedSegs: typeof segs[0][];
+				width: number;
+			}
+			const paths: PathData[] = [];
 
 			for (const startSeg of segs) {
 				if (used.has(startSeg.id))
 					continue;
 
 				const points: Point[] = [startSeg.p1, startSeg.p2];
-				const idsToDelete: string[] = [startSeg.id];
+				const orderedSegs: typeof segs[0][] = [startSeg];
 				used.add(startSeg.id);
 
 				// 向两端扩展路径
@@ -210,14 +311,14 @@ export async function smoothRouting() {
 						const nextKey2 = `${seg.p2.x},${seg.p2.y}`;
 						if (nextKey1 === lastKey) {
 							points.push(seg.p2);
-							idsToDelete.push(seg.id);
+							orderedSegs.push(seg);
 							used.add(seg.id);
 							extended = true;
 							break;
 						}
 						else if (nextKey2 === lastKey) {
 							points.push(seg.p1);
-							idsToDelete.push(seg.id);
+							orderedSegs.push(seg);
 							used.add(seg.id);
 							extended = true;
 							break;
@@ -235,14 +336,14 @@ export async function smoothRouting() {
 							const nextKey2 = `${seg.p2.x},${seg.p2.y}`;
 							if (nextKey1 === firstKey) {
 								points.unshift(seg.p2);
-								idsToDelete.push(seg.id);
+								orderedSegs.unshift(seg);
 								used.add(seg.id);
 								extended = true;
 								break;
 							}
 							else if (nextKey2 === firstKey) {
 								points.unshift(seg.p1);
-								idsToDelete.push(seg.id);
+								orderedSegs.unshift(seg);
 								used.add(seg.id);
 								extended = true;
 								break;
@@ -254,7 +355,7 @@ export async function smoothRouting() {
 				if (points.length >= 3) {
 					paths.push({
 						points,
-						ids: idsToDelete,
+						orderedSegs,
 						width: startSeg.width,
 					});
 				}
@@ -266,7 +367,7 @@ export async function smoothRouting() {
 
 			// 处理每条路径
 			for (const path of paths) {
-				const { points, ids: idsToDelete, width } = path;
+				const { points, orderedSegs, width } = path;
 
 				if (settings.debug) {
 					debugLog(`[Smooth Debug] 路径包含 ${points.length} 个点`);
@@ -308,39 +409,40 @@ export async function smoothRouting() {
 
 						// 夹角计算
 						const dot = (v1.x * v2.x + v1.y * v2.y) / (mag1 * mag2);
-						const angleRad = Math.acos(
-							Math.max(-1, Math.min(1, dot)),
-						);
-						const angleDeg = (angleRad * 180) / Math.PI;
+						// 限制 dot 范围防止数值误差
+						const safeDot = Math.max(-1, Math.min(1, dot));
+						const angleRad = Math.acos(safeDot);
 
-						// 跳过接近180度的直线（几乎没有拐角）
-						if (angleDeg > 170 || angleDeg < 10) {
-							if (settings.debug) {
-								debugLog(`[Smooth Debug] 跳过角度${angleDeg.toFixed(1)}°的拐点`);
-							}
-							continue;
+						// 计算切点距离
+						// d = R / tan(angle / 2)
+						// 当角度接近 180度 (PI) 时，tan(PI/2) -> Inf, d -> 0
+						// 当角度接近 0度 (0) 时，tan(0) -> 0, d -> Inf
+						const tanVal = Math.tan(angleRad / 2);
+						let d = 0;
+						if (Math.abs(tanVal) > 0.0001) {
+							d = radius / tanVal;
 						}
 
-						// 计算切点距离：d = R / tan(angle/2)
-						const halfAngle = angleRad / 2;
-						const tanHalfAngle = Math.tan(halfAngle);
-						const d = radius / tanHalfAngle;
+						// 如果线段太短，必须缩小半径以适应
+						const maxAllowedRadius = Math.min(mag1 * 0.45, mag2 * 0.45);
+						const actualD = Math.min(d, maxAllowedRadius);
 
-						// 限制切点距离不超过线段长度的50%
-						const maxD = Math.min(mag1, mag2) * 0.5;
-						const actualD = Math.min(d, maxD);
+						// 如果实际切线距离显著小于理论距离 (小于 90%)，说明发生了缩放
+						if (d > 0.001 && actualD < d * 0.9) {
+							clampedCorners++;
+						}
 
 						if (settings.debug) {
-							debugLog(
-								`[Smooth Debug] 拐点${i}: 角度=${angleDeg.toFixed(1)}°, 半径=${radius.toFixed(2)}mm, 计算距离=${d.toFixed(2)}mm, 实际距离=${actualD.toFixed(2)}mm, 线段长度=(${mag1.toFixed(2)}, ${mag2.toFixed(2)})`,
-							);
+							debugLog(`[Smooth Debug] Corner ${i}: Pos(${pCorner.x.toFixed(3)},${pCorner.y.toFixed(3)}) Mag1=${mag1.toFixed(3)} Mag2=${mag2.toFixed(3)} Angle=${(angleRad * 180 / Math.PI).toFixed(1)}° Radius=${radius} d=${d.toFixed(3)} actualD=${actualD.toFixed(3)}`);
 						}
 
-						if (actualD > 0.01) {
+						// 只有当计算出的切线距离有效且足够大时，才生成圆弧
+						// 增加一个最小阈值，比如 0.05 (假设单位是mm，则很小；如果是mil，则极小)
+						if (actualD > 0.05) {
 							const pStart = lerp(pCorner, pPrev, actualD / mag1);
 							const pEnd = lerp(pCorner, pNext, actualD / mag2);
 
-							// 添加进入角
+							// 添加 [当前起点 -> 切点1] 的直线
 							newPath.push({
 								type: 'line',
 								start: currentStart,
@@ -354,6 +456,7 @@ export async function smoothRouting() {
 								{ x: v2.x, y: v2.y },
 							);
 
+							// 添加圆弧
 							newPath.push({
 								type: 'arc',
 								start: pStart,
@@ -364,6 +467,18 @@ export async function smoothRouting() {
 							createdArcs++;
 							currentStart = pEnd;
 						}
+						else {
+							// 无法圆滑（半径太大或角度不合适），保留原拐角
+							if (settings.debug) {
+								debugLog(`[Smooth Debug] Corner ${i} 无法圆滑，保持直角连接`);
+							}
+							newPath.push({
+								type: 'line',
+								start: currentStart,
+								end: pCorner,
+							});
+							currentStart = pCorner;
+						}
 					}
 					newPath.push({
 						type: 'line',
@@ -371,41 +486,96 @@ export async function smoothRouting() {
 						end: points[points.length - 1],
 					});
 
-					// 执行删除和创建
-					if (settings.replaceOriginal) {
-						// 收集原始Polyline对象ID（如果有）
-						const polylineIds = new Set<string>();
-						const lineIds: string[] = [];
+					// 准备工作：计算所有需要删除的ID
+					const polylineIdsToDelete = new Set<string>();
+					const lineIdsToDelete = new Set<string>();
+					const backupPrimitives: any[] = [];
 
-						for (const id of idsToDelete) {
-							// 检查是否是Polyline片段
-							const seg = segs.find(s => s.id === id);
-							if (seg?.track._isPolylineSegment) {
-								const originalId = seg.track._originalPolyline?.getState_PrimitiveId();
-								if (originalId) {
-									polylineIds.add(originalId);
-								}
+					// 始终执行替换逻辑 (用户期望剪短原线)
+					for (const seg of orderedSegs) {
+						// 备份数据
+						backupPrimitives.push({
+							type: 'Line',
+							net,
+							layer,
+							startX: seg.p1.x,
+							startY: seg.p1.y,
+							endX: seg.p2.x,
+							endY: seg.p2.y,
+							lineWidth: width,
+						});
+
+						if (seg.track._isPolylineSegment) {
+							let originalId = '';
+							if (typeof seg.track._originalPolyline.getState_PrimitiveId === 'function') {
+								originalId = seg.track._originalPolyline.getState_PrimitiveId();
 							}
-							else {
-								lineIds.push(id);
+							else if (seg.track._originalPolyline.primitiveId) {
+								originalId = seg.track._originalPolyline.primitiveId;
+							}
+							if (originalId) {
+								polylineIdsToDelete.add(originalId);
 							}
 						}
-
-						// 删除Polyline对象
-						if (polylineIds.size > 0) {
-							await eda.pcb_PrimitivePolyline.delete(Array.from(polylineIds));
-						}
-
-						// 删除普通线段
-						if (lineIds.length > 0) {
-							await eda.pcb_PrimitiveLine.delete(lineIds);
+						else {
+							// 是普通 Line / Track
+							lineIdsToDelete.add(seg.id);
 						}
 					}
 
+					// 第一步：先删除旧对象
+					// 删除 Polyline
+					if (polylineIdsToDelete.size > 0) {
+						const pIds = Array.from(polylineIdsToDelete);
+						if (settings.debug)
+							debugLog(`[Smooth Debug] 删除 Polyline: ${pIds.join(', ')}`);
+						try {
+							const pcbApi = eda as any;
+							if (pcbApi.pcb_PrimitivePolyline && typeof pcbApi.pcb_PrimitivePolyline.delete === 'function') {
+								// 尝试逐个删除
+								for (const pid of pIds) {
+									await pcbApi.pcb_PrimitivePolyline.delete([pid]);
+								}
+							}
+							else {
+								for (const pid of pIds) {
+									await eda.pcb_PrimitiveLine.delete([pid]);
+								}
+							}
+						}
+						catch (e: any) {
+							debugLog(`[Smooth Debug] 删除 Polyline 失败: ${e.message}`);
+						}
+					}
+
+					// 删除 Line (逐个删除以确保成功)
+					if (lineIdsToDelete.size > 0) {
+						const lIds = Array.from(lineIdsToDelete);
+						if (settings.debug)
+							debugLog(`[Smooth Debug] 正在删除 ${lIds.length} 条 Line: ${lIds.join(', ')}`);
+
+						for (const lid of lIds) {
+							try {
+								// 尝试传递数组包含单个ID
+								await eda.pcb_PrimitiveLine.delete([lid]);
+							}
+							catch (e: any) {
+								debugLog(`[Smooth Debug] 删除 Line ${lid} 失败: ${e.message}`);
+							}
+						}
+					}
+
+					// 第二步：创建新对象 并记录ID
+					// const createdIds: string[] = []; // Modified for batch undo
+
 					for (const item of newPath) {
 						if (item.type === 'line') {
+							// 只有长度 > 0 才创建
 							if (dist(item.start, item.end) > 0.001) {
-								await eda.pcb_PrimitiveLine.create(
+								if (settings.debug) {
+									debugLog(`[Smooth Debug] 创建 Line: (${item.start.x},${item.start.y}) -> (${item.end.x},${item.end.y}) width=${width}`);
+								}
+								const res = await eda.pcb_PrimitiveLine.create(
 									net,
 									layer as any,
 									item.start.x,
@@ -414,10 +584,32 @@ export async function smoothRouting() {
 									item.end.y,
 									width,
 								);
+
+								// 尝试获取ID
+								let newId: string | null = null;
+								if (typeof res === 'string')
+									newId = res;
+								else if (res && typeof (res as any).id === 'string')
+									newId = (res as any).id;
+								else if (res && typeof (res as any).primitiveId === 'string')
+									newId = (res as any).primitiveId;
+								else if (res && typeof (res as any).getState_PrimitiveId === 'function')
+									newId = (res as any).getState_PrimitiveId();
+
+								if (newId) {
+									allCreatedIds.push(newId);
+								}
+								else if (settings.debug) {
+									debugLog(`[Smooth Debug] 警告: 无法获取新创建 Line 的 ID, Undo 可能失效. Res: ${typeof res}`);
+								}
 							}
 						}
 						else {
-							await eda.pcb_PrimitiveArc.create(
+							// Arc
+							if (settings.debug) {
+								debugLog(`[Smooth Debug] 创建 Arc: start=(${item.start.x.toFixed(3)},${item.start.y.toFixed(3)}) end=(${item.end.x.toFixed(3)},${item.end.y.toFixed(3)}) angle=${item.angle?.toFixed(1)} width=${width}`);
+							}
+							const res = await eda.pcb_PrimitiveArc.create(
 								net,
 								layer as any,
 								item.start.x,
@@ -427,10 +619,43 @@ export async function smoothRouting() {
 								item.angle!,
 								width,
 							);
+
+							// 尝试获取ID
+							let newId: string | null = null;
+							if (typeof res === 'string')
+								newId = res;
+							else if (res && typeof (res as any).id === 'string')
+								newId = (res as any).id;
+							else if (res && typeof (res as any).primitiveId === 'string')
+								newId = (res as any).primitiveId;
+							else if (res && typeof (res as any).getState_PrimitiveId === 'function')
+								newId = (res as any).getState_PrimitiveId();
+
+							if (newId) {
+								allCreatedIds.push(newId);
+							}
+							else if (settings.debug) {
+								debugLog(`[Smooth Debug] 警告: 无法获取新创建 Arc 的 ID, Undo 可能失效. Res: ${typeof res}`);
+							}
 						}
+					}
+
+					// 收集删除的对象到全局列表
+					if (backupPrimitives.length > 0) {
+						allDeletedPrimitives.push(...backupPrimitives);
 					}
 				}
 			}
+		}
+
+		// 批量保存到撤销栈
+		if (allCreatedIds.length > 0 || allDeletedPrimitives.length > 0) {
+			if (settings.debug)
+				debugLog(`[Smooth Debug] 保存批量撤销状态: Created=${allCreatedIds.length}, Deleted=${allDeletedPrimitives.length}`);
+			undoStack.push({
+				createdIds: allCreatedIds,
+				deletedPrimitives: allDeletedPrimitives,
+			});
 		}
 
 		if (
@@ -439,8 +664,18 @@ export async function smoothRouting() {
 		) {
 			if (createdArcs > 0) {
 				eda.sys_Message.showToastMessage(
-					`${eda.sys_I18n.text('圆弧优化完成')}: ${eda.sys_I18n.text('处理路径')} ${processedPaths}, ${eda.sys_I18n.text('创建圆弧')} ${createdArcs}`,
+					`${eda.sys_I18n.text('圆弧优化完成')}: ${eda.sys_I18n.text('处理了')} ${processedPaths} ${eda.sys_I18n.text('条路径')}, ${eda.sys_I18n.text('创建了')} ${createdArcs} ${eda.sys_I18n.text('个圆弧')}`,
 				);
+
+				if (clampedCorners > 0) {
+					setTimeout(() => {
+						if (eda.sys_Message) {
+							eda.sys_Message.showToastMessage(
+								`注意: 有 ${clampedCorners} 个拐角的半径因导线过短被自动缩小`,
+							);
+						}
+					}, 2000); // 稍微延迟显示警告
+				}
 			}
 			else {
 				eda.sys_Message.showToastMessage(
