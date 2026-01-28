@@ -2,98 +2,44 @@ import type { Point } from './math';
 import { debugLog } from './logger';
 import { dist, getAngleBetween, lerp } from './math';
 import { getSettings } from './settings';
-import { addTeardrops } from './teardrop';
-
-// 存储撤销栈
-interface UndoState {
-	createdIds: string[];
-	deletedPrimitives: any[];
-}
-
-// 使用全局对象存储撤销栈，防止模块热重载导致丢失
-const GLOBAL_UNDO_KEY = '__JLC_EDA_SMOOTH_UNDO_STACK__';
-
-// @ts-expect-error globalThis is available
-if (typeof (globalThis as any)[GLOBAL_UNDO_KEY] === 'undefined') {
-	// @ts-expect-error globalThis is available
-	(globalThis as any)[GLOBAL_UNDO_KEY] = [];
-}
-// @ts-expect-error globalThis is available
-const undoStack = (globalThis as any)[GLOBAL_UNDO_KEY] as UndoState[];
+import { createSnapshot, getSnapshots, restoreSnapshot } from './snapshot';
+import { addWidthTransitionsAll } from './widthTransition';
 
 /**
- * 撤销上一次平滑操作
+ * 撤销上一次平滑操作 (通过恢复快照)
  */
 export async function undoLastOperation() {
-	if (undoStack.length === 0) {
-		if (eda.sys_Message && typeof eda.sys_Message.showToastMessage === 'function') {
-			eda.sys_Message.showToastMessage(eda.sys_I18n.text('没有可撤销的操作'));
-		}
-		return;
-	}
-
-	const state = undoStack.pop();
-	if (!state)
-		return;
-
-	if (eda.sys_LoadingAndProgressBar) {
-		if (typeof eda.sys_LoadingAndProgressBar.showLoading === 'function') {
-			eda.sys_LoadingAndProgressBar.showLoading();
-		}
+	if (eda.sys_LoadingAndProgressBar?.showLoading) {
+		eda.sys_LoadingAndProgressBar.showLoading();
 	}
 
 	try {
-		// 1. 删除本次操作创建的新对象
-		if (state.createdIds.length > 0) {
-			debugLog(`[Undo] 删除新创建的对象: ${state.createdIds.length} 个`);
-			try {
-				// 尝试逐个删除，确保兼容性
-				for (const id of state.createdIds) {
-					// 尝试删除 Line 或 Arc
-					// 由于Arc创建后也是图元，通常可以通过ID删除
-					// 如果 delete 接受数组，我们这里简单起见还是逐一删除，或者分批
-					await eda.pcb_PrimitiveLine.delete([id]);
-					// 某些情况下可能需要 pcb_PrimitiveArc.delete? 假设通用
-				}
-			}
-			catch (e: any) {
-				debugLog(`[Undo] 删除新对象失败: ${e.message}`);
-			}
+		// 查找最新的自动备份
+		const snapshots = await getSnapshots();
+		// 过滤出自动备份
+		const autoBackups = snapshots.filter(s => s.name === 'Smooth Auto Backup');
+
+		if (autoBackups.length === 0) {
+			eda.sys_Message?.showToastMessage('没有可撤销的操作 (未找到备份)');
+			return;
 		}
 
-		// 2. 恢复被删除的旧对象
-		if (state.deletedPrimitives.length > 0) {
-			debugLog(`[Undo] 恢复旧对象: ${state.deletedPrimitives.length} 个`);
-			for (const prim of state.deletedPrimitives) {
-				try {
-					if (prim.type === 'Line' || prim.type === 'Track') {
-						await eda.pcb_PrimitiveLine.create(
-							prim.net,
-							prim.layer,
-							prim.startX,
-							prim.startY,
-							prim.endX,
-							prim.endY,
-							prim.lineWidth,
-						);
-					}
-					// Polyline暂未特殊处理，前面代码里Polyline已经被转成Line片段了
-				}
-				catch (e: any) {
-					debugLog(`[Undo] 恢复对象失败: ${e.message}`);
-				}
-			}
-		}
+		// 取最新的一个
+		const latest = autoBackups.sort((a, b) => b.timestamp - a.timestamp)[0];
 
-		if (eda.sys_Message)
-			eda.sys_Message.showToastMessage(eda.sys_I18n.text('撤销成功'));
+		const success = await restoreSnapshot(latest.id);
+
+		if (success) {
+			// 恢复成功后，可以选择删除这个快照，或者保留作为历史
+			// 这里我们选择保留，直到被新的覆盖
+		}
 	}
 	catch (e: any) {
 		if (eda.sys_Dialog)
 			eda.sys_Dialog.showInformationMessage(`撤销失败: ${e.message}`, 'Undo Error');
 	}
 	finally {
-		if (eda.sys_LoadingAndProgressBar && typeof eda.sys_LoadingAndProgressBar.destroyLoading === 'function') {
+		if (eda.sys_LoadingAndProgressBar?.destroyLoading) {
 			eda.sys_LoadingAndProgressBar.destroyLoading();
 		}
 	}
@@ -102,28 +48,47 @@ export async function undoLastOperation() {
 /**
  * 圆滑布线核心逻辑 (基于圆弧)
  */
-export async function smoothRouting() {
+/**
+ * 平滑布线
+ * @param scope 'selected' 只处理选中的导线, 'all' 处理所有导线
+ */
+export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
+	// 创建自动快照
+	try {
+		await createSnapshot('Smooth Auto Backup');
+	}
+	catch (e) {
+		debugLog('[Smooth Error] Failed to create snapshot:', e);
+	}
+
 	const settings = await getSettings();
 	let tracks: any[] = [];
 
-	const selected = await eda.pcb_SelectControl.getAllSelectedPrimitives();
-
-	if (settings.debug) {
-		debugLog('[Smooth Debug] 获取选中对象:', selected);
-		debugLog('[Smooth Debug] 选中对象数量:', selected ? selected.length : 0);
-		if (selected && selected.length > 0) {
-			debugLog('[Smooth Debug] 第一个对象类型:', typeof selected[0]);
-		}
-	}
-
-	if (!selected || !Array.isArray(selected) || selected.length === 0) {
-		// 未选中任何对象时，处理全局布线
+	if (scope === 'all') {
+		// 处理所有导线
 		if (settings.debug) {
-			debugLog('[Smooth Debug] 无选中对象，获取全部导线');
+			debugLog('[Smooth Debug] 处理所有导线');
 		}
 		tracks = await eda.pcb_PrimitiveLine.getAll();
 	}
 	else {
+		// 处理选中的导线
+		const selected = await eda.pcb_SelectControl.getAllSelectedPrimitives();
+
+		if (settings.debug) {
+			debugLog('[Smooth Debug] 获取选中对象:', selected);
+			debugLog('[Smooth Debug] 选中对象数量:', selected ? selected.length : 0);
+		}
+
+		if (!selected || !Array.isArray(selected) || selected.length === 0) {
+			// 未选中任何对象，提示用户
+			eda.sys_Message?.showToastMessage(eda.sys_I18n ? eda.sys_I18n.text('请先选择要处理的导线') : '请先选择要处理的导线');
+			if (eda.sys_LoadingAndProgressBar?.destroyLoading) {
+				eda.sys_LoadingAndProgressBar.destroyLoading();
+			}
+			return;
+		}
+
 		// 处理选中的对象
 		let primitives: any[] = [];
 		if (typeof selected[0] === 'string') {
@@ -137,7 +102,9 @@ export async function smoothRouting() {
 			primitives = selected;
 		}
 
-		// 过滤支持的类型：Track, Line, Polyline
+		// 过滤支持的类型：Track, Line, Polyline 以及其他可能的线条类型
+		// 同时包括没有网络的线条
+		const supportedTypes = ['Line', 'Track', 'Polyline', 'Wire'];
 		const filtered = primitives.filter(
 			(p: any) => {
 				if (!p)
@@ -150,7 +117,15 @@ export async function smoothRouting() {
 					type = p.primitiveType;
 				}
 
-				return type === 'Line' || type === 'Track' || type === 'Polyline';
+				// 检查是否有线的基本属性 (StartX, EndX 等)
+				const hasLineProps = (p.getState_StartX || p.startX !== undefined)
+					&& (p.getState_EndX || p.endX !== undefined);
+
+				if (settings.debug && !supportedTypes.includes(type) && !hasLineProps) {
+					debugLog(`[Smooth Debug] 跳过不支持的类型: ${type}`);
+				}
+
+				return supportedTypes.includes(type) || hasLineProps;
 			},
 		);
 
@@ -231,6 +206,14 @@ export async function smoothRouting() {
 		eda.sys_LoadingAndProgressBar.showLoading();
 	}
 
+	// 创建快照 (Undo 支持)
+	try {
+		await createSnapshot('Smooth Auto Backup');
+	}
+	catch (e) {
+		console.error('Failed to create snapshot', e);
+	}
+
 	try {
 		// 按网络和层分组
 		const groups = new Map<string, any[]>();
@@ -266,11 +249,15 @@ export async function smoothRouting() {
 				track: t,
 			}));
 
+			// 辅助函数：生成坐标键
+			// 使用 3 位小数精度，与 widthTransition 保持一致，避免浮点数误差导致断连
+			const pointKey = (p: { x: number; y: number }): string => `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
+
 			// 构建邻接表
 			const connections = new Map<string, typeof segs[0][]>();
 			for (const seg of segs) {
-				const key1 = `${seg.p1.x},${seg.p1.y}`;
-				const key2 = `${seg.p2.x},${seg.p2.y}`;
+				const key1 = pointKey(seg.p1);
+				const key2 = pointKey(seg.p2);
 				if (!connections.has(key1))
 					connections.set(key1, []);
 				if (!connections.has(key2))
@@ -302,13 +289,13 @@ export async function smoothRouting() {
 					extended = false;
 
 					// 尝试从末端扩展
-					const lastKey = `${points[points.length - 1].x},${points[points.length - 1].y}`;
+					const lastKey = pointKey(points[points.length - 1]);
 					const lastConns = connections.get(lastKey) || [];
 					for (const seg of lastConns) {
 						if (used.has(seg.id))
 							continue;
-						const nextKey1 = `${seg.p1.x},${seg.p1.y}`;
-						const nextKey2 = `${seg.p2.x},${seg.p2.y}`;
+						const nextKey1 = pointKey(seg.p1);
+						const nextKey2 = pointKey(seg.p2);
 						if (nextKey1 === lastKey) {
 							points.push(seg.p2);
 							orderedSegs.push(seg);
@@ -327,13 +314,13 @@ export async function smoothRouting() {
 
 					// 尝试从起点扩展
 					if (!extended) {
-						const firstKey = `${points[0].x},${points[0].y}`;
+						const firstKey = pointKey(points[0]);
 						const firstConns = connections.get(firstKey) || [];
 						for (const seg of firstConns) {
 							if (used.has(seg.id))
 								continue;
-							const nextKey1 = `${seg.p1.x},${seg.p1.y}`;
-							const nextKey2 = `${seg.p2.x},${seg.p2.y}`;
+							const nextKey1 = pointKey(seg.p1);
+							const nextKey2 = pointKey(seg.p2);
 							if (nextKey1 === firstKey) {
 								points.unshift(seg.p2);
 								orderedSegs.unshift(seg);
@@ -649,14 +636,9 @@ export async function smoothRouting() {
 		}
 
 		// 批量保存到撤销栈
-		if (allCreatedIds.length > 0 || allDeletedPrimitives.length > 0) {
-			if (settings.debug)
-				debugLog(`[Smooth Debug] 保存批量撤销状态: Created=${allCreatedIds.length}, Deleted=${allDeletedPrimitives.length}`);
-			undoStack.push({
-				createdIds: allCreatedIds,
-				deletedPrimitives: allDeletedPrimitives,
-			});
-		}
+		// if (allCreatedIds.length > 0 || allDeletedPrimitives.length > 0) {
+		// ... replaced by snapshot system
+		// }
 
 		if (
 			eda.sys_Message
@@ -684,8 +666,8 @@ export async function smoothRouting() {
 			}
 		}
 
-		if (settings.syncTeardrops) {
-			await addTeardrops();
+		if (settings.syncWidthTransition) {
+			await addWidthTransitionsAll();
 		}
 	}
 	catch (e: any) {

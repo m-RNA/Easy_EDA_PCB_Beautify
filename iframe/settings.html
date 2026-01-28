@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>设置 - 圆滑布线 & 泪滴工具</title>
+	<title>设置 - 圆滑布线 & 线宽过渡工具</title>
 	<style>
 		* {
 			margin: 0;
@@ -15,49 +15,49 @@
 			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
 			background: #f5f7fa;
 			color: #333;
-			line-height: 1.6;
-			padding: 20px;
+			line-height: 1.5;
+			padding: 16px;
 		}
 
 		.container {
-			max-width: 500px;
+			max-width: 420px;
 			margin: 0 auto;
 			background: white;
-			border-radius: 12px;
+			border-radius: 10px;
 			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-			padding: 30px;
+			padding: 20px 24px;
 		}
 
 		.title {
-			font-size: 24px;
+			font-size: 20px;
 			font-weight: 600;
 			color: #1a1a1a;
-			margin-bottom: 24px;
-			padding-bottom: 16px;
-			border-bottom: 2px solid #e8eaed;
+			margin-bottom: 18px;
+			padding-bottom: 12px;
+			border-bottom: 1px solid #e8eaed;
 		}
 
 		.form-group {
-			margin-bottom: 24px;
+			margin-bottom: 18px;
 		}
 
 		.form-group label {
 			display: block;
-			margin-bottom: 8px;
+			margin-bottom: 6px;
 		}
 
 		.label-text {
-			display: block;
+			display: inline;
 			font-size: 14px;
 			font-weight: 500;
 			color: #333;
-			margin-bottom: 4px;
 		}
 
 		.label-hint {
 			display: block;
 			font-size: 12px;
 			color: #666;
+			margin-top: 2px;
 		}
 
 		.input-group {
@@ -68,8 +68,8 @@
 
 		.input-group input[type="number"] {
 			flex: 1;
-			padding: 10px 12px;
-			border: 2px solid #e0e0e0;
+			padding: 8px 12px;
+			border: 1px solid #ddd;
 			border-radius: 6px;
 			font-size: 14px;
 			transition: border-color 0.2s;
@@ -81,13 +81,13 @@
 		}
 
 		.unit-display {
-			padding: 10px 16px;
+			padding: 8px 14px;
 			background: #f0f0f0;
 			border-radius: 6px;
 			font-size: 14px;
 			font-weight: 500;
 			color: #666;
-			min-width: 50px;
+			min-width: 40px;
 			text-align: center;
 		}
 
@@ -122,9 +122,10 @@
 		}
 
 		.toggle-group {
-			display: flex;
+			display: inline-flex;
 			align-items: center;
-			min-height: 44px;
+			margin-left: 12px;
+			vertical-align: middle;
 		}
 
 		.toggle-label {
@@ -143,18 +144,18 @@
 			display: block;
 			flex-shrink: 0;
 			position: relative;
-			width: 48px;
-			height: 24px;
+			width: 44px;
+			height: 22px;
 			background: #ccc;
-			border-radius: 24px;
+			border-radius: 22px;
 			transition: background 0.3s;
 		}
 
 		.toggle-slider::before {
 			content: '';
 			position: absolute;
-			width: 20px;
-			height: 20px;
+			width: 18px;
+			height: 18px;
 			border-radius: 50%;
 			background: white;
 			top: 2px;
@@ -167,13 +168,11 @@
 		}
 
 		.toggle-label input[type="checkbox"]:checked + .toggle-slider::before {
-			transform: translateX(24px);
+			transform: translateX(22px);
 		}
 
 		.toggle-text {
-			font-size: 14px;
-			color: #666;
-			margin-left: 8px;
+			display: none;
 		}
 
 		.toggle-label input[type="checkbox"]:checked ~ .toggle-text {
@@ -184,14 +183,13 @@
 		.button-group {
 			display: flex;
 			gap: 12px;
-			margin-top: 32px;
-			padding-top: 24px;
+			margin-top: 20px;
+			padding-top: 16px;
 			border-top: 1px solid #e8eaed;
 		}
 
 		.btn {
-			flex: 1;
-			padding: 12px 24px;
+			padding: 10px 20px;
 			border: none;
 			border-radius: 6px;
 			font-size: 14px;
@@ -246,8 +244,8 @@
 		<form id="settingsForm">
 			<div class="form-group">
 				<label for="cornerRadius">
-					<span class="label-text" data-i18n="圆角半径">圆角半径</span>
-					<span class="label-hint" data-i18n="控制圆弧过渡的半径大小">控制圆弧过渡的半径大小</span>
+					<span class="label-text" data-i18n="最大圆角半径">最大圆角半径</span>
+					<span class="label-hint" data-i18n="控制圆弧过渡的最大半径大小">控制圆弧过渡的最大半径大小</span>
 				</label>
 				<div class="input-group">
 					<input 
@@ -256,7 +254,7 @@
 						name="cornerRadius" 
 						min="0.1" 
 						step="0.1"
-						value="20"
+						value="1000"
 						required
 					>
 					<select id="unitSelect" style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; background: #f8f8f8; cursor: pointer;">
@@ -267,30 +265,82 @@
 			</div>
 
 			<div class="form-group">
-				<label>
-					<span class="label-text" data-i18n="自动泪滴">自动泪滴</span>
-					<span class="label-hint" data-i18n="圆滑布线时是否自动生成泪滴">圆滑布线时是否自动生成泪滴</span>
+				<div>
+					<span class="label-text" data-i18n="自动线宽过渡">自动线宽过渡</span>
+					<div class="toggle-group">
+						<label class="toggle-label">
+							<input type="checkbox" name="syncWidthTransition" id="syncWidthTransition">
+							<span class="toggle-slider"></span>
+							<span class="toggle-text" data-i18n="启用">启用</span>
+						</label>
+					</div>
+				</div>
+				<span class="label-hint" data-i18n="圆滑布线时是否自动处理不同线宽的过渡">圆滑布线时是否自动处理不同线宽的过渡</span>
+			</div>
+
+				<div class="form-group">
+				<label for="widthTransitionSegments">
+					<span class="label-text" data-i18n="最大过渡段数">最大过渡段数</span>
+					<span class="label-hint" data-i18n="线宽过渡的最大分段数，防止段数过多导致卡顿">线宽过渡的最大分段数，防止段数过多导致卡顿</span>
 				</label>
-				<div class="toggle-group">
-					<label class="toggle-label">
-						<input type="checkbox" name="syncTeardrops" id="syncTeardrops">
-						<span class="toggle-slider"></span>
-						<span class="toggle-text" data-i18n="启用">启用</span>
-					</label>
+				<div class="input-group">
+					<input 
+						type="number" 
+						id="widthTransitionSegments" 
+						name="widthTransitionSegments" 
+						min="5" 
+						max="100"
+						step="1"
+						value="30"
+						required
+					>
+					<span class="unit-display" data-i18n="段">段</span>
 				</div>
 			</div>
 
 			<div class="form-group">
-				<label>
-					<span class="label-text" data-i18n="调试模式">调试模式</span>
-					<span class="label-hint" data-i18n="在控制台打印详细日志">在控制台打印详细日志</span>
+				<label for="widthTransitionRatio">
+					<span class="label-text" data-i18n="过渡长度比例">过渡长度比例</span>
+					<span class="label-hint" data-i18n="过渡区长度与线宽差值的比率，默认1.5">过渡区长度与线宽差值的比率，默认1.5</span>
 				</label>
-				<div class="toggle-group">
-					<label class="toggle-label">
-						<input type="checkbox" name="debug" id="debug">
-						<span class="toggle-slider"></span>
-						<span class="toggle-text" data-i18n="启用">启用</span>
-					</label>
+				<div class="input-group">
+					<input 
+						type="number" 
+						id="widthTransitionRatio" 
+						name="widthTransitionRatio" 
+						min="0.5" 
+						max="10.0"
+						step="0.1"
+						value="1.5"
+						required
+					>
+					<span class="unit-display">X</span>
+				</div>
+			</div>
+
+			<div class="form-group">
+				<div>
+					<span class="label-text" data-i18n="调试模式">调试模式</span>
+					<div class="toggle-group">
+						<label class="toggle-label">
+							<input type="checkbox" name="debug" id="debug">
+							<span class="toggle-slider"></span>
+							<span class="toggle-text" data-i18n="启用">启用</span>
+						</label>
+					</div>
+				</div>
+				<span class="label-hint" data-i18n="在控制台打印详细日志">在控制台打印详细日志</span>
+			</div>
+
+			<div class="form-group" style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 20px;">
+				<label>
+					<span class="label-text" data-i18n="布线状态管理">布线状态管理</span>
+					<span class="label-hint" data-i18n="记录当前的布线状态，随时恢复">记录当前的布线状态，随时恢复</span>
+				</label>
+				<button type="button" class="btn btn-primary" id="createSnapshotBtn" style="width: 100%; margin-bottom: 10px;" data-i18n="记录当前布线状态">记录当前布线状态</button>
+				
+				<div id="snapshotList" style="max-height: 150px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; padding: 5px;">
+					<div style="text-align: center; color: #999; padding: 10px;" data-i18n="暂无快照">暂无快照</div>
 				</div>
 			</div>
 
@@ -323,7 +373,7 @@
 			});
 
 			// 翻译 title
-			document.title = eda.sys_I18n.text('设置') + ' - ' + eda.sys_I18n.text('圆滑布线 & 泪滴工具');
+			document.title = eda.sys_I18n.text('设置') + ' - ' + eda.sys_I18n.text('圆滑布线 & 线宽过渡工具');
 		}
 
 		// 检查 eda 对象是否可用
@@ -336,7 +386,9 @@
 		const form = document.getElementById('settingsForm');
 		const cornerRadiusInput = document.getElementById('cornerRadius');
 		const unitSelect = document.getElementById('unitSelect');
-		const syncTeardropsCheckbox = document.getElementById('syncTeardrops');
+		const syncWidthTransitionCheckbox = document.getElementById('syncWidthTransition');
+		const widthTransitionSegmentsInput = document.getElementById('widthTransitionSegments');
+		const widthTransitionRatioInput = document.getElementById('widthTransitionRatio');
 		const debugCheckbox = document.getElementById('debug');
 		const cancelBtn = document.getElementById('cancelBtn');
 
@@ -354,9 +406,11 @@
 
 				// 设置默认值
 				const config = {
-					cornerRadius: 20,
+					cornerRadius: 1000,
 					unit: 'mil',
-					syncTeardrops: true,
+					syncWidthTransition: true,
+					widthTransitionSegments: 10,
+					widthTransitionRatio: 1.5,
 					debug: false,
 					...settings,
 				};
@@ -366,8 +420,10 @@
 				unitSelect.value = config.unit;
 				currentUnitState = config.unit;
 
-				// 设置开关
-				syncTeardropsCheckbox.checked = config.syncTeardrops;
+				// 设置开关和输入
+				syncWidthTransitionCheckbox.checked = config.syncWidthTransition;
+				widthTransitionSegmentsInput.value = config.widthTransitionSegments;
+				widthTransitionRatioInput.value = config.widthTransitionRatio;
 				debugCheckbox.checked = config.debug;
 			}
 			catch (error) {
@@ -406,11 +462,12 @@
 			const settings = {
 				cornerRadius: Number.parseFloat(cornerRadiusInput.value),
 				unit: unitSelect.value,
-				syncTeardrops: syncTeardropsCheckbox.checked,
+				syncWidthTransition: syncWidthTransitionCheckbox.checked,
+				widthTransitionSegments: Number.parseInt(widthTransitionSegmentsInput.value),
+				widthTransitionRatio: Number.parseFloat(widthTransitionRatioInput.value),
 				debug: debugCheckbox.checked,
 				replaceOriginal: true,
 				smoothRatio: 0.2,
-				teardropSize: 0.8,
 				iterations: 1,
 			};
 
@@ -441,7 +498,11 @@
 		// 绑定事件实现自动保存
 		cornerRadiusInput.addEventListener('change', saveSettings); 
 		cornerRadiusInput.addEventListener('blur', saveSettings);
-		syncTeardropsCheckbox.addEventListener('change', saveSettings);
+		syncWidthTransitionCheckbox.addEventListener('change', saveSettings);
+		widthTransitionSegmentsInput.addEventListener('change', saveSettings);
+		widthTransitionSegmentsInput.addEventListener('blur', saveSettings);
+		widthTransitionRatioInput.addEventListener('change', saveSettings);
+		widthTransitionRatioInput.addEventListener('blur', saveSettings);
 		debugCheckbox.addEventListener('change', saveSettings);
 
 		// 取消按钮
@@ -451,9 +512,89 @@
 			}
 		});
 
+		// --- 快照管理逻辑 ---
+		const createSnapshotBtn = document.getElementById('createSnapshotBtn');
+		const snapshotList = document.getElementById('snapshotList');
+
+		function formatTime(timestamp) {
+			const date = new Date(timestamp);
+			return date.toLocaleTimeString();
+		}
+
+		async function refreshSnapshotList() {
+			if (typeof eda === 'undefined' || !eda.jlc_eda_smooth_snapshot) return;
+			
+			const snapshots = await eda.jlc_eda_smooth_snapshot.getSnapshots();
+			snapshotList.innerHTML = '';
+
+			if (snapshots.length === 0) {
+				snapshotList.innerHTML = '<div style="text-align: center; color: #999; padding: 10px;" data-i18n="暂无快照">暂无快照</div>';
+				translatePage(); // 重新翻译动态插入的内容
+				return;
+			}
+
+			// 倒序显示（最新的在上面）
+			[...snapshots].reverse().forEach(snap => {
+				const item = document.createElement('div');
+				item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #f0f0f0;';
+				if(snap === snapshots[snapshots.length-1]) item.style.borderBottom = 'none';
+
+				const infoText = document.createElement('div');
+				infoText.innerHTML = `
+					<div style="font-weight: 500; font-size: 13px;">${snap.name || (eda.sys_I18n ? eda.sys_I18n.text('手动快照') : '手动快照')}</div>
+					<div style="font-size: 11px; color: #888;">${formatTime(snap.timestamp)} - ${snap.lines.length} Lines, ${snap.arcs.length} Arcs</div>
+				`;
+
+				const restoreBtn = document.createElement('button');
+				restoreBtn.className = 'btn btn-secondary';
+				restoreBtn.style.padding = '4px 8px';
+				restoreBtn.style.fontSize = '12px';
+				restoreBtn.textContent = eda.sys_I18n ? eda.sys_I18n.text('恢复') : '恢复';
+				restoreBtn.onclick = async () => {
+					if (confirm(eda.sys_I18n ? eda.sys_I18n.text('确定要恢复到此状态吗？当前未保存的更改将丢失。') : '确定要恢复到此状态吗？当前未保存的更改将丢失。')) {
+						try {
+							await eda.jlc_eda_smooth_snapshot.restoreSnapshot(snap.id);
+							alert(eda.sys_I18n ? eda.sys_I18n.text('已恢复') : '已恢复');
+						} catch (e) {
+							console.error(e);
+							alert((eda.sys_I18n ? eda.sys_I18n.text('恢复失败') : '恢复失败') + ': ' + e.message);
+						}
+					}
+				};
+
+				item.appendChild(infoText);
+				item.appendChild(restoreBtn);
+				snapshotList.appendChild(item);
+			});
+		}
+
+		createSnapshotBtn.addEventListener('click', async () => {
+			console.log('[Snapshot UI] Button clicked');
+			if (typeof eda === 'undefined') {
+				console.error('[Snapshot UI] eda is undefined');
+				alert('EDA API not available');
+				return;
+			}
+			if (!eda.jlc_eda_smooth_snapshot) {
+				console.error('[Snapshot UI] eda.jlc_eda_smooth_snapshot is undefined');
+				alert('Snapshot API not available. Please reload the extension.');
+				return;
+			}
+			try {
+				console.log('[Snapshot UI] Creating snapshot...');
+				const result = await eda.jlc_eda_smooth_snapshot.createSnapshot(eda.sys_I18n ? eda.sys_I18n.text('手动快照') : '手动快照');
+				console.log('[Snapshot UI] Snapshot created:', result);
+				await refreshSnapshotList();
+			} catch (e) {
+				console.error('[Snapshot UI] Error:', e);
+				alert('Error: ' + (e.message || e));
+			}
+		});
+
 		// 页面加载时初始化
 		loadSettings().then(() => {
 			translatePage();
+			refreshSnapshotList(); // 加载快照列表
 		});
 	</script>
 </body>

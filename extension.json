@@ -1,14 +1,14 @@
 {
 	"name": "pro-api-sdk",
 	"uuid": "3911cc55444d4833b5762da1521fe616",
-	"displayName": "圆滑布线-泪滴-熔化PCB",
-	"description": "基于圆弧平滑融化，可以自己再次修改，支持撤销",
+	"displayName": "圆滑布线-线宽过渡-熔化PCB",
+	"description": "基于圆弧平滑融化，支持线宽平滑过渡，可以自己再次修改圆弧半径，支持撤销",
 	"version": "1.0.0",
 	"publisher": "",
 	"engines": {
 		"eda": "^3.0.0"
 	},
-	"license": "LGPL-V3",
+	"license": "Apache-2.0",
 	"repository": {
 		"type": "extension-store",
 		"url": ""
@@ -22,7 +22,9 @@
 	},
 	"homepage": "",
 	"bugs": "",
-	"activationEvents": {},
+	"activationEvents": {
+		"onStartupFinished": true
+	},
 	"entry": "./dist/index",
 	"dependentExtensions": {},
 	"headerMenus": {
@@ -32,9 +34,24 @@
 				"title": "熔化PCB",
 				"menuItems": [
 					{
-						"id": "SmoothRouting",
-						"title": "圆滑布线",
-						"registerFn": "smoothRouting"
+						"id": "SmoothRoutingSelected",
+						"title": "圆滑布线（选中）",
+						"registerFn": "smoothSelected"
+					},
+					{
+						"id": "SmoothRoutingAll",
+						"title": "圆滑布线（全部）",
+						"registerFn": "smoothAll"
+					},
+					{
+						"id": "WidthTransitionSelected",
+						"title": "过渡线宽（选中）",
+						"registerFn": "widthTransitionSelected"
+					},
+					{
+						"id": "WidthTransitionAll",
+						"title": "过渡线宽（全部）",
+						"registerFn": "widthTransitionAll"
 					},
 					{
 						"id": "UndoSmooth",
@@ -42,13 +59,8 @@
 						"registerFn": "undoSmooth"
 					},
 					{
-						"id": "AddTeardrops",
-						"title": "生成泪滴",
-						"registerFn": "addTeardrops"
-					},
-					{
 						"id": "Settings",
-						"title": "设置...",
+						"title": "设置",
 						"registerFn": "openSettings"
 					}
 				]

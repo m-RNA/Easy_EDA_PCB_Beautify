@@ -1,8 +1,9 @@
 export interface SmoothSettings {
 	replaceOriginal: boolean;
-	syncTeardrops: boolean; // 平滑时同步生成泪滴
+	syncWidthTransition: boolean; // 平滑时同步处理线宽过渡
 	smoothRatio: number;
-	teardropSize: number;
+	widthTransitionRatio: number; // 线宽过渡长度系数
+	widthTransitionSegments: number; // 线宽过渡分段数
 	iterations: number;
 	cornerRadius: number;
 	unit: 'mm' | 'mil'; // 单位设置
@@ -11,12 +12,13 @@ export interface SmoothSettings {
 
 const DEFAULT_SETTINGS: SmoothSettings = {
 	replaceOriginal: true,
-	syncTeardrops: true,
+	syncWidthTransition: false,
 	smoothRatio: 0.2,
-	teardropSize: 0.8,
+	widthTransitionRatio: 1.5, // 过渡长度 = 最大线宽 * 1.5
+	widthTransitionSegments: 5,
 	iterations: 1,
-	cornerRadius: 0.5, // 默认 0.5mm
-	unit: 'mm',
+	cornerRadius: 25.4, // 默认 25.4mm (1000mil)
+	unit: 'mil',
 	debug: false,
 };
 
