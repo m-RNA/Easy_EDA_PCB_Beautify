@@ -87,14 +87,15 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 	}
 	else {
 		// 处理选中的导线
-		const selected = await eda.pcb_SelectControl.getAllSelectedPrimitives();
+		// 使用 getAllSelectedPrimitives_PrimitiveId 获取选中的 ID 列表，更可靠
+		const selectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
 
 		if (settings.debug) {
-			debugLog('[Smooth Debug] 获取选中对象:', selected);
-			debugLog('[Smooth Debug] 选中对象数量:', selected ? selected.length : 0);
+			debugLog('[Smooth Debug] 获取选中对象 ID:', selectedIds);
+			debugLog('[Smooth Debug] 选中对象数量:', selectedIds ? selectedIds.length : 0);
 		}
 
-		if (!selected || !Array.isArray(selected) || selected.length === 0) {
+		if (!selectedIds || !Array.isArray(selectedIds) || selectedIds.length === 0) {
 			// 未选中任何对象，提示用户
 			eda.sys_Message?.showToastMessage(eda.sys_I18n ? eda.sys_I18n.text('请先选择要处理的导线') : '请先选择要处理的导线');
 			if (eda.sys_LoadingAndProgressBar?.destroyLoading) {
@@ -103,17 +104,22 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 			return;
 		}
 
-		// 处理选中的对象
+		// 通过 ID 列表获取导线对象
+		// 注意：eda.pcb_PrimitiveLine.get 传入数组返回数组
 		let primitives: any[] = [];
-		if (typeof selected[0] === 'string') {
-			for (const id of selected as unknown as string[]) {
-				const p = await eda.pcb_PrimitiveLine.get(id);
-				if (p)
-					primitives.push(p);
+		const lineObjects = await eda.pcb_PrimitiveLine.get(selectedIds);
+		if (lineObjects) {
+			if (Array.isArray(lineObjects)) {
+				primitives = lineObjects.filter(p => p !== null && p !== undefined);
+			}
+			else {
+				// 单个对象
+				primitives = [lineObjects];
 			}
 		}
-		else {
-			primitives = selected;
+
+		if (settings.debug) {
+			debugLog(`[Smooth Debug] 通过 ID 获取到 ${primitives.length} 个导线对象`);
 		}
 
 		// 过滤支持的类型：Track, Line, Polyline 以及其他可能的线条类型

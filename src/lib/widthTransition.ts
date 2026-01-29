@@ -86,8 +86,20 @@ export async function addWidthTransitionsSelected() {
 
 	try {
 		// 获取选中的导线对象（传入数组返回数组）
-		const selectedTracks = await eda.pcb_PrimitiveLine.get(allSelectedIds);
-		if (!selectedTracks || selectedTracks.length === 0) {
+		const lineObjects = await eda.pcb_PrimitiveLine.get(allSelectedIds);
+
+		// 确保返回的是数组，并过滤掉 null/undefined
+		let selectedTracks: any[] = [];
+		if (lineObjects) {
+			if (Array.isArray(lineObjects)) {
+				selectedTracks = lineObjects.filter(p => p !== null && p !== undefined);
+			}
+			else {
+				selectedTracks = [lineObjects];
+			}
+		}
+
+		if (selectedTracks.length === 0) {
 			eda.sys_Message?.showToastMessage(eda.sys_I18n.text('没有找到导线'));
 			return;
 		}
