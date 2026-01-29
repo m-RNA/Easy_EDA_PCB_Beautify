@@ -3,6 +3,21 @@ import { getArcLineWidthMap, makeArcWidthKey } from './smooth';
 
 const SNAPSHOT_STORAGE_KEY = 'jlc_eda_smooth_snapshots';
 
+/**
+ * 通知设置界面快照列表已变化
+ */
+function notifySnapshotChange() {
+	const callback = (eda as any)._onSnapshotChange;
+	if (typeof callback === 'function') {
+		try {
+			callback();
+		}
+		catch {
+			// ignore callback errors
+		}
+	}
+}
+
 export interface RoutingSnapshot {
 	id: number;
 	name: string;
@@ -175,6 +190,9 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 
 		debugLog(`[Snapshot] Created snapshot '${name}' with ${snapshot.lines.length} lines, ${snapshot.arcs.length} arcs`);
 
+		// 通知设置界面刷新
+		notifySnapshotChange();
+
 		return snapshot;
 	}
 	catch (e: any) {
@@ -320,6 +338,7 @@ export async function deleteSnapshot(snapshotId: number) {
 	let snapshots = await getSnapshots();
 	snapshots = snapshots.filter(s => s.id !== snapshotId);
 	await saveSnapshots(snapshots);
+	notifySnapshotChange();
 }
 
 /**
@@ -327,4 +346,5 @@ export async function deleteSnapshot(snapshotId: number) {
  */
 export async function clearSnapshots() {
 	await saveSnapshots([]);
+	notifySnapshotChange();
 }

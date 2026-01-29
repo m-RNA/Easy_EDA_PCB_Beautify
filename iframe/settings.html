@@ -745,6 +745,14 @@
             loadSettings().then(() => {
                 translatePage();
                 refreshSnapshots();
+                
+                // 注册快照变化回调，当主代码创建/删除快照时自动刷新列表
+                const api = API || getEda();
+                if (api) {
+                    api._onSnapshotChange = () => {
+                        refreshSnapshots();
+                    };
+                }
             });
         }
     </script>
