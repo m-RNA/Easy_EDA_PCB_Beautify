@@ -40,6 +40,8 @@
 	"过渡段数": "Transition Segments",
 	"线宽过渡的渐变段数，越大越平滑": "Number of gradient segments for width transition, larger is smoother",
 	"段": "segments",
+	"过渡长度最大比例": "Max Transition Ratio",
+	"过渡区长度比率": "Max ratio of transition length to width difference, won't exceed narrow track length",
 	"在控制台打印详细日志": "Print detailed logs in the console",
 	"设置即时生效": "Settings take effect immediately",
 	"保存中...": "Saving...",
@@ -67,5 +69,9 @@
 	"恢复": "Restore",
 	"确定要恢复到此状态吗？当前未保存的更改将丢失。": "Are you sure you want to restore? Current unsaved changes will be lost.",
 	"已恢复": "Restored",
-	"恢复失败": "Restore Failed"
+	"恢复失败": "Restore Failed",
+	"Clear Snapshots": "Clear Snapshots",
+	"清除快照": "Clear Snapshots",
+	"快照已清除": "Snapshots cleared",
+	"确定要清除所有快照吗？": "Are you sure you want to clear all snapshots?"
 }

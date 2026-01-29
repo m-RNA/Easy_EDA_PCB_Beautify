@@ -4,7 +4,7 @@
  * 使用三次贝塞尔曲线实现平滑的线宽渐变
  */
 
-import { debugLog } from './logger';
+import { debugLog, logError } from './logger';
 import { dist } from './math';
 import { getSettings } from './settings';
 
@@ -272,8 +272,8 @@ async function processWidthTransitions(
 							try {
 								await eda.pcb_PrimitiveLine.delete(oldRecord.ids);
 							}
-							catch (e) {
-								console.error('删除旧过渡失败', e);
+							catch (e: any) {
+								logError(`删除旧过渡失败: ${e.message || e}`);
 							}
 						}
 						recordsMap.delete(key);
@@ -302,13 +302,27 @@ async function processWidthTransitions(
 					// 标记为已处理
 					processedPointsInCurrentRun.add(key);
 
-					// 确定方向
+					// 确定方向和窄端线长
 					let transitionDir: { x: number; y: number };
+					let narrowTrackLength: number;
+
+					// 计算两条线的实际长度
+					const t1Length = dist(t1Start, t1End);
+					const t2Length = dist(t2Start, t2End);
+
 					if (w1 < w2) {
+						// t1 是窄线
 						transitionDir = { x: -conn.t1Dir.x, y: -conn.t1Dir.y };
+						narrowTrackLength = t1Length;
 					}
 					else {
+						// t2 是窄线
 						transitionDir = { x: conn.t2Dir.x, y: conn.t2Dir.y };
+						narrowTrackLength = t2Length;
+					}
+
+					if (settings.debug) {
+						debugLog(`[Width Transition] 窄端线长: ${narrowTrackLength.toFixed(2)}`);
 					}
 
 					// 创建过渡线段
@@ -319,6 +333,7 @@ async function processWidthTransitions(
 						w2,
 						t1.getState_Layer(),
 						actualNet,
+						narrowTrackLength,
 						settings,
 					);
 
@@ -355,6 +370,18 @@ async function processWidthTransitions(
 /**
  * 创建线宽过渡（使用多条线段 + 贝塞尔曲线插值实现平滑过渡）
  * 过渡向窄线方向延伸，起点为宽线宽度，终点为窄线宽度
+ * @param point 过渡起点坐标
+ * @param point.x X 坐标
+ * @param point.y Y 坐标
+ * @param direction 过渡方向向量
+ * @param direction.x X 分量
+ * @param direction.y Y 分量
+ * @param width1 第一条线的宽度
+ * @param width2 第二条线的宽度
+ * @param layer PCB 层
+ * @param net 网络名称
+ * @param narrowTrackLength 窄端线的长度，过渡不会超过此长度
+ * @param settings 扩展设置
  */
 async function createWidthTransition(
 	point: { x: number; y: number },
@@ -363,6 +390,7 @@ async function createWidthTransition(
 	width2: number,
 	layer: number,
 	net: string,
+	narrowTrackLength: number,
 	settings: any,
 ): Promise<string[]> {
 	const createdIds: string[] = [];
@@ -382,7 +410,22 @@ async function createWidthTransition(
 	const widthDiff = wideWidth - narrowWidth;
 
 	// 过渡长度（向窄线方向延伸）
-	const transitionLength = widthDiff * (settings.widthTransitionRatio || 1.5);
+	// 计算理想过渡长度，但不超过窄端线长的 90%（留一点余量）
+	const idealLength = widthDiff * (settings.widthTransitionRatio || 1.5);
+	const maxAllowedLength = narrowTrackLength * 0.9;
+	const transitionLength = Math.min(idealLength, maxAllowedLength);
+
+	// 如果过渡长度太短，跳过
+	if (transitionLength < 1) {
+		if (settings.debug) {
+			debugLog(`[Width Transition] 跳过：过渡长度太短 (${transitionLength.toFixed(2)})`);
+		}
+		return createdIds;
+	}
+
+	if (settings.debug) {
+		debugLog(`[Width Transition] 理想长度=${idealLength.toFixed(2)}, 窄端限制=${maxAllowedLength.toFixed(2)}, 实际长度=${transitionLength.toFixed(2)}`);
+	}
 
 	// 过渡段数计算
 	// 动态计算需要的段数以保证平滑度

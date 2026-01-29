@@ -1,21 +1,23 @@
 {
-	"name": "pro-api-sdk",
+	"name": "easy-eda-smooth",
 	"uuid": "3911cc55444d4833b5762da1521fe616",
 	"displayName": "圆滑布线-线宽过渡-熔化PCB",
 	"description": "基于圆弧平滑融化，支持线宽平滑过渡，可以自己再次修改圆弧半径，支持撤销",
 	"version": "1.0.0",
-	"publisher": "",
+	"publisher": "m-RNA",
 	"engines": {
-		"eda": "^3.0.0"
+		"eda": "^2.3.0"
 	},
 	"license": "Apache-2.0",
 	"repository": {
 		"type": "extension-store",
 		"url": ""
 	},
-	"categories": "pcb",
+	"categories": "PCB",
 	"keywords": [
-		"SDK"
+		"PCB",
+		"Smooth",
+		"Routing"
 	],
 	"images": {
 		"logo": "./images/logo_new.svg"
@@ -30,31 +32,31 @@
 	"headerMenus": {
 		"pcb": [
 			{
-				"id": "SmoothTeardrop",
+				"id": "MeltPCB",
 				"title": "熔化PCB",
 				"menuItems": [
 					{
-						"id": "SmoothRoutingSelected",
+						"id": "SmoothSelected",
 						"title": "圆滑布线（选中）",
 						"registerFn": "smoothSelected"
 					},
 					{
-						"id": "SmoothRoutingAll",
+						"id": "SmoothAll",
 						"title": "圆滑布线（全部）",
 						"registerFn": "smoothAll"
 					},
 					{
-						"id": "WidthTransitionSelected",
+						"id": "WidthSelected",
 						"title": "过渡线宽（选中）",
 						"registerFn": "widthTransitionSelected"
 					},
 					{
-						"id": "WidthTransitionAll",
+						"id": "WidthAll",
 						"title": "过渡线宽（全部）",
 						"registerFn": "widthTransitionAll"
 					},
 					{
-						"id": "UndoSmooth",
+						"id": "Undo",
 						"title": "撤销 (Undo)",
 						"registerFn": "undoSmooth"
 					},

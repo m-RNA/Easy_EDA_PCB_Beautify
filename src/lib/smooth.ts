@@ -1,9 +1,31 @@
 import type { Point } from './math';
-import { debugLog } from './logger';
+import { debugLog, logError } from './logger';
 import { dist, getAngleBetween, lerp } from './math';
 import { getSettings } from './settings';
 import { createSnapshot, getSnapshots, restoreSnapshot } from './snapshot';
 import { addWidthTransitionsAll } from './widthTransition';
+
+/**
+ * 获取全局圆弧线宽 Map
+ * 因为 JLC EDA API 的 getState_LineWidth() 返回的值可能不正确
+ * 挂载到 eda 对象避免循环依赖问题
+ * Key 格式: ${pcbId}_${arcId} 以区分不同 PCB
+ */
+export function getArcLineWidthMap(): Map<string, number> {
+	if (!(eda as any)._arcLineWidthMap) {
+		(eda as any)._arcLineWidthMap = new Map<string, number>();
+	}
+	return (eda as any)._arcLineWidthMap;
+}
+
+/**
+ * 生成带 PCB ID 的 Map key
+ * @param pcbId PCB 文档 ID
+ * @param arcId 圆弧原语 ID
+ */
+export function makeArcWidthKey(pcbId: string, arcId: string): string {
+	return `${pcbId}_${arcId}`;
+}
 
 /**
  * 撤销上一次平滑操作 (通过恢复快照)
@@ -53,14 +75,6 @@ export async function undoLastOperation() {
  * @param scope 'selected' 只处理选中的导线, 'all' 处理所有导线
  */
 export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
-	// 创建自动快照
-	try {
-		await createSnapshot('Smooth Auto Backup');
-	}
-	catch (e) {
-		debugLog('[Smooth Error] Failed to create snapshot:', e);
-	}
-
 	const settings = await getSettings();
 	let tracks: any[] = [];
 
@@ -210,8 +224,8 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 	try {
 		await createSnapshot('Smooth Auto Backup');
 	}
-	catch (e) {
-		console.error('Failed to create snapshot', e);
+	catch (e: any) {
+		logError(`Failed to create snapshot: ${e.message || e}`);
 	}
 
 	try {
@@ -249,6 +263,12 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 				track: t,
 			}));
 
+			// 调试：打印线宽
+			if (settings.debug && segs.length > 0) {
+				const widths = segs.slice(0, 5).map(s => s.width);
+				debugLog(`[Smooth] 线段线宽样本: ${widths.join(', ')}`);
+			}
+
 			// 辅助函数：生成坐标键
 			// 使用 3 位小数精度，与 widthTransition 保持一致，避免浮点数误差导致断连
 			const pointKey = (p: { x: number; y: number }): string => `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
@@ -271,7 +291,6 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 			interface PathData {
 				points: Point[];
 				orderedSegs: typeof segs[0][];
-				width: number;
 			}
 			const paths: PathData[] = [];
 
@@ -343,7 +362,6 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 					paths.push({
 						points,
 						orderedSegs,
-						width: startSeg.width,
 					});
 				}
 			}
@@ -354,10 +372,10 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 
 			// 处理每条路径
 			for (const path of paths) {
-				const { points, orderedSegs, width } = path;
+				const { points, orderedSegs } = path;
 
 				if (settings.debug) {
-					debugLog(`[Smooth Debug] 路径包含 ${points.length} 个点`);
+					debugLog(`[Smooth Debug] 路径包含 ${points.length} 个点, ${orderedSegs.length} 条线段`);
 				}
 
 				if (points.length >= 3) {
@@ -367,19 +385,36 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 						radius = radius * 0.0254;
 					}
 
-					// 生成新的几何结构
+					// 生成新的几何结构 - 每个元素包含自己的线宽
 					const newPath: {
 						type: 'line' | 'arc';
 						start: Point;
 						end: Point;
 						angle?: number;
+						width: number;
 					}[] = [];
 					let currentStart = points[0];
+
+					// 调试：打印 orderedSegs 的线宽
+					if (settings.debug) {
+						const widths = orderedSegs.map(s => s.width);
+						debugLog(`[Smooth] orderedSegs 线宽: ${widths.join(', ')}`);
+					}
 
 					for (let i = 1; i < points.length - 1; i++) {
 						const pPrev = points[i - 1];
 						const pCorner = points[i];
 						const pNext = points[i + 1];
+
+						// 获取前一线段和后一线段的线宽
+						// orderedSegs[i-1] 是 点i-1 到 点i 的线段
+						// orderedSegs[i] 是 点i 到 点i+1 的线段
+						const prevSegWidth = orderedSegs[i - 1]?.width ?? orderedSegs[0].width;
+						const nextSegWidth = orderedSegs[i]?.width ?? prevSegWidth;
+
+						if (settings.debug) {
+							debugLog(`[Smooth] Corner ${i}: prevSegWidth=${prevSegWidth}, nextSegWidth=${nextSegWidth}`);
+						}
 
 						// 计算导线之间的角度
 						const v1 = {
@@ -420,7 +455,7 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 						}
 
 						if (settings.debug) {
-							debugLog(`[Smooth Debug] Corner ${i}: Pos(${pCorner.x.toFixed(3)},${pCorner.y.toFixed(3)}) Mag1=${mag1.toFixed(3)} Mag2=${mag2.toFixed(3)} Angle=${(angleRad * 180 / Math.PI).toFixed(1)}° Radius=${radius} d=${d.toFixed(3)} actualD=${actualD.toFixed(3)}`);
+							debugLog(`[Smooth Debug] Corner ${i}: Pos(${pCorner.x.toFixed(3)},${pCorner.y.toFixed(3)}) Mag1=${mag1.toFixed(3)} Mag2=${mag2.toFixed(3)} Angle=${(angleRad * 180 / Math.PI).toFixed(1)}° Radius=${radius} d=${d.toFixed(3)} actualD=${actualD.toFixed(3)} prevWidth=${prevSegWidth} nextWidth=${nextSegWidth}`);
 						}
 
 						// 只有当计算出的切线距离有效且足够大时，才生成圆弧
@@ -429,11 +464,12 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 							const pStart = lerp(pCorner, pPrev, actualD / mag1);
 							const pEnd = lerp(pCorner, pNext, actualD / mag2);
 
-							// 添加 [当前起点 -> 切点1] 的直线
+							// 添加 [当前起点 -> 切点1] 的直线，使用前一段的线宽
 							newPath.push({
 								type: 'line',
 								start: currentStart,
 								end: pStart,
+								width: prevSegWidth,
 							});
 
 							// 计算 Arc 角度
@@ -443,12 +479,17 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 								{ x: v2.x, y: v2.y },
 							);
 
-							// 添加圆弧
+							// 添加圆弧，使用后一段的线宽（与下一段线连接更自然）
+							const arcWidth = nextSegWidth;
+							if (settings.debug) {
+								debugLog(`[Smooth] Creating arc at corner ${i} with width=${arcWidth} (nextSegWidth=${nextSegWidth})`);
+							}
 							newPath.push({
 								type: 'arc',
 								start: pStart,
 								end: pEnd,
 								angle: sweptAngle,
+								width: arcWidth,
 							});
 
 							createdArcs++;
@@ -463,14 +504,19 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 								type: 'line',
 								start: currentStart,
 								end: pCorner,
+								width: prevSegWidth,
 							});
 							currentStart = pCorner;
 						}
 					}
+
+					// 最后一段直线，使用最后一个线段的线宽
+					const lastSegWidth = orderedSegs[orderedSegs.length - 1]?.width ?? orderedSegs[0].width;
 					newPath.push({
 						type: 'line',
 						start: currentStart,
 						end: points[points.length - 1],
+						width: lastSegWidth,
 					});
 
 					// 准备工作：计算所有需要删除的ID
@@ -489,7 +535,7 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 							startY: seg.p1.y,
 							endX: seg.p2.x,
 							endY: seg.p2.y,
-							lineWidth: width,
+							lineWidth: seg.width,
 						});
 
 						if (seg.track._isPolylineSegment) {
@@ -560,7 +606,7 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 							// 只有长度 > 0 才创建
 							if (dist(item.start, item.end) > 0.001) {
 								if (settings.debug) {
-									debugLog(`[Smooth Debug] 创建 Line: (${item.start.x},${item.start.y}) -> (${item.end.x},${item.end.y}) width=${width}`);
+									debugLog(`[Smooth Debug] 创建 Line: (${item.start.x},${item.start.y}) -> (${item.end.x},${item.end.y}) width=${item.width}`);
 								}
 								const res = await eda.pcb_PrimitiveLine.create(
 									net,
@@ -569,7 +615,7 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 									item.start.y,
 									item.end.x,
 									item.end.y,
-									width,
+									item.width,
 								);
 
 								// 尝试获取ID
@@ -594,7 +640,7 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 						else {
 							// Arc
 							if (settings.debug) {
-								debugLog(`[Smooth Debug] 创建 Arc: start=(${item.start.x.toFixed(3)},${item.start.y.toFixed(3)}) end=(${item.end.x.toFixed(3)},${item.end.y.toFixed(3)}) angle=${item.angle?.toFixed(1)} width=${width}`);
+								debugLog(`[Smooth Debug] 创建 Arc: start=(${item.start.x.toFixed(3)},${item.start.y.toFixed(3)}) end=(${item.end.x.toFixed(3)},${item.end.y.toFixed(3)}) angle=${item.angle?.toFixed(1)} width=${item.width}`);
 							}
 							const res = await eda.pcb_PrimitiveArc.create(
 								net,
@@ -604,7 +650,7 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 								item.end.x,
 								item.end.y,
 								item.angle!,
-								width,
+								item.width,
 							);
 
 							// 尝试获取ID
@@ -620,6 +666,22 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 
 							if (newId) {
 								allCreatedIds.push(newId);
+								// 保存圆弧的正确线宽到全局 Map（带 PCB ID 区分）
+								let pcbId = 'unknown';
+								try {
+									const boardInfo = await eda.dmt_Board.getCurrentBoardInfo();
+									if (boardInfo && boardInfo.pcb && boardInfo.pcb.uuid) {
+										pcbId = boardInfo.pcb.uuid;
+									}
+								}
+								catch {
+									// ignore
+								}
+								const mapKey = makeArcWidthKey(pcbId, newId);
+								getArcLineWidthMap().set(mapKey, item.width);
+								if (settings.debug) {
+									debugLog(`[Smooth] Saved arc lineWidth to map: key=${mapKey}, width=${item.width}, mapSize=${getArcLineWidthMap().size}`);
+								}
 							}
 							else if (settings.debug) {
 								debugLog(`[Smooth Debug] 警告: 无法获取新创建 Arc 的 ID, Undo 可能失效. Res: ${typeof res}`);

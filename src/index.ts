@@ -11,6 +11,7 @@
  * https://prodocs.lceda.cn/cn/api/guide/
  */
 
+import { logError, logInfo, logWarn } from './lib/logger';
 import { smoothRouting as smoothTask, undoLastOperation as undoTask } from './lib/smooth';
 import * as Snapshot from './lib/snapshot';
 import { addWidthTransitionsAll, addWidthTransitionsSelected } from './lib/widthTransition';
@@ -18,6 +19,59 @@ import { addWidthTransitionsAll, addWidthTransitionsSelected } from './lib/width
 export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 	// 将快照功能挂载到 eda 全局对象，供 settings.html 调用
 	(eda as any).jlc_eda_smooth_snapshot = Snapshot;
+
+	// 动态刷新顶部菜单，确保菜单正确显示
+	try {
+		if (eda.sys_HeaderMenu && typeof eda.sys_HeaderMenu.replaceHeaderMenus === 'function') {
+			eda.sys_HeaderMenu.replaceHeaderMenus({
+				pcb: [
+					{
+						id: 'MeltPCB',
+						title: eda.sys_I18n ? eda.sys_I18n.text('熔化PCB') : '熔化PCB',
+						menuItems: [
+							{
+								id: 'SmoothSelected',
+								title: eda.sys_I18n ? eda.sys_I18n.text('圆滑布线（选中）') : '圆滑布线（选中）',
+								registerFn: 'smoothSelected',
+							},
+							{
+								id: 'SmoothAll',
+								title: eda.sys_I18n ? eda.sys_I18n.text('圆滑布线（全部）') : '圆滑布线（全部）',
+								registerFn: 'smoothAll',
+							},
+							{
+								id: 'WidthSelected',
+								title: eda.sys_I18n ? eda.sys_I18n.text('过渡线宽（选中）') : '过渡线宽（选中）',
+								registerFn: 'widthTransitionSelected',
+							},
+							{
+								id: 'WidthAll',
+								title: eda.sys_I18n ? eda.sys_I18n.text('过渡线宽（全部）') : '过渡线宽（全部）',
+								registerFn: 'widthTransitionAll',
+							},
+							{
+								id: 'Undo',
+								title: eda.sys_I18n ? eda.sys_I18n.text('撤销 (Undo)') : '撤销 (Undo)',
+								registerFn: 'undoSmooth',
+							},
+							{
+								id: 'Settings',
+								title: eda.sys_I18n ? eda.sys_I18n.text('设置') : '设置',
+								registerFn: 'openSettings',
+							},
+						],
+					},
+				],
+			});
+			logInfo('[JLC-EDA-Smooth] Header menus registered successfully');
+		}
+		else {
+			logWarn('[JLC-EDA-Smooth] sys_HeaderMenu not available');
+		}
+	}
+	catch (e: any) {
+		logWarn(`[JLC-EDA-Smooth] Failed to register header menus dynamically: ${e.message || e}`);
+	}
 }
 
 /**
@@ -45,13 +99,7 @@ export async function smoothAll() {
 }
 
 function handleError(e: any) {
-	console.error('Smooth Routing Error:', e);
-	if (eda.sys_Log && typeof eda.sys_Log.add === 'function') {
-		eda.sys_Log.add(
-			e.message || 'Unknown error in smoothRouting',
-			'error' as any,
-		);
-	}
+	logError(`Smooth Routing Error: ${e.message || e}`);
 	if (
 		eda.sys_Dialog
 		&& typeof eda.sys_Dialog.showInformationMessage === 'function'
@@ -71,9 +119,7 @@ export async function undoSmooth() {
 		await undoTask();
 	}
 	catch (e: any) {
-		console.error('Undo Error:', e);
-		if (eda.sys_Log)
-			eda.sys_Log.add(e.message, 'error' as any);
+		logError(`Undo Error: ${e.message || e}`);
 	}
 }
 
@@ -85,13 +131,7 @@ export async function widthTransitionSelected() {
 		await addWidthTransitionsSelected();
 	}
 	catch (e: any) {
-		console.error('Width Transition Error:', e);
-		if (eda.sys_Log && typeof eda.sys_Log.add === 'function') {
-			eda.sys_Log.add(
-				e.message || 'Unknown error in widthTransition',
-				'error' as any,
-			);
-		}
+		logError(`Width Transition Error: ${e.message || e}`);
 		if (
 			eda.sys_Dialog
 			&& typeof eda.sys_Dialog.showInformationMessage === 'function'
@@ -113,13 +153,7 @@ export async function widthTransitionAll() {
 		eda.sys_Message?.showToastMessage(eda.sys_I18n ? eda.sys_I18n.text('线宽过渡完成') : '线宽过渡完成');
 	}
 	catch (e: any) {
-		console.error('Width Transition Error:', e);
-		if (eda.sys_Log && typeof eda.sys_Log.add === 'function') {
-			eda.sys_Log.add(
-				e.message || 'Unknown error in widthTransition',
-				'error' as any,
-			);
-		}
+		logError(`Width Transition Error: ${e.message || e}`);
 		if (
 			eda.sys_Dialog
 			&& typeof eda.sys_Dialog.showInformationMessage === 'function'
@@ -138,7 +172,7 @@ export async function widthTransitionAll() {
 export async function openSettings() {
 	// 使用内联框架打开设置窗口
 	// 窗口尺寸：宽度 540px，高度 600px
-	eda.sys_IFrame.openIFrame('/iframe/settings.html', 420, 480, 'settings');
+	eda.sys_IFrame.openIFrame('/iframe/settings.html', 540, 600, 'settings');
 }
 
 export function about(): void {

@@ -1,4 +1,5 @@
-import { debugLog } from './logger';
+import { debugLog, logError, logWarn } from './logger';
+import { getArcLineWidthMap, makeArcWidthKey } from './smooth';
 
 const SNAPSHOT_STORAGE_KEY = 'jlc_eda_smooth_snapshots';
 
@@ -18,11 +19,20 @@ export async function getSnapshots(): Promise<RoutingSnapshot[]> {
 	try {
 		const stored = await eda.sys_Storage.getExtensionUserConfig(SNAPSHOT_STORAGE_KEY);
 		if (stored) {
-			return JSON.parse(stored);
+			const snapshots = JSON.parse(stored);
+			debugLog(`[Snapshot] Loaded ${snapshots.length} snapshots from storage`);
+			// 打印前2个快照的基本信息
+			snapshots.slice(0, 2).forEach((s: any, i: number) => {
+				debugLog(`[Snapshot]   [${i}] id=${s.id}, name='${s.name}', lines=${s.lines?.length}, arcs=${s.arcs?.length}`);
+				if (s.arcs?.length > 0) {
+					debugLog(`[Snapshot]      First arc lineWidth: ${s.arcs[0].lineWidth}, arcAngle: ${s.arcs[0].arcAngle}`);
+				}
+			});
+			return snapshots;
 		}
 	}
-	catch (e) {
-		console.error('Failed to load snapshots', e);
+	catch (e: any) {
+		logError(`Failed to load snapshots: ${e.message || e}`);
 	}
 	return [];
 }
@@ -40,8 +50,8 @@ async function saveSnapshots(snapshots: RoutingSnapshot[]) {
 		}
 		await eda.sys_Storage.setExtensionUserConfig(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshots));
 	}
-	catch (e) {
-		console.error('Failed to save snapshots', e);
+	catch (e: any) {
+		logError(`Failed to save snapshots: ${e.message || e}`);
 		if (eda.sys_Message) {
 			eda.sys_Message.showToastMessage('快照保存失败，可能是数据过大');
 		}
@@ -55,6 +65,18 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 	try {
 		if (eda.sys_LoadingAndProgressBar) {
 			eda.sys_LoadingAndProgressBar.showLoading();
+		}
+
+		// 获取当前 PCB ID（用于区分多 PCB 工程）
+		let pcbId = 'unknown';
+		try {
+			const boardInfo = await eda.dmt_Board.getCurrentBoardInfo();
+			if (boardInfo && boardInfo.pcb && boardInfo.pcb.uuid) {
+				pcbId = boardInfo.pcb.uuid;
+			}
+		}
+		catch {
+			// ignore
 		}
 
 		// 获取所有导线、圆弧
@@ -80,29 +102,48 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 				};
 
 				if (type === 'line') {
+					const lineWidth = p.getState_LineWidth ? p.getState_LineWidth() : p.lineWidth;
+					debugLog(`[Snapshot] Extracting line: lineWidth=${lineWidth}`);
 					return {
 						...base,
 						startX: p.getState_StartX ? p.getState_StartX() : p.startX,
 						startY: p.getState_StartY ? p.getState_StartY() : p.startY,
 						endX: p.getState_EndX ? p.getState_EndX() : p.endX,
 						endY: p.getState_EndY ? p.getState_EndY() : p.endY,
-						lineWidth: p.getState_LineWidth ? p.getState_LineWidth() : p.lineWidth,
+						lineWidth,
 					};
 				}
 				else if (type === 'arc') {
-					// Arc API actually supports getState_StartX/Y/EndX/Y
+					// Arc API actually supports getState_StartX/Y/EndX/Y/ArcAngle
+					const arcAngle = p.getState_ArcAngle ? p.getState_ArcAngle() : p.arcAngle;
+					const arcId = p.getState_PrimitiveId ? p.getState_PrimitiveId() : p.primitiveId;
+
+					// 优先从全局 Map 获取线宽（因为 API 返回的值可能不正确）
+					// 使用 pcbId_arcId 作为 key 以区分不同 PCB
+					const arcWidthMap = getArcLineWidthMap();
+					const mapKey = makeArcWidthKey(pcbId, arcId);
+					let lineWidth = arcWidthMap.get(mapKey);
+
+					debugLog(`[Snapshot] Arc key=${mapKey}, mapSize=${arcWidthMap.size}, lineWidth from map=${lineWidth}`);
+
+					if (lineWidth === undefined) {
+						// Map 中没有，尝试从 API 获取
+						if (p.getState_LineWidth) {
+							lineWidth = p.getState_LineWidth();
+						}
+						else if (p.lineWidth !== undefined) {
+							lineWidth = p.lineWidth;
+						}
+					}
+
 					return {
 						...base,
 						startX: p.getState_StartX ? p.getState_StartX() : p.startX,
 						startY: p.getState_StartY ? p.getState_StartY() : p.startY,
 						endX: p.getState_EndX ? p.getState_EndX() : p.endX,
 						endY: p.getState_EndY ? p.getState_EndY() : p.endY,
-						centerX: p.getState_CenterX ? p.getState_CenterX() : p.centerX,
-						centerY: p.getState_CenterY ? p.getState_CenterY() : p.centerY,
-						radius: p.getState_Radius ? p.getState_Radius() : p.radius,
-						startAngle: p.getState_StartAngle ? p.getState_StartAngle() : p.startAngle,
-						sweepAngle: p.getState_SweepAngle ? p.getState_SweepAngle() : p.sweepAngle, // Use 'angle' for creation usually? check API
-						lineWidth: p.getState_LineWidth ? p.getState_LineWidth() : p.lineWidth,
+						arcAngle,
+						lineWidth: lineWidth ?? 0.254,
 					};
 				}
 				else if (type === 'via') {
@@ -137,7 +178,7 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 		return snapshot;
 	}
 	catch (e: any) {
-		console.error('[Snapshot] Create failed', e);
+		logError(`[Snapshot] Create failed: ${e.message || e}`);
 		if (eda.sys_Message)
 			eda.sys_Message.showToastMessage(`创建快照失败: ${e.message}`);
 		return null;
@@ -154,11 +195,23 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
  */
 export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 	try {
+		// 输出日志以便调试
+		debugLog(`[Snapshot] Restoring snapshot with id: ${snapshotId}`);
 		const snapshots = await getSnapshots();
+		debugLog(`[Snapshot] Found ${snapshots.length} snapshots, ids: ${snapshots.map(s => s.id).join(', ')}`);
+
 		const snapshot = snapshots.find(s => s.id === snapshotId);
 		if (!snapshot) {
+			logError(`[Snapshot] Snapshot not found with id: ${snapshotId}`);
 			eda.sys_Message?.showToastMessage('未找到指定快照');
 			return false;
+		}
+
+		debugLog(`[Snapshot] Found snapshot: name='${snapshot.name}', timestamp=${snapshot.timestamp}, lines=${snapshot.lines.length}, arcs=${snapshot.arcs.length}`);
+		// 打印前 3 个圆弧的线宽
+		if (snapshot.arcs.length > 0) {
+			const sample = snapshot.arcs.slice(0, 3).map(a => `lineWidth=${a.lineWidth}`).join(', ');
+			debugLog(`[Snapshot] Sample arc widths: ${sample}`);
 		}
 
 		if (eda.sys_LoadingAndProgressBar) {
@@ -196,6 +249,9 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 		// 恢复 Line
 		for (const line of snapshot.lines) {
 			try {
+				// 确保 lineWidth 有值
+				const lineWidth = line.lineWidth ?? 0.254;
+				debugLog(`[Snapshot] Restoring line: (${line.startX},${line.startY})->(${line.endX},${line.endY}), lineWidth=${lineWidth}`);
 				await eda.pcb_PrimitiveLine.create(
 					line.net,
 					line.layer,
@@ -203,42 +259,23 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 					line.startY,
 					line.endX,
 					line.endY,
-					line.lineWidth,
+					lineWidth,
 				);
 			}
-			catch (e) {
-				console.warn('Failed to restore line', e);
+			catch (e: any) {
+				logWarn(`Failed to restore line: ${e.message || e}`);
 			}
 		}
 
 		// 恢复 Arc
-		// eda.pcb_PrimitiveArc.create(net, layer, startX, startY, endX, endY, sweepAngle, lineWidth) ?
-		// 或者是 center, radius?
-		// 查看 create API 定义
-		// 基于 smooth.ts: eda.pcb_PrimitiveArc.create(net, layer, startX, startY, endX, endY, angle, width)
-		// 这里的创建方式是基于 "起点-终点-角度"，而不是 "圆心-半径"。
-		// 但是我们的快照保存了原始的 center/radius。
-		// 如果我们保存的是 API 返回的对象属性，我们应该确保存储了用于 *创建* 的属性。
-		// 实际上，getAll 返回的对象可能有 center/radius，但 create 需要 start/end/angle。
-		// 所以我们需要从 center/radius/startAngle/sweepAngle 计算 start/end。
-		// 或者 snapshot 存储 start/end/sweepAngle。
-		// 让 snapshot 存储逻辑更稳健：如果能获取 startX/startY/endX/endY 最好。
-		// 如果 getAll 的 arc 对象有 getState_StartX ... 那么就好办。
-		// 假设 Arc object 也有 StartX/Y EndX/Y。
-
-		// 假设我们之前保存了必要信息。如果是 center/radius 模式，则需转换。
-		// 让我们修正 createSnapshot 中的 arc 数据提取，尽量尝试获取 start/end。
-
+		// eda.pcb_PrimitiveArc.create(net, layer, startX, startY, endX, endY, arcAngle, lineWidth)
 		for (const arc of snapshot.arcs) {
 			try {
-				// 需要计算 endX/Y 如果没有存
-				// 但在 createSnapshot 修正前，这里假设 arc 有 start/end
-				// 如果 createSnapshot 保存了 startX/Y...
-				// 实际上 smooth.ts 中创建 arc 也是用的 start/end/angle.
-				// 现有的 Arc 对象应该支持 getState_StartX ...
-
-				// 如果 arc 存储了 start/end/angle 就可以直接创建
-				if (arc.startX !== undefined && arc.angle !== undefined) {
+				// Arc 需要 startX/Y, endX/Y, arcAngle
+				if (arc.startX !== undefined && arc.arcAngle !== undefined) {
+					// 确保 lineWidth 有值，如果没有则使用默认值 0.254 (10mil)
+					const lineWidth = arc.lineWidth ?? 0.254;
+					debugLog(`[Snapshot] Restoring arc: startX=${arc.startX}, startY=${arc.startY}, arcAngle=${arc.arcAngle}, lineWidth=${lineWidth}`);
 					await eda.pcb_PrimitiveArc.create(
 						arc.net,
 						arc.layer,
@@ -246,17 +283,16 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 						arc.startY,
 						arc.endX,
 						arc.endY,
-						arc.sweepAngle || arc.angle, // save logic might use sweepAngle
-						arc.lineWidth,
+						arc.arcAngle,
+						lineWidth,
 					);
 				}
 				else {
-					// 暂不支持 Center/Radius 恢复，或者需要计算
-					// 为简单起见，我们在 save 时确保获取 start/end
+					logWarn(`Cannot restore arc: missing required properties (startX/Y, endX/Y, or arcAngle)`);
 				}
 			}
-			catch (e) {
-				console.warn('Failed to restore arc', e);
+			catch (e: any) {
+				logWarn(`Failed to restore arc: ${e.message || e}`);
 			}
 		}
 
@@ -265,7 +301,7 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 		return true;
 	}
 	catch (e: any) {
-		console.error('[Snapshot] Restore failed', e);
+		logError(`[Snapshot] Restore failed: ${e.message || e}`);
 		if (eda.sys_Message)
 			eda.sys_Message.showToastMessage(`恢复快照失败: ${e.message}`);
 		return false;

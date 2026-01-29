@@ -1,601 +1,752 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>设置 - 圆滑布线 & 线宽过渡工具</title>
-	<style>
-		* {
-			margin: 0;
-			padding: 0;
-			box-sizing: border-box;
-		}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>设置 - 圆滑布线</title>
+    <style>
+        :root {
+            --primary: #4285f4;
+            --primary-hover: #3367d6;
+            --danger: #dc3545;
+            --text: #333;
+            --text-secondary: #666;
+            --text-hint: #999;
+            --border: #e0e0e0;
+            --bg: #f5f7fa;
+            --card-bg: #fff;
+            --input-bg: #f9f9f9;
+        }
 
-		body {
-			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
-			background: #f5f7fa;
-			color: #333;
-			line-height: 1.5;
-			padding: 16px;
-		}
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 13px;
+            color: var(--text);
+            background-color: var(--bg);
+            margin: 0;
+            padding: 16px;
+            overflow-x: hidden;
+        }
 
-		.container {
-			max-width: 420px;
-			margin: 0 auto;
-			background: white;
-			border-radius: 10px;
-			box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-			padding: 20px 24px;
-		}
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
 
-		.title {
-			font-size: 20px;
-			font-weight: 600;
-			color: #1a1a1a;
-			margin-bottom: 18px;
-			padding-bottom: 12px;
-			border-bottom: 1px solid #e8eaed;
-		}
+        .card-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 20px;
+            padding-left: 8px;
+            border-left: 3px solid var(--primary);
+            line-height: 1;
+            color: #202124;
+        }
 
-		.form-group {
-			margin-bottom: 18px;
-		}
+        .setting-item {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
 
-		.form-group label {
-			display: block;
-			margin-bottom: 6px;
-		}
+        .setting-item:last-child {
+            margin-bottom: 0;
+        }
 
-		.label-text {
-			display: inline;
-			font-size: 14px;
-			font-weight: 500;
-			color: #333;
-		}
+        .setting-info {
+            flex: 1;
+            padding-right: 24px;
+        }
 
-		.label-hint {
-			display: block;
-			font-size: 12px;
-			color: #666;
-			margin-top: 2px;
-		}
+        .setting-label {
+            display: block;
+            font-weight: 500;
+            font-size: 13px;
+            margin-bottom: 4px;
+            color: var(--text);
+        }
 
-		.input-group {
-			display: flex;
-			align-items: center;
-			gap: 8px;
-		}
+        .setting-desc {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
 
-		.input-group input[type="number"] {
-			flex: 1;
-			padding: 8px 12px;
-			border: 1px solid #ddd;
-			border-radius: 6px;
-			font-size: 14px;
-			transition: border-color 0.2s;
-		}
+        .setting-control {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+        }
 
-		.input-group input[type="number"]:focus {
-			outline: none;
-			border-color: #4285f4;
-		}
+        /* Input Groups */
+        .input-group {
+            display: flex;
+            align-items: center;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--input-bg);
+            overflow: hidden;
+            width: 140px;
+            transition: border-color 0.2s;
+        }
+        
+        .input-group:focus-within {
+            border-color: var(--primary);
+            background: #fff;
+        }
 
-		.unit-display {
-			padding: 8px 14px;
-			background: #f0f0f0;
-			border-radius: 6px;
-			font-size: 14px;
-			font-weight: 500;
-			color: #666;
-			min-width: 40px;
-			text-align: center;
-		}
+        .input-group input {
+            border: none;
+            padding: 8px 10px;
+            width: 100%;
+            outline: none;
+            background: transparent;
+            font-size: 13px;
+            color: var(--text);
+            text-align: right;
+        }
 
-		.radio-group {
-			display: flex;
-			gap: 16px;
-		}
+        .input-group .addon, .input-group select {
+            background: #eee;
+            border: none;
+            border-left: 1px solid var(--border);
+            padding: 0 10px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 32px;
+            outline: none;
+            font-weight: 500;
+        }
+        
+        .input-group select {
+            cursor: pointer;
+            padding-right: 4px;
+        }
 
-		.radio-label {
-			display: flex;
-			align-items: center;
-			cursor: pointer;
-			padding: 10px 16px;
-			border: 2px solid #e0e0e0;
-			border-radius: 6px;
-			transition: all 0.2s;
-		}
+        /* Toggle Switch */
+        .switch-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .switch-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
 
-		.radio-label:hover {
-			border-color: #4285f4;
-			background: #f8f9ff;
-		}
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
 
-		.radio-label input[type="radio"] {
-			margin-right: 8px;
-			cursor: pointer;
-		}
+        .switch input { 
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
 
-		.radio-label input[type="radio"]:checked + span {
-			color: #4285f4;
-			font-weight: 500;
-		}
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .3s;
+            border-radius: 24px;
+        }
 
-		.toggle-group {
-			display: inline-flex;
-			align-items: center;
-			margin-left: 12px;
-			vertical-align: middle;
-		}
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
 
-		.toggle-label {
-			display: flex;
-			align-items: center;
-			cursor: pointer;
-			gap: 12px;
-			width: 100%;
-		}
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
 
-		.toggle-label input[type="checkbox"] {
-			display: none;
-		}
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
 
-		.toggle-slider {
-			display: block;
-			flex-shrink: 0;
-			position: relative;
-			width: 44px;
-			height: 22px;
-			background: #ccc;
-			border-radius: 22px;
-			transition: background 0.3s;
-		}
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+            outline: none;
+        }
 
-		.toggle-slider::before {
-			content: '';
-			position: absolute;
-			width: 18px;
-			height: 18px;
-			border-radius: 50%;
-			background: white;
-			top: 2px;
-			left: 2px;
-			transition: transform 0.3s;
-		}
+        .btn-white {
+            background: #fff;
+            border-color: var(--border);
+            color: var(--text);
+        }
 
-		.toggle-label input[type="checkbox"]:checked + .toggle-slider {
-			background: #4285f4;
-		}
+        .btn-white:hover {
+            background: #f8f8f8;
+            border-color: #ccc;
+        }
 
-		.toggle-label input[type="checkbox"]:checked + .toggle-slider::before {
-			transform: translateX(22px);
-		}
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
 
-		.toggle-text {
-			display: none;
-		}
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
 
-		.toggle-label input[type="checkbox"]:checked ~ .toggle-text {
-			color: #4285f4;
-			font-weight: 500;
-		}
+        .btn-danger {
+            background: #fff;
+            color: var(--danger);
+            border-color: #ffdce0;
+        }
 
-		.button-group {
-			display: flex;
-			gap: 12px;
-			margin-top: 20px;
-			padding-top: 16px;
-			border-top: 1px solid #e8eaed;
-		}
+        .btn-danger:hover {
+            background: #fff5f5;
+            border-color: var(--danger);
+        }
 
-		.btn {
-			padding: 10px 20px;
-			border: none;
-			border-radius: 6px;
-			font-size: 14px;
-			font-weight: 500;
-			cursor: pointer;
-			transition: all 0.2s;
-		}
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+        }
+        
+        .btn-ghost:hover {
+            background: rgba(0,0,0,0.05);
+            color: var(--text);
+        }
 
-		.btn-primary {
-			background: #4285f4;
-			color: white;
-		}
+        /* Snapshot specific */
+        .snapshot-container {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            min-height: 100px;
+            max-height: 180px;
+            overflow-y: auto;
+            background: #fafafa;
+            margin-top: 12px;
+        }
 
-		.btn-primary:hover {
-			background: #3367d6;
-		}
+        .snapshot-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100px;
+            color: var(--text-hint);
+            font-size: 12px;
+        }
 
-		.btn-primary:active {
-			background: #2851a3;
-		}
+        .snapshot-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+            transition: background 0.2s;
+        }
+        
+        .snapshot-item:hover {
+            background: #f0f7ff;
+        }
+        
+        .snapshot-item:last-child {
+            border-bottom: none;
+        }
 
-		.btn-secondary {
-			background: #f0f0f0;
-			color: #666;
-		}
+        .snapshot-meta {
+            font-weight: 500;
+            font-size: 13px;
+            margin-bottom: 2px;
+            color: var(--text);
+        }
+        
+        .snapshot-details {
+            color: var(--text-secondary);
+            font-size: 11px;
+        }
 
-		.btn-secondary:hover {
-			background: #e0e0e0;
-		}
+        .footer-status {
+            margin-top: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
 
-		.btn-secondary:active {
-			background: #d0d0d0;
-		}
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #28a745;
+            font-weight: 500;
+        }
 
-		@media (max-width: 600px) {
-			.container {
-				padding: 20px;
-			}
-			.radio-group {
-				flex-direction: column;
-			}
-			.button-group {
-				flex-direction: column-reverse;
-			}
-		}
-	</style>
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #323232;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 13px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+            pointer-events: none;
+            z-index: 1000;
+            transform: translate(-50%, 10px);
+        }
+        
+        .toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+    </style>
 </head>
 <body>
-	<div class="container">
-		<h1 class="title" data-i18n="设置">设置</h1>
-		
-		<form id="settingsForm">
-			<div class="form-group">
-				<label for="cornerRadius">
-					<span class="label-text" data-i18n="最大圆角半径">最大圆角半径</span>
-					<span class="label-hint" data-i18n="控制圆弧过渡的最大半径大小">控制圆弧过渡的最大半径大小</span>
-				</label>
-				<div class="input-group">
-					<input 
-						type="number" 
-						id="cornerRadius" 
-						name="cornerRadius" 
-						min="0.1" 
-						step="0.1"
-						value="1000"
-						required
-					>
-					<select id="unitSelect" style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px; background: #f8f8f8; cursor: pointer;">
-						<option value="mil">mil</option>
-						<option value="mm">mm</option>
-					</select>
-				</div>
-			</div>
 
-			<div class="form-group">
-				<div>
-					<span class="label-text" data-i18n="自动线宽过渡">自动线宽过渡</span>
-					<div class="toggle-group">
-						<label class="toggle-label">
-							<input type="checkbox" name="syncWidthTransition" id="syncWidthTransition">
-							<span class="toggle-slider"></span>
-							<span class="toggle-text" data-i18n="启用">启用</span>
-						</label>
-					</div>
-				</div>
-				<span class="label-hint" data-i18n="圆滑布线时是否自动处理不同线宽的过渡">圆滑布线时是否自动处理不同线宽的过渡</span>
-			</div>
+    <!-- General Settings -->
+    <div class="card">
+        <div class="card-title" data-i18n="通用设置">通用设置</div>
 
-				<div class="form-group">
-				<label for="widthTransitionSegments">
-					<span class="label-text" data-i18n="最大过渡段数">最大过渡段数</span>
-					<span class="label-hint" data-i18n="线宽过渡的最大分段数，防止段数过多导致卡顿">线宽过渡的最大分段数，防止段数过多导致卡顿</span>
-				</label>
-				<div class="input-group">
-					<input 
-						type="number" 
-						id="widthTransitionSegments" 
-						name="widthTransitionSegments" 
-						min="5" 
-						max="100"
-						step="1"
-						value="30"
-						required
-					>
-					<span class="unit-display" data-i18n="段">段</span>
-				</div>
-			</div>
+        <!-- Radius -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="最大圆角半径">最大圆角半径</div>
+                <div class="setting-desc" data-i18n="控制圆弧过渡的最大半径大小">控制圆弧过渡的最大半径大小</div>
+            </div>
+            <div class="setting-control">
+                <div class="input-group">
+                    <input type="number" id="cornerRadius" min="0.1" step="0.1" value="1000">
+                    <select id="unitSelect">
+                        <option value="mil">mil</option>
+                        <option value="mm">mm</option>
+                    </select>
+                </div>
+            </div>
+        </div>
 
-			<div class="form-group">
-				<label for="widthTransitionRatio">
-					<span class="label-text" data-i18n="过渡长度比例">过渡长度比例</span>
-					<span class="label-hint" data-i18n="过渡区长度与线宽差值的比率，默认1.5">过渡区长度与线宽差值的比率，默认1.5</span>
-				</label>
-				<div class="input-group">
-					<input 
-						type="number" 
-						id="widthTransitionRatio" 
-						name="widthTransitionRatio" 
-						min="0.5" 
-						max="10.0"
-						step="0.1"
-						value="1.5"
-						required
-					>
-					<span class="unit-display">X</span>
-				</div>
-			</div>
+        <!-- Sync Width -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="自动线宽过渡">自动线宽过渡</div>
+                <div class="setting-desc" data-i18n="圆滑时处理不同线宽">圆滑布线时是否自动处理不同线宽的过渡</div>
+            </div>
+            <div class="setting-control">
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="syncWidthTransition">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="switch-label" id="syncWidthLabel" data-i18n="启用">启用</span>
+                </div>
+            </div>
+        </div>
 
-			<div class="form-group">
-				<div>
-					<span class="label-text" data-i18n="调试模式">调试模式</span>
-					<div class="toggle-group">
-						<label class="toggle-label">
-							<input type="checkbox" name="debug" id="debug">
-							<span class="toggle-slider"></span>
-							<span class="toggle-text" data-i18n="启用">启用</span>
-						</label>
-					</div>
-				</div>
-				<span class="label-hint" data-i18n="在控制台打印详细日志">在控制台打印详细日志</span>
-			</div>
+        <!-- Segments -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="最大过渡段数">最大过渡段数</div>
+                <div class="setting-desc" data-i18n="防止段数过多导致卡顿">线宽过渡的最大分段数，防止段数过多导致卡顿</div>
+            </div>
+            <div class="setting-control">
+                <div class="input-group">
+                    <input type="number" id="widthTransitionSegments" min="5" max="100" value="30">
+                    <span class="addon" data-i18n="段">段</span>
+                </div>
+            </div>
+        </div>
 
-			<div class="form-group" style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 20px;">
-				<label>
-					<span class="label-text" data-i18n="布线状态管理">布线状态管理</span>
-					<span class="label-hint" data-i18n="记录当前的布线状态，随时恢复">记录当前的布线状态，随时恢复</span>
-				</label>
-				<button type="button" class="btn btn-primary" id="createSnapshotBtn" style="width: 100%; margin-bottom: 10px;" data-i18n="记录当前布线状态">记录当前布线状态</button>
-				
-				<div id="snapshotList" style="max-height: 150px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; padding: 5px;">
-					<div style="text-align: center; color: #999; padding: 10px;" data-i18n="暂无快照">暂无快照</div>
-				</div>
-			</div>
+        <!-- Ratio -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="过渡长度最大比例">过渡长度最大比例</div>
+                <div class="setting-desc" data-i18n="过渡区长度比率">过渡区长度与线宽差值的最大比率，实际长度不超过窄端线长</div>
+            </div>
+            <div class="setting-control">
+                <div class="input-group">
+                    <input type="number" id="widthTransitionRatio" min="0.5" max="10" step="0.1" value="1.5">
+                    <span class="addon">X</span>
+                </div>
+            </div>
+        </div>
+    </div>
 
-			<div class="button-group" style="justify-content: space-between;">
-				<div style="font-size: 12px; color: #666; display: flex; align-items: center;">
-					<span id="saveStatus" data-i18n="设置即时生效">✅ 设置即时生效</span>
-				</div>
-				<button type="button" class="btn btn-secondary" id="cancelBtn" data-i18n="关闭">关闭</button>
-			</div>
-		</form>
-	</div>
+    <!-- Advanced -->
+    <div class="card">
+        <div class="card-title" data-i18n="高级设置">高级设置</div>
 
-	<script>
-		/* global eda */
+        <!-- Debug -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="调试模式">调试模式</div>
+                <div class="setting-desc" data-i18n="启用调试日志">在控制台打印详细日志</div>
+            </div>
+            <div class="setting-control">
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="debug">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="switch-label" id="debugLabel" data-i18n="启用">启用</span>
+                </div>
+            </div>
+        </div>
 
-		// 翻译函数
-		function translatePage() {
-			if (typeof eda === 'undefined' || typeof eda.sys_I18n === 'undefined') return;
+        <!-- Snapshot -->
+        <div style="margin-top: 24px;">
+            <div class="setting-item" style="border-top: 1px solid var(--border); padding-top: 20px; margin-bottom: 12px;">
+                <div class="setting-info">
+                    <div class="setting-label">
+                        <span data-i18n="布线状态管理">布线状态管理</span>
+                        <span id="snapshotCount" style="font-weight: normal; color: var(--text-hint); font-size: 12px; margin-left: 4px;"></span>
+                    </div>
+                    <div class="setting-desc" data-i18n="记录当前的布线状态，随时恢复">记录当前的布线状态，随时恢复</div>
+                </div>
+                <div class="setting-control" style="gap: 10px;">
+                    <button type="button" class="btn btn-primary" id="createSnapshotBtn" data-i18n="记录当前布线状态">记录当前布线状态</button>
+                    <button type="button" class="btn btn-danger" id="clearSnapshotsBtn" data-i18n="清除快照">清除快照</button>
+                </div>
+            </div>
 
-			// 翻译所有带 data-i18n 属性的元素
-			const elements = document.querySelectorAll('[data-i18n]');
-			elements.forEach(el => {
-				const key = el.getAttribute('data-i18n');
-				if (key) {
-					const text = eda.sys_I18n.text(key);
-					if (text && text !== key) {
-						el.textContent = text;
-					}
-				}
-			});
+            <div id="snapshotList" class="snapshot-container">
+                <div class="snapshot-placeholder" data-i18n="暂无快照">暂无快照</div>
+            </div>
+        </div>
+    </div>
 
-			// 翻译 title
-			document.title = eda.sys_I18n.text('设置') + ' - ' + eda.sys_I18n.text('圆滑布线 & 线宽过渡工具');
-		}
+    <div class="footer-status">
+        <div class="status-badge" id="saveStatus">
+            <span style="font-size: 14px;"></span> 
+            <span data-i18n="设置即时生效">设置即时生效</span>
+        </div>
+        <button type="button" class="btn btn-white" id="closeBtn" onclick="tryClose()" data-i18n="关闭">关闭</button>
+    </div>
+    
+    <div id="toast" class="toast">Settings Saved</div>
 
-		// 检查 eda 对象是否可用
-		if (typeof eda === 'undefined') {
-			console.error('EDA API 不可用！请确保在嘉立创EDA扩展环境中运行。');
-			document.body.innerHTML = '<div style="padding: 20px; color: red;">错误: EDA API 不可用</div>';
-		}
+    <script>
+        /* global eda */
+        
+        // Helper to find the API object
+        function getEda() {
+            if (typeof eda !== 'undefined') return eda;
+            if (window.parent && typeof window.parent.eda !== 'undefined') return window.parent.eda;
+            if (window.top && typeof window.top.eda !== 'undefined') return window.top.eda;
+            return null;
+        }
+        
+        const API = getEda();
 
-		// 获取表单元素
-		const form = document.getElementById('settingsForm');
-		const cornerRadiusInput = document.getElementById('cornerRadius');
-		const unitSelect = document.getElementById('unitSelect');
-		const syncWidthTransitionCheckbox = document.getElementById('syncWidthTransition');
-		const widthTransitionSegmentsInput = document.getElementById('widthTransitionSegments');
-		const widthTransitionRatioInput = document.getElementById('widthTransitionRatio');
-		const debugCheckbox = document.getElementById('debug');
-		const cancelBtn = document.getElementById('cancelBtn');
+        if (!API) {
+            console.error('JLC EDA API not found!');
+            // Show visible error
+            const errDiv = document.createElement('div');
+            errDiv.style.cssText = 'position:fixed;top:0;left:0;right:0;padding:10px;background:#ffebee;color:#c62828;text-align:center;z-index:9999;border-bottom:1px solid #ef9a9a;';
+            errDiv.textContent = 'Error: Cannot connect to JLC EDA API. Please try reloading the extension.';
+            document.body.prepend(errDiv);
+        }
 
-		let currentUnitState = 'mil';
+        function tryClose() {
+             const api = API || getEda();
+             if (api && api.sys_IFrame && api.sys_IFrame.closeIFrame) {
+                 api.sys_IFrame.closeIFrame('settings');
+             } else {
+                 console.log('Close requested (API missing)');
+             }
+        }
 
-		// 加载当前设置
-		async function loadSettings() {
-			try {
-				// 检查 eda API 是否可用
-				if (typeof eda === 'undefined' || !eda.sys_Storage) {
-					throw new Error('EDA Storage API 不可用');
-				}
-				// 从 EDA API 获取设置
-				const settings = await eda.sys_Storage.getExtensionAllUserConfigs();
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => { toast.classList.remove('show'); }, 1500);
+        }
 
-				// 设置默认值
-				const config = {
-					cornerRadius: 1000,
-					unit: 'mil',
-					syncWidthTransition: true,
-					widthTransitionSegments: 10,
-					widthTransitionRatio: 1.5,
-					debug: false,
-					...settings,
-				};
+        function translatePage() {
+            const api = API || getEda();
+            if (!api || typeof api.sys_I18n === 'undefined') return;
+            
+            const elements = document.querySelectorAll('[data-i18n]');
+            elements.forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (key) {
+                    const text = api.sys_I18n.text(key);
+                    if (text && text !== key) {
+                        if (el.tagName === 'INPUT' && el.type === 'placeholder') {
+                            el.placeholder = text;
+                        } else {
+                            // Don't overwrite if it has children like the switch slider, unless it's just text
+                            if (el.children.length === 0) {
+                                el.textContent = text;
+                            }
+                        }
+                    }
+                }
+            });
+            document.title = api.sys_I18n.text('设置');
+        }
 
-				// 填充表单
-				cornerRadiusInput.value = config.cornerRadius;
-				unitSelect.value = config.unit;
-				currentUnitState = config.unit;
+        // Elements
+        const elCornerRadius = document.getElementById('cornerRadius');
+        const elUnitSelect = document.getElementById('unitSelect');
+        const elSyncWidth = document.getElementById('syncWidthTransition');
+        const elSegments = document.getElementById('widthTransitionSegments');
+        const elRatio = document.getElementById('widthTransitionRatio');
+        const elDebug = document.getElementById('debug');
+        
+        // I18n labels update
+        const elSyncWidthLabel = document.getElementById('syncWidthLabel');
+        const elDebugLabel = document.getElementById('debugLabel');
 
-				// 设置开关和输入
-				syncWidthTransitionCheckbox.checked = config.syncWidthTransition;
-				widthTransitionSegmentsInput.value = config.widthTransitionSegments;
-				widthTransitionRatioInput.value = config.widthTransitionRatio;
-				debugCheckbox.checked = config.debug;
-			}
-			catch (error) {
-				console.error('加载设置失败:', error);
-			}
-		}
+        let currentUnitState = 'mil';
 
-		// 单位变化时更新显示并换算数值
-		unitSelect.addEventListener('change', (e) => {
-			const newUnit = e.target.value;
-			const oldUnit = currentUnitState;
-			const currentValue = Number.parseFloat(cornerRadiusInput.value);
+        function updateSwitchLabels() {
+            const api = API || getEda();
+            const enabledText = (api && api.sys_I18n) ? api.sys_I18n.text('启用') : '启用';
+            const disabledText = (api && api.sys_I18n) ? api.sys_I18n.text('禁用') : '禁用';
+            
+            elSyncWidthLabel.textContent = elSyncWidth.checked ? enabledText : disabledText;
+            elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
+            
+            // Visual feedback color for label
+            elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
+        }
 
-			// 单位换算：1mm = 39.3701 mil
-			let newValue = currentValue;
-			if (oldUnit === 'mm' && newUnit === 'mil') {
-				// mm 转 mil
-				newValue = currentValue * 39.3701;
-			}
-			else if (oldUnit === 'mil' && newUnit === 'mm') {
-				// mil 转 mm
-				newValue = currentValue / 39.3701;
-			}
+        // Load
+        async function loadSettings() {
+            const api = API || getEda();
+            if (!api) return;
+            try {
+                const settings = await api.sys_Storage.getExtensionAllUserConfigs();
+                const config = {
+                    cornerRadius: 1000,
+                    unit: 'mil',
+                    syncWidthTransition: true,
+                    widthTransitionSegments: 30,
+                    widthTransitionRatio: 1.5,
+                    debug: false,
+                    ...settings,
+                };
 
-			// 更新显示
-			cornerRadiusInput.value = newValue.toFixed(2);
-			currentUnitState = newUnit;
+                elCornerRadius.value = config.cornerRadius;
+                elUnitSelect.value = config.unit;
+                currentUnitState = config.unit;
+                elSyncWidth.checked = config.syncWidthTransition;
+                elSegments.value = config.widthTransitionSegments;
+                elRatio.value = config.widthTransitionRatio;
+                elDebug.checked = config.debug;
+                
+                updateSwitchLabels();
 
-			// 触发保存
-			saveSettings();
-		});
+            } catch (e) {
+                console.error(e);
+            }
+        }
 
-		// 自动保存设置
-		async function saveSettings() {
-			// 构建设置对象
-			const settings = {
-				cornerRadius: Number.parseFloat(cornerRadiusInput.value),
-				unit: unitSelect.value,
-				syncWidthTransition: syncWidthTransitionCheckbox.checked,
-				widthTransitionSegments: Number.parseInt(widthTransitionSegmentsInput.value),
-				widthTransitionRatio: Number.parseFloat(widthTransitionRatioInput.value),
-				debug: debugCheckbox.checked,
-				replaceOriginal: true,
-				smoothRatio: 0.2,
-				iterations: 1,
-			};
+        // Save
+        async function saveSettings(silent = false) {
+            const api = API || getEda();
+            if (!api) return;
+            
+            // Validate numbers
+            let radius = parseFloat(elCornerRadius.value);
+            if (isNaN(radius)) radius = 1000;
+            
+            let segments = parseInt(elSegments.value);
+            if (isNaN(segments) || segments < 1) segments = 30;
+            
+            let ratio = parseFloat(elRatio.value);
+            if (isNaN(ratio)) ratio = 1.5;
 
-			try {
-				const statusEl = document.getElementById('saveStatus');
-				if (statusEl) statusEl.textContent = '💾 ' + (typeof eda !== 'undefined' && eda.sys_I18n ? eda.sys_I18n.text('保存中...') : '保存中...');
+            const settings = {
+                cornerRadius: radius,
+                unit: elUnitSelect.value,
+                syncWidthTransition: elSyncWidth.checked,
+                widthTransitionSegments: segments,
+                widthTransitionRatio: ratio,
+                debug: elDebug.checked,
+                replaceOriginal: true
+            };
+            
+            try {
+                await api.sys_Storage.setExtensionAllUserConfigs(settings);
+                updateSwitchLabels();
+                
+                if (!silent) {
+                    const msg = api.sys_I18n ? api.sys_I18n.text('已保存') : 'Saved';
+                    showToast(msg);
+                }
+            } catch (e) {
+                console.error('Save failed:', e);
+            }
+        }
 
-				// 检查 eda API 是否可用
-				if (typeof eda !== 'undefined' && eda.sys_Storage) {
-					await eda.sys_Storage.setExtensionAllUserConfigs(settings);
-					console.log('设置已自动保存:', settings);
-				}
-				
-				if (statusEl) {
-					statusEl.textContent = '✅ ' + (typeof eda !== 'undefined' && eda.sys_I18n ? eda.sys_I18n.text('已保存') : '已保存');
-					setTimeout(() => { 
-						statusEl.textContent = '✅ ' + (typeof eda !== 'undefined' && eda.sys_I18n ? eda.sys_I18n.text('设置即时生效') : '设置即时生效'); 
-					}, 2000);
-				}
-			}
-			catch (error) {
-				console.error('保存失败:', error);
-				const statusEl = document.getElementById('saveStatus');
-				if (statusEl) statusEl.textContent = '❌ ' + (typeof eda !== 'undefined' && eda.sys_I18n ? eda.sys_I18n.text('保存失败') : '保存失败');
-			}
-		}
+        // Bind Events
+        [elCornerRadius, elSegments, elRatio].forEach(el => {
+            el.addEventListener('change', () => saveSettings());
+            // Debounce blur to prevent double save with change
+            el.addEventListener('blur', (e) => {
+               // Only save if value changed or just to be safe
+               saveSettings(); 
+            });
+        });
+        
+        [elSyncWidth, elDebug].forEach(el => {
+            el.addEventListener('change', () => saveSettings());
+        });
 
-		// 绑定事件实现自动保存
-		cornerRadiusInput.addEventListener('change', saveSettings); 
-		cornerRadiusInput.addEventListener('blur', saveSettings);
-		syncWidthTransitionCheckbox.addEventListener('change', saveSettings);
-		widthTransitionSegmentsInput.addEventListener('change', saveSettings);
-		widthTransitionSegmentsInput.addEventListener('blur', saveSettings);
-		widthTransitionRatioInput.addEventListener('change', saveSettings);
-		widthTransitionRatioInput.addEventListener('blur', saveSettings);
-		debugCheckbox.addEventListener('change', saveSettings);
+        // Unit Conversion Logic
+        elUnitSelect.addEventListener('change', (e) => {
+            const newUnit = e.target.value;
+            const val = parseFloat(elCornerRadius.value);
+            let newVal = val;
+            if (currentUnitState === 'mm' && newUnit === 'mil') newVal = val * 39.3701;
+            else if (currentUnitState === 'mil' && newUnit === 'mm') newVal = val / 39.3701;
+            
+            elCornerRadius.value = newVal.toFixed(2);
+            currentUnitState = newUnit;
+            saveSettings();
+        });
 
-		// 取消按钮
-		cancelBtn.addEventListener('click', () => {
-			if (eda.sys_IFrame && typeof eda.sys_IFrame.closeIFrame === 'function') {
-				eda.sys_IFrame.closeIFrame('settings');
-			}
-		});
+        // Snapshots
+        const snapshotList = document.getElementById('snapshotList');
+        
+        async function refreshSnapshots() {
+            const api = API || getEda();
+            if (!api || !api.jlc_eda_smooth_snapshot) return;
+            try {
+                const snapshots = await api.jlc_eda_smooth_snapshot.getSnapshots();
+                
+                // Update Count safely
+                const countEl = document.getElementById('snapshotCount');
+                if (countEl) countEl.textContent = '(' + snapshots.length + ')';
+                
+                snapshotList.innerHTML = '';
+                if (snapshots.length === 0) {
+                    const emptyText = api.sys_I18n ? api.sys_I18n.text('暂无快照') : '暂无快照';
+                    snapshotList.innerHTML = '<div class="snapshot-placeholder">' + emptyText + '</div>';
+                    return;
+                }
 
-		// --- 快照管理逻辑 ---
-		const createSnapshotBtn = document.getElementById('createSnapshotBtn');
-		const snapshotList = document.getElementById('snapshotList');
+                [...snapshots].reverse().forEach(snap => {
+                    const div = document.createElement('div');
+                    div.className = 'snapshot-item';
+                    
+                    const timeStr = new Date(snap.timestamp).toLocaleTimeString();
+                    let nameStr = snap.name;
+                    if (!nameStr) {
+                         nameStr = api.sys_I18n ? api.sys_I18n.text('自动快照') : 'Automatic Snapshot';
+                    } else if (api.sys_I18n && (nameStr === '手动快照' || nameStr === 'Manual Snapshot')) {
+                         nameStr = api.sys_I18n.text(nameStr);
+                    }
+                    
+                    const recoverText = api.sys_I18n ? api.sys_I18n.text('恢复') : 'Recover';
+                    const linesText = snap.lines ? snap.lines.length + ' Lines' : '';
+                    
+                    div.innerHTML = '<div><div class="snapshot-meta">' + nameStr + '</div><div class="snapshot-details">' + timeStr + ' · ' + linesText + '</div></div><button type="button" class="btn btn-white" style="padding:4px 10px;font-size:12px;">' + recoverText + '</button>';
+                    
+                    // Attach click
+                    div.querySelector('button').onclick = async () => {
+                        const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要恢复到此状态吗？') : 'Confirm restore?';
+                        if (confirm(confirmText)) {
+                            try {
+                                const result = await api.jlc_eda_smooth_snapshot.restoreSnapshot(snap.id);
+                                if (result) {
+                                    const restoredText = api.sys_I18n ? api.sys_I18n.text('已恢复') : 'Restored';
+                                    showToast(restoredText);
+                                } else {
+                                    alert('Restore returned false');
+                                }
+                            } catch(err) {
+                                alert('Restore failed: ' + err);
+                            }
+                        }
+                    };
+                    
+                    snapshotList.appendChild(div);
+                });
+            } catch (e) {
+                console.error('Snapshot refresh error:', e);
+                snapshotList.innerHTML = '<div style="padding:10px;color:red">Error loading snapshots</div>';
+            }
+        }
 
-		function formatTime(timestamp) {
-			const date = new Date(timestamp);
-			return date.toLocaleTimeString();
-		}
+        document.getElementById('createSnapshotBtn').onclick = async () => {
+            const api = API || getEda();
+            if (!api || !api.jlc_eda_smooth_snapshot) {
+                alert('API not ready (jlc_eda_smooth_snapshot missing)');
+                return;
+            }
+            try {
+                const name = api.sys_I18n ? api.sys_I18n.text('手动快照') : 'Manual Snapshot';
+                await api.jlc_eda_smooth_snapshot.createSnapshot(name);
+                await refreshSnapshots();
+                showToast(api.sys_I18n ? api.sys_I18n.text('快照已创建') : 'Snapshot Created');
+            } catch (e) {
+                console.error('Create Snapshot Error:', e);
+                alert('Create Snapshot Error: ' + e);
+            }
+        };
 
-		async function refreshSnapshotList() {
-			if (typeof eda === 'undefined' || !eda.jlc_eda_smooth_snapshot) return;
-			
-			const snapshots = await eda.jlc_eda_smooth_snapshot.getSnapshots();
-			snapshotList.innerHTML = '';
+        document.getElementById('clearSnapshotsBtn').onclick = async () => {
+            const api = API || getEda();
+            if (!api || !api.jlc_eda_smooth_snapshot) return;
+            const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要清除所有快照吗？') : 'Clear all snapshots?';
+            if (confirm(confirmText)) {
+                await api.jlc_eda_smooth_snapshot.clearSnapshots();
+                await refreshSnapshots();
+                showToast(api.sys_I18n ? api.sys_I18n.text('已清除') : 'Cleared');
+            }
+        };
 
-			if (snapshots.length === 0) {
-				snapshotList.innerHTML = '<div style="text-align: center; color: #999; padding: 10px;" data-i18n="暂无快照">暂无快照</div>';
-				translatePage(); // 重新翻译动态插入的内容
-				return;
-			}
+        // Init
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
 
-			// 倒序显示（最新的在上面）
-			[...snapshots].reverse().forEach(snap => {
-				const item = document.createElement('div');
-				item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid #f0f0f0;';
-				if(snap === snapshots[snapshots.length-1]) item.style.borderBottom = 'none';
-
-				const infoText = document.createElement('div');
-				infoText.innerHTML = `
-					<div style="font-weight: 500; font-size: 13px;">${snap.name || (eda.sys_I18n ? eda.sys_I18n.text('手动快照') : '手动快照')}</div>
-					<div style="font-size: 11px; color: #888;">${formatTime(snap.timestamp)} - ${snap.lines.length} Lines, ${snap.arcs.length} Arcs</div>
-				`;
-
-				const restoreBtn = document.createElement('button');
-				restoreBtn.className = 'btn btn-secondary';
-				restoreBtn.style.padding = '4px 8px';
-				restoreBtn.style.fontSize = '12px';
-				restoreBtn.textContent = eda.sys_I18n ? eda.sys_I18n.text('恢复') : '恢复';
-				restoreBtn.onclick = async () => {
-					if (confirm(eda.sys_I18n ? eda.sys_I18n.text('确定要恢复到此状态吗？当前未保存的更改将丢失。') : '确定要恢复到此状态吗？当前未保存的更改将丢失。')) {
-						try {
-							await eda.jlc_eda_smooth_snapshot.restoreSnapshot(snap.id);
-							alert(eda.sys_I18n ? eda.sys_I18n.text('已恢复') : '已恢复');
-						} catch (e) {
-							console.error(e);
-							alert((eda.sys_I18n ? eda.sys_I18n.text('恢复失败') : '恢复失败') + ': ' + e.message);
-						}
-					}
-				};
-
-				item.appendChild(infoText);
-				item.appendChild(restoreBtn);
-				snapshotList.appendChild(item);
-			});
-		}
-
-		createSnapshotBtn.addEventListener('click', async () => {
-			console.log('[Snapshot UI] Button clicked');
-			if (typeof eda === 'undefined') {
-				console.error('[Snapshot UI] eda is undefined');
-				alert('EDA API not available');
-				return;
-			}
-			if (!eda.jlc_eda_smooth_snapshot) {
-				console.error('[Snapshot UI] eda.jlc_eda_smooth_snapshot is undefined');
-				alert('Snapshot API not available. Please reload the extension.');
-				return;
-			}
-			try {
-				console.log('[Snapshot UI] Creating snapshot...');
-				const result = await eda.jlc_eda_smooth_snapshot.createSnapshot(eda.sys_I18n ? eda.sys_I18n.text('手动快照') : '手动快照');
-				console.log('[Snapshot UI] Snapshot created:', result);
-				await refreshSnapshotList();
-			} catch (e) {
-				console.error('[Snapshot UI] Error:', e);
-				alert('Error: ' + (e.message || e));
-			}
-		});
-
-		// 页面加载时初始化
-		loadSettings().then(() => {
-			translatePage();
-			refreshSnapshotList(); // 加载快照列表
-		});
-	</script>
+        function init() {
+            loadSettings().then(() => {
+                translatePage();
+                refreshSnapshots();
+            });
+        }
+    </script>
 </body>
 </html>
