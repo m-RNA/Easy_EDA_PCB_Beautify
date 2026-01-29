@@ -350,7 +350,7 @@
             </div>
             <div class="setting-control">
                 <div class="input-group">
-                    <input type="number" id="cornerRadius" min="0.1" step="0.1" value="1000">
+                    <input type="number" id="cornerRadius" min="0.1" step="0.1" value="500">
                     <select id="unitSelect">
                         <option value="mil">mil</option>
                         <option value="mm">mm</option>
@@ -384,7 +384,7 @@
             </div>
             <div class="setting-control">
                 <div class="input-group">
-                    <input type="number" id="widthTransitionSegments" min="5" max="100" value="30">
+                    <input type="number" id="widthTransitionSegments" min="5" max="100" value="25">
                     <span class="addon" data-i18n="段">段</span>
                 </div>
             </div>
@@ -398,7 +398,7 @@
             </div>
             <div class="setting-control">
                 <div class="input-group">
-                    <input type="number" id="widthTransitionRatio" min="0.5" max="10" step="0.1" value="1.5">
+                    <input type="number" id="widthTransitionRatio" min="0.5" max="10" step="0.1" value="2.5">
                     <span class="addon">X</span>
                 </div>
             </div>
@@ -532,6 +532,16 @@
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
         const elDebugLabel = document.getElementById('debugLabel');
 
+        // 默认配置
+        const DEFAULT_CONFIG = {
+            cornerRadius: 500,
+            unit: 'mil',
+            syncWidthTransition: false,
+            widthTransitionSegments: 25,
+            widthTransitionRatio: 2.5,
+            debug: false,
+        };
+
         let currentUnitState = 'mil';
 
         function updateSwitchLabels() {
@@ -554,12 +564,7 @@
             try {
                 const settings = await api.sys_Storage.getExtensionAllUserConfigs();
                 const config = {
-                    cornerRadius: 1000,
-                    unit: 'mil',
-                    syncWidthTransition: true,
-                    widthTransitionSegments: 30,
-                    widthTransitionRatio: 1.5,
-                    debug: false,
+                    ...DEFAULT_CONFIG,
                     ...settings,
                 };
 
@@ -585,13 +590,13 @@
             
             // Validate numbers
             let radius = parseFloat(elCornerRadius.value);
-            if (isNaN(radius)) radius = 1000;
+            if (isNaN(radius)) radius = DEFAULT_CONFIG.cornerRadius;
             
             let segments = parseInt(elSegments.value);
-            if (isNaN(segments) || segments < 1) segments = 30;
+            if (isNaN(segments) || segments < 1) segments = DEFAULT_CONFIG.widthTransitionSegments;
             
             let ratio = parseFloat(elRatio.value);
-            if (isNaN(ratio)) ratio = 1.5;
+            if (isNaN(ratio)) ratio = DEFAULT_CONFIG.widthTransitionRatio;
 
             const settings = {
                 cornerRadius: radius,
