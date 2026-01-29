@@ -9,10 +9,14 @@
 /.editorconfig
 /.gitattributes
 /.gitignore
+/.gitmodules
 /.npmrc
 /eslint.config.mjs
 /package-lock.json
 /package.json
 /tsconfig.json
+/EDA_EX_DOC/
+/pro-api-sdk/
+/scripts/
 .eslintcache
 debug.log
