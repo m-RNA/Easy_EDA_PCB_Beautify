@@ -248,12 +248,6 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 				track: t,
 			}));
 
-			// 调试：打印线宽
-			if (settings.debug && segs.length > 0) {
-				const widths = segs.slice(0, 5).map(s => s.width);
-				debugLog(`[Smooth] 线段线宽样本: ${widths.join(', ')}`);
-			}
-
 			// 辅助函数：生成坐标键
 			// 使用 3 位小数精度，与 widthTransition 保持一致，避免浮点数误差导致断连
 			const pointKey = (p: { x: number; y: number }): string => `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
