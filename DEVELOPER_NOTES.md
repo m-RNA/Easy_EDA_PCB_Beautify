@@ -7,12 +7,15 @@ This document describes a specific pitfall encountered during the development of
 When developing extensions that share state between the worker logic and the settings UI (iframe), you might encounter situations where updates in one context are not reflected in the other, even if you are accessing what seems to be the same "File" or "API".
 
 ### Scenario
+
 1. **Main Process (`src/lib/*.ts`)**: Updates a module-level variable (e.g., `let globalCache = [...]`).
 2. **Iframe UI (`iframe/settings.html`)**: Calls a function exposed by the main process (via `eda.extension_api...`) that tries to read that variable.
 3. **Result**: The Iframe sees an stale or empty version of the variable, while the Main Process sees the updated one.
 
 ### Cause
+
 In the Javascript environment of EasyEDA Pro extensions:
+
 - The `src/` code bundles into a worker script.
 - The `iframe/settings.html` runs in a separate browser context (an iframe).
 - While the `eda` global object facilitates communication, **Module Scoped Variables** (declared with `let`, `const` at the top level of a file) may be instantiated separately for different contexts or re-evaluated in ways that break reference equality.
@@ -63,8 +66,9 @@ export function getCache() {
 ## Case Study: Snapshot Feature
 
 In the **JLC EDA Smooth** extension, we encountered this with the Snapshot list.
+
 - **Symptom**: Snapshots created automatically by the router were not appearing in the Settings UI list, despite the UI polling for updates.
 - **Fix**: We moved `globalSnapshotsCache` from a file-level variable in `snapshot.ts` to `eda._jlc_smooth_snapshots_cache`. The UI and the Main Process now read/write to the exact same array reference in memory.
 
 ---
-*Created: 2026-01-31*
+Created: 2026-01-31
