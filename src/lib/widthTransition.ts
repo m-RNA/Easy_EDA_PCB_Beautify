@@ -5,7 +5,7 @@
  */
 
 import { debugLog, logError } from './logger';
-import { dist } from './math';
+import { dist, isClose } from './math';
 import { getSettings } from './settings';
 import { createSnapshot } from './snapshot';
 
@@ -230,7 +230,7 @@ async function processWidthTransitions(
 				const w2 = t2.getState_LineWidth();
 
 				// 只处理线宽不同的情况
-				if (Math.abs(w1 - w2) < 0.01)
+				if (isClose(w1, w2, 0.01))
 					continue;
 
 				// 获取端点

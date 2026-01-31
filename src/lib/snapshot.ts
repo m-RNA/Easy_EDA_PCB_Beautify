@@ -1,4 +1,5 @@
 import { debugLog, logError, logWarn } from './logger';
+import { isClose } from './math';
 import { getArcLineWidthMap, makeArcWidthKey } from './smooth';
 
 const SNAPSHOT_STORAGE_KEY = 'jlc_eda_smooth_snapshots';
@@ -106,11 +107,6 @@ async function saveSnapshots(snapshots: RoutingSnapshot[]) {
 			eda.sys_Message.showToastMessage('快照保存失败，可能是数据过大');
 		}
 	}
-}
-
-// 辅助函数：浮点数比较
-function isClose(a: number, b: number, eps: number = 0.001) {
-	return Math.abs(a - b) < eps;
 }
 
 // 辅助函数：比较 Line 是否一致

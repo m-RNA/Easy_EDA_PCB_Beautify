@@ -3,6 +3,16 @@ export interface Point {
 	y: number;
 }
 
+/**
+ * 比较两个浮点数是否足够接近
+ * @param a 第一个数
+ * @param b 第二个数
+ * @param eps 误差阈值，默认 0.001
+ */
+export function isClose(a: number, b: number, eps: number = 0.001): boolean {
+	return Math.abs(a - b) < eps;
+}
+
 export function dist(p1: Point, p2: Point): number {
 	return Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
 }
