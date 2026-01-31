@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>设置 - 圆滑布线</title>
+    <title>设置 - 熔化PCB</title>
     <style>
         :root {
             --primary: #4285f4;
@@ -359,22 +359,7 @@
             </div>
         </div>
 
-        <!-- Merge Short Segments -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label" data-i18n="合并短线段">合并短线段</div>
-                <div class="setting-desc" data-i18n="自动合并过短的中间线段以生成圆弧">自动合并过短的中间线段以生成圆弧</div>
-            </div>
-            <div class="setting-control">
-                <div class="switch-container">
-                    <label class="switch">
-                        <input type="checkbox" id="mergeShortSegments" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span class="switch-label" id="mergeShortSegmentsLabel" data-i18n="启用">启用</span>
-                </div>
-            </div>
-        </div>
+
 
         <!-- Sync Width -->
         <div class="setting-item">
@@ -426,6 +411,26 @@
     <div class="card">
         <div class="card-title" data-i18n="高级设置">高级设置</div>
 
+        <!-- Merge Short Segments -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label">
+                    <span data-i18n="合并短线段">合并短线段</span>
+                    <span style="background:#fff3e0;color:#ef6c00;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
+                </div>
+                <div class="setting-desc" data-i18n="自动合并过短的中间线段以生成圆弧">自动合并过短的中间线段以生成圆弧</div>
+            </div>
+            <div class="setting-control">
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="mergeShortSegments" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="switch-label" id="mergeShortSegmentsLabel" data-i18n="启用">启用</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Debug -->
         <div class="setting-item">
             <div class="setting-info">
@@ -470,7 +475,7 @@
             <span style="font-size: 14px;"></span> 
             <span data-i18n="设置即时生效">设置即时生效</span>
         </div>
-        <button type="button" class="btn btn-white" id="closeBtn" onclick="tryClose()" data-i18n="关闭">关闭</button>
+        <button type="button" class="btn btn-white" id="closeBtn" onclick="tryClose()" data-i18n="关闭" style="min-width: 120px;">关闭</button>
     </div>
     
     <div id="toast" class="toast">Settings Saved</div>
@@ -711,7 +716,7 @@
                 // 确保按时间倒序显示（最新的在最上面）
                 const sorted = [...snapshots].sort((a, b) => b.timestamp - a.timestamp);
                 
-                sorted.forEach(snap => {
+                sorted.forEach((snap, index) => {
                     const div = document.createElement('div');
                     div.className = 'snapshot-item';
                     
@@ -725,11 +730,18 @@
                     
                     // 如果是最后一次撤销的快照，添加标记 (使用 == 进行宽松比较，避免类型问题)
                     let badgeHtml = '';
+                    
                     const isLastRestored = lastRestoredId !== null && String(snap.id) === String(lastRestoredId);
                     if (isLastRestored) {
-                         const undoText = api.sys_I18n ? api.sys_I18n.text('撤销至此') : 'Last Undo Point';
-                         badgeHtml = `<span style="background:#e3f2fd;color:#1976d2;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">${undoText}</span>`;
+                         const undoText = api.sys_I18n ? api.sys_I18n.text('上次撤销至此') : 'Last Undo Point';
+                         badgeHtml += `<span style="background:#e3f2fd;color:#1976d2;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">${undoText}</span>`;
                          console.log('[Settings] Badge shown for snapshot:', snap.id);
+                    }
+
+                    // 如果是最新的快照
+                    if (index === 0) {
+                        const latestText = api.sys_I18n ? api.sys_I18n.text('最新') : 'Latest';
+                        badgeHtml += `<span style="background:#e8f5e9;color:#2e7d32;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">${latestText}</span>`;
                     }
 
                     const recoverText = api.sys_I18n ? api.sys_I18n.text('恢复') : 'Recover';
@@ -738,7 +750,7 @@
                     const arcsCount = snap.arcs ? snap.arcs.length : 0;
                     const linesText = `${linesCount} Lines, ${arcsCount} Arcs`;
                     
-                    div.innerHTML = `
+                        div.innerHTML = `
                         <div style="flex:1;overflow:hidden;">
                             <div class="snapshot-meta">${nameStr}${badgeHtml}</div>
                             <div class="snapshot-details">${timeStr} · ${linesText}</div>
