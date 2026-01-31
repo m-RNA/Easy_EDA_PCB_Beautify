@@ -290,24 +290,28 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 					// 尝试从末端扩展
 					const lastKey = pointKey(points[points.length - 1]);
 					const lastConns = connections.get(lastKey) || [];
-					for (const seg of lastConns) {
-						if (used.has(seg.id))
-							continue;
-						const nextKey1 = pointKey(seg.p1);
-						const nextKey2 = pointKey(seg.p2);
-						if (nextKey1 === lastKey) {
-							points.push(seg.p2);
-							orderedSegs.push(seg);
-							used.add(seg.id);
-							extended = true;
-							break;
-						}
-						else if (nextKey2 === lastKey) {
-							points.push(seg.p1);
-							orderedSegs.push(seg);
-							used.add(seg.id);
-							extended = true;
-							break;
+
+					// 遇到分叉点（连接数 > 2）停止扩展
+					if (lastConns.length <= 2) {
+						for (const seg of lastConns) {
+							if (used.has(seg.id))
+								continue;
+							const nextKey1 = pointKey(seg.p1);
+							const nextKey2 = pointKey(seg.p2);
+							if (nextKey1 === lastKey) {
+								points.push(seg.p2);
+								orderedSegs.push(seg);
+								used.add(seg.id);
+								extended = true;
+								break;
+							}
+							else if (nextKey2 === lastKey) {
+								points.push(seg.p1);
+								orderedSegs.push(seg);
+								used.add(seg.id);
+								extended = true;
+								break;
+							}
 						}
 					}
 
@@ -315,24 +319,28 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 					if (!extended) {
 						const firstKey = pointKey(points[0]);
 						const firstConns = connections.get(firstKey) || [];
-						for (const seg of firstConns) {
-							if (used.has(seg.id))
-								continue;
-							const nextKey1 = pointKey(seg.p1);
-							const nextKey2 = pointKey(seg.p2);
-							if (nextKey1 === firstKey) {
-								points.unshift(seg.p2);
-								orderedSegs.unshift(seg);
-								used.add(seg.id);
-								extended = true;
-								break;
-							}
-							else if (nextKey2 === firstKey) {
-								points.unshift(seg.p1);
-								orderedSegs.unshift(seg);
-								used.add(seg.id);
-								extended = true;
-								break;
+
+						// 遇到分叉点（连接数 > 2）停止扩展
+						if (firstConns.length <= 2) {
+							for (const seg of firstConns) {
+								if (used.has(seg.id))
+									continue;
+								const nextKey1 = pointKey(seg.p1);
+								const nextKey2 = pointKey(seg.p2);
+								if (nextKey1 === firstKey) {
+									points.unshift(seg.p2);
+									orderedSegs.unshift(seg);
+									used.add(seg.id);
+									extended = true;
+									break;
+								}
+								else if (nextKey2 === firstKey) {
+									points.unshift(seg.p1);
+									orderedSegs.unshift(seg);
+									used.add(seg.id);
+									extended = true;
+									break;
+								}
 							}
 						}
 					}
