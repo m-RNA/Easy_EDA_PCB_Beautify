@@ -686,6 +686,14 @@
             if (!api || !api.jlc_eda_smooth_snapshot) return;
             try {
                 const snapshots = await api.jlc_eda_smooth_snapshot.getSnapshots();
+                // 获取最后一次撤销的ID，用于显示标记
+                let lastRestoredId = null;
+                if (typeof api.jlc_eda_smooth_snapshot.getLastRestoredId === 'function') {
+                    lastRestoredId = api.jlc_eda_smooth_snapshot.getLastRestoredId();
+                    console.log('[Settings] Got lastRestoredId from API:', lastRestoredId, 'type:', typeof lastRestoredId);
+                }
+                
+                console.log('[Settings] Snapshots:', snapshots.map(s => ({id: s.id, name: s.name})));
                 
                 // Update Count safely
                 const countEl = document.getElementById('snapshotCount');
@@ -713,15 +721,34 @@
                          nameStr = api.sys_I18n.text(nameStr);
                     }
                     
+                    // 如果是最后一次撤销的快照，添加标记 (使用 == 进行宽松比较，避免类型问题)
+                    let badgeHtml = '';
+                    const isLastRestored = lastRestoredId !== null && String(snap.id) === String(lastRestoredId);
+                    if (isLastRestored) {
+                         const undoText = api.sys_I18n ? api.sys_I18n.text('撤销至此') : 'Last Undo Point';
+                         badgeHtml = `<span style="background:#e3f2fd;color:#1976d2;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">${undoText}</span>`;
+                         console.log('[Settings] Badge shown for snapshot:', snap.id);
+                    }
+
                     const recoverText = api.sys_I18n ? api.sys_I18n.text('恢复') : 'Recover';
+                    const deleteText = api.sys_I18n ? api.sys_I18n.text('删除') : 'Del';
                     const linesCount = snap.lines ? snap.lines.length : 0;
                     const arcsCount = snap.arcs ? snap.arcs.length : 0;
                     const linesText = `${linesCount} Lines, ${arcsCount} Arcs`;
                     
-                    div.innerHTML = '<div><div class="snapshot-meta">' + nameStr + '</div><div class="snapshot-details">' + timeStr + ' · ' + linesText + '</div></div><button type="button" class="btn btn-white" style="padding:4px 10px;font-size:12px;">' + recoverText + '</button>';
+                    div.innerHTML = `
+                        <div style="flex:1;overflow:hidden;">
+                            <div class="snapshot-meta">${nameStr}${badgeHtml}</div>
+                            <div class="snapshot-details">${timeStr} · ${linesText}</div>
+                        </div>
+                        <div style="display:flex;gap:4px;">
+                            <button type="button" class="btn btn-white btn-recover" style="padding:4px 10px;font-size:12px;">${recoverText}</button>
+                            <button type="button" class="btn btn-ghost btn-delete" style="padding:4px 8px;font-size:12px;color:#d32f2f;" title="${deleteText}">✕</button>
+                        </div>
+                    `;
                     
-                    // Attach click
-                    div.querySelector('button').onclick = () => {
+                    // Recover Button
+                    div.querySelector('.btn-recover').onclick = () => {
                         const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要恢复到此状态吗？') : 'Confirm restore?';
                         if (api.sys_Dialog) {
                             api.sys_Dialog.showConfirmationMessage(confirmText, api.sys_I18n ? api.sys_I18n.text('恢复快照') : 'Restore Snapshot', undefined, undefined, async (ok) => {
@@ -740,6 +767,19 @@
                                 }
                             });
                         }
+                    };
+
+                    // Delete Button
+                    div.querySelector('.btn-delete').onclick = (e) => {
+                        e.stopPropagation(); // 阻止冒泡
+                         const confirmDelText = api.sys_I18n ? api.sys_I18n.text('确定要删除此快照吗？') : 'Delete this snapshot?';
+                         if (api.sys_Dialog) {
+                             api.sys_Dialog.showConfirmationMessage(confirmDelText, api.sys_I18n ? api.sys_I18n.text('删除快照') : 'Delete Snapshot', undefined, undefined, async (ok) => {
+                                 if (ok) {
+                                     await api.jlc_eda_smooth_snapshot.deleteSnapshot(snap.id);
+                                 }
+                             });
+                         }
                     };
                     
                     snapshotList.appendChild(div);

@@ -24,7 +24,7 @@ const DEFAULT_SETTINGS: SmoothSettings = {
 	debug: false,
 };
 
-let _cachedSettings: SmoothSettings = { ...DEFAULT_SETTINGS };
+const SETTINGS_CACHE_KEY = '_jlc_smooth_settings_cache';
 
 /**
  * 获取最新设置
@@ -32,11 +32,12 @@ let _cachedSettings: SmoothSettings = { ...DEFAULT_SETTINGS };
 export async function getSettings(): Promise<SmoothSettings> {
 	try {
 		const configs = await eda.sys_Storage.getExtensionAllUserConfigs();
-		_cachedSettings = { ...DEFAULT_SETTINGS, ...configs };
-		return _cachedSettings;
+		const newSettings = { ...DEFAULT_SETTINGS, ...configs };
+		(eda as any)[SETTINGS_CACHE_KEY] = newSettings;
+		return newSettings;
 	}
 	catch {
-		return _cachedSettings;
+		return getCachedSettings();
 	}
 }
 
@@ -44,7 +45,7 @@ export async function getSettings(): Promise<SmoothSettings> {
  * 同步获取缓存的设置 (不需要 await)
  */
 export function getCachedSettings(): SmoothSettings {
-	return _cachedSettings;
+	return (eda as any)[SETTINGS_CACHE_KEY] || { ...DEFAULT_SETTINGS };
 }
 
 /**
@@ -52,5 +53,5 @@ export function getCachedSettings(): SmoothSettings {
  */
 export async function saveSettings(settings: SmoothSettings): Promise<void> {
 	await eda.sys_Storage.setExtensionAllUserConfigs(settings as any);
-	_cachedSettings = { ...settings };
+	(eda as any)[SETTINGS_CACHE_KEY] = { ...settings };
 }

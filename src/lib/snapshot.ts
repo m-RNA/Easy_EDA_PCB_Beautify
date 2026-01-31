@@ -8,6 +8,26 @@ const SNAPSHOT_STORAGE_KEY = 'jlc_eda_smooth_snapshots';
 const CACHE_KEY = '_jlc_smooth_snapshots_cache';
 // 回调 key
 const CALLBACK_KEY = '_jlc_smooth_snapshot_callback';
+// 记录上一次撤销恢复到的快照ID
+const LAST_RESTORED_KEY = '_jlc_smooth_last_restored_id';
+// 撤销锁 Key
+const UNDO_LOCK_KEY = '_jlc_smooth_undo_lock';
+
+export function getLastRestoredId(): number | null {
+	return (eda as any)[LAST_RESTORED_KEY] ?? null;
+}
+
+function setLastRestoredId(id: number | null) {
+	(eda as any)[LAST_RESTORED_KEY] = id;
+}
+
+function isUndoing(): boolean {
+	return !!(eda as any)[UNDO_LOCK_KEY];
+}
+
+function setUndoing(val: boolean) {
+	(eda as any)[UNDO_LOCK_KEY] = val;
+}
 
 /**
  * 注册快照变化回调
@@ -15,7 +35,6 @@ const CALLBACK_KEY = '_jlc_smooth_snapshot_callback';
  */
 export function registerSnapshotChangeCallback(cb: () => void) {
 	(eda as any)[CALLBACK_KEY] = cb;
-	debugLog('[Snapshot] UI callback registered to eda global');
 }
 
 /**
@@ -26,7 +45,6 @@ function notifySnapshotChange() {
 	const registeredCallback = (eda as any)[CALLBACK_KEY];
 	if (typeof registeredCallback === 'function') {
 		try {
-			debugLog('[Snapshot] Notifying UI via registered callback');
 			registeredCallback();
 			return;
 		}
@@ -39,7 +57,6 @@ function notifySnapshotChange() {
 	const callback = (eda as any)._onSnapshotChange;
 	if (typeof callback === 'function') {
 		try {
-			debugLog('[Snapshot] Notifying UI via global property');
 			callback();
 		}
 		catch (e) {
@@ -71,7 +88,6 @@ export async function getSnapshots(): Promise<RoutingSnapshot[]> {
 		const stored = await eda.sys_Storage.getExtensionUserConfig(SNAPSHOT_STORAGE_KEY);
 		if (stored) {
 			const snapshots = JSON.parse(stored);
-			debugLog(`[Snapshot] Loaded ${snapshots.length} snapshots from storage`);
 			(eda as any)[CACHE_KEY] = snapshots;
 			return snapshots;
 		}
@@ -97,16 +113,20 @@ async function saveSnapshots(snapshots: RoutingSnapshot[]) {
 			snapshots = snapshots.slice(0, 10);
 		}
 
-		// 更新全局缓存
-		(eda as any)[CACHE_KEY] = [...snapshots];
+		// 更新全局缓存 (安全写入)
+		try {
+			if (typeof eda === 'object' && eda !== null) {
+				(eda as any)[CACHE_KEY] = [...snapshots];
+			}
+		}
+		catch (cacheErr) {
+			logWarn(`[Snapshot] Failed to update cache: ${cacheErr}`);
+		}
 
 		await eda.sys_Storage.setExtensionUserConfig(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshots));
 	}
 	catch (e: any) {
 		logError(`Failed to save snapshots: ${e.message || e}`);
-		if (eda.sys_Message) {
-			eda.sys_Message.showToastMessage('快照保存失败，可能是数据过大');
-		}
 	}
 }
 
@@ -203,6 +223,12 @@ function extractPrimitiveData(items: any[], type: 'line' | 'arc', pcbId: string)
  */
 export async function createSnapshot(name: string = 'Auto Save'): Promise<RoutingSnapshot | null> {
 	try {
+		// 任何新的操作都应该重置撤销指针，因为历史分支改变了
+		const lastId = getLastRestoredId();
+		if (lastId !== null) {
+			setLastRestoredId(null);
+		}
+
 		if (eda.sys_LoadingAndProgressBar) {
 			eda.sys_LoadingAndProgressBar.showLoading();
 		}
@@ -214,7 +240,6 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 			// 先尝试获取当前 PCB 信息
 			const pcbInfo = await eda.dmt_Pcb.getCurrentPcbInfo();
 			if (pcbInfo) {
-				debugLog(`[Snapshot] PCB info found. Name: ${pcbInfo.name}`);
 				pcbTitle = pcbInfo.name;
 				pcbId = pcbInfo.uuid;
 			}
@@ -222,19 +247,15 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 				// 获取板子信息作为备选
 				const boardInfo = await eda.dmt_Board.getCurrentBoardInfo();
 				if (boardInfo) {
-					debugLog(`[Snapshot] Board info found. Name: ${boardInfo.name}`);
 					pcbTitle = boardInfo.pcb?.name || boardInfo.name;
 					if (boardInfo.pcb) {
 						pcbId = boardInfo.pcb.uuid;
 					}
 				}
-				else {
-					debugLog('[Snapshot] No board/PCB info returned');
-				}
 			}
 		}
 		catch (e: any) {
-			debugLog(`[Snapshot] Failed to get board info: ${e.message || e}`);
+			logWarn(`[Snapshot] Failed to get board info: ${e.message || e}`);
 		}
 
 		// 自动附加 PCB 名称前缀
@@ -259,8 +280,6 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 		snapshots.push(snapshot);
 		await saveSnapshots(snapshots);
 
-		debugLog(`[Snapshot] Created snapshot '${finalName}' with ${snapshot.lines.length} lines, ${snapshot.arcs.length} arcs`);
-
 		// 通知设置界面刷新
 		notifySnapshotChange();
 
@@ -282,10 +301,11 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 /**
  * 恢复快照 (差分恢复)
  * 只修改变化的部分，避免全图重绘
+ * @param snapshotId 快照 ID
+ * @param showToast 是否显示详细的恢复结果提示 (Undo 操作时通常关闭，使用自定义提示)
  */
-export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
+export async function restoreSnapshot(snapshotId: number, showToast: boolean = true): Promise<boolean> {
 	try {
-		debugLog(`[Snapshot] Restoring snapshot with id: ${snapshotId}`);
 		const snapshots = await getSnapshots();
 
 		const snapshot = snapshots.find(s => s.id === snapshotId);
@@ -294,8 +314,6 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 			eda.sys_Message?.showToastMessage('未找到指定快照');
 			return false;
 		}
-
-		debugLog(`[Snapshot] Found snapshot: name='${snapshot.name}'`);
 
 		if (eda.sys_LoadingAndProgressBar) {
 			eda.sys_LoadingAndProgressBar.showLoading();
@@ -318,15 +336,12 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 		catch { /* ignore */ }
 
 		// 1. 获取当前画板的所有 Line 和 Arc
-		debugLog('[Snapshot] Fetching current primitives...');
 		const currentLinesRaw = await eda.pcb_PrimitiveLine.getAll();
 		const currentArcsRaw = await eda.pcb_PrimitiveArc.getAll();
 
 		// 转换数据格式
 		const currentLines = extractPrimitiveData(currentLinesRaw || [], 'line', pcbId);
 		const currentArcs = extractPrimitiveData(currentArcsRaw || [], 'arc', pcbId);
-
-		debugLog(`[Snapshot] Current board: ${currentLines.length} lines, ${currentArcs.length} arcs`);
 
 		// 2. 比较差异: Line
 		const currentLineMap = new Map(currentLines.map(l => [l.id, l]));
@@ -343,7 +358,6 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 				}
 				else {
 					// 不一致（被修改过），需要删除旧的，创建新的
-					// 注意：这里删除的是"Current"中的 ID（虽然假设 ID 相同）
 					linesToDelete.push(snapLine.id);
 					linesToCreate.push(snapLine);
 					currentLineMap.delete(snapLine.id);
@@ -440,8 +454,14 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 			}
 		}
 
-		if (eda.sys_Message)
+		if (showToast && eda.sys_Message)
 			eda.sys_Message.showToastMessage(`布线已恢复 (Line: -${linesToDelete.length}/+${linesToCreate.length}, Arc: -${arcsToDelete.length}/+${arcsToCreate.length})`);
+
+		// 更新最后一次恢复的 ID
+		setLastRestoredId(snapshot.id);
+		// 通知 UI
+		notifySnapshotChange();
+
 		return true;
 	}
 	catch (e: any) {
@@ -477,9 +497,13 @@ export async function clearSnapshots() {
 
 /**
  * 撤销上一次操作 (通过恢复快照)
- * 查找最新的快照并恢复，恢复后删除该快照以支持多级撤销
+ * 查找最新的快照并恢复，不会删除快照
  */
 export async function undoLastOperation() {
+	if (isUndoing())
+		return;
+	setUndoing(true);
+
 	if (eda.sys_LoadingAndProgressBar?.showLoading) {
 		eda.sys_LoadingAndProgressBar.showLoading();
 	}
@@ -492,14 +516,45 @@ export async function undoLastOperation() {
 			return;
 		}
 
-		// 取最新的一个 (createSnapshot 时已保证按时间倒序)
-		const latest = snapshots[0];
+		let targetSnapshot: RoutingSnapshot | undefined;
+		const lastRestoredId = getLastRestoredId();
 
-		const success = await restoreSnapshot(latest.id);
+		if (lastRestoredId === null) {
+			// First step: restore latest
+			targetSnapshot = snapshots[0];
+		}
+		else {
+			// Continuing from history
+			const currentIndex = snapshots.findIndex(s => s.id === lastRestoredId);
 
-		if (success) {
-			// 恢复成功后，删除这个快照，以便下次撤销可以回退到更早的状态
-			await deleteSnapshot(latest.id);
+			if (currentIndex === -1) {
+				// ID not found, reset to latest
+				targetSnapshot = snapshots[0];
+			}
+			else if (currentIndex + 1 < snapshots.length) {
+				// Next older snapshot
+				targetSnapshot = snapshots[currentIndex + 1];
+			}
+			else {
+				eda.sys_Message?.showToastMessage('已经是最早的快照了');
+				return;
+			}
+		}
+
+		if (targetSnapshot) {
+			const success = await restoreSnapshot(targetSnapshot.id, false);
+
+			if (success) {
+				const msg = eda.sys_I18n ? eda.sys_I18n.text('已撤销') : 'Undone';
+				let dispName = targetSnapshot.name.replace(/^\[.*?\]\s*/, '');
+				if (eda.sys_I18n && eda.sys_I18n.text(dispName) !== dispName) {
+					dispName = eda.sys_I18n.text(dispName);
+				}
+
+				if (eda.sys_Message) {
+					eda.sys_Message.showToastMessage(`${msg}: ${dispName}`);
+				}
+			}
 		}
 	}
 	catch (e: any) {
@@ -507,6 +562,7 @@ export async function undoLastOperation() {
 			eda.sys_Dialog.showInformationMessage(`撤销失败: ${e.message}`, 'Undo Error');
 	}
 	finally {
+		setUndoing(false);
 		if (eda.sys_LoadingAndProgressBar?.destroyLoading) {
 			eda.sys_LoadingAndProgressBar.destroyLoading();
 		}
