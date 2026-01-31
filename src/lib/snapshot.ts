@@ -3,17 +3,46 @@ import { getArcLineWidthMap, makeArcWidthKey } from './smooth';
 
 const SNAPSHOT_STORAGE_KEY = 'jlc_eda_smooth_snapshots';
 
+// 内存缓存 key，挂载在 eda 对象上
+const CACHE_KEY = '_jlc_smooth_snapshots_cache';
+// 回调 key
+const CALLBACK_KEY = '_jlc_smooth_snapshot_callback';
+
+/**
+ * 注册快照变化回调
+ * 注意：回调存储在 eda 全局对象上，以支持跨上下文调用
+ */
+export function registerSnapshotChangeCallback(cb: () => void) {
+	(eda as any)[CALLBACK_KEY] = cb;
+	debugLog('[Snapshot] UI callback registered to eda global');
+}
+
 /**
  * 通知设置界面快照列表已变化
  */
 function notifySnapshotChange() {
+	// 优先使用注册到 eda 全局对象的回调
+	const registeredCallback = (eda as any)[CALLBACK_KEY];
+	if (typeof registeredCallback === 'function') {
+		try {
+			debugLog('[Snapshot] Notifying UI via registered callback');
+			registeredCallback();
+			return;
+		}
+		catch (e) {
+			logError(`[Snapshot] UI callback failed: ${e}`);
+		}
+	}
+
+	// Fallback to global property (兼容旧版)
 	const callback = (eda as any)._onSnapshotChange;
 	if (typeof callback === 'function') {
 		try {
+			debugLog('[Snapshot] Notifying UI via global property');
 			callback();
 		}
-		catch {
-			// ignore callback errors
+		catch (e) {
+			logError(`[Snapshot] Global callback failed: ${e}`);
 		}
 	}
 }
@@ -31,17 +60,26 @@ export interface RoutingSnapshot {
  * 获取所有快照
  */
 export async function getSnapshots(): Promise<RoutingSnapshot[]> {
+	// 优先返回 eda 全局对象上的缓存
+	const cached = (eda as any)[CACHE_KEY];
+	if (Array.isArray(cached)) {
+		return [...cached];
+	}
+
 	try {
 		const stored = await eda.sys_Storage.getExtensionUserConfig(SNAPSHOT_STORAGE_KEY);
 		if (stored) {
 			const snapshots = JSON.parse(stored);
 			debugLog(`[Snapshot] Loaded ${snapshots.length} snapshots from storage`);
+			(eda as any)[CACHE_KEY] = snapshots;
 			return snapshots;
 		}
 	}
 	catch (e: any) {
 		logError(`Failed to load snapshots: ${e.message || e}`);
 	}
+
+	(eda as any)[CACHE_KEY] = [];
 	return [];
 }
 
@@ -56,6 +94,10 @@ async function saveSnapshots(snapshots: RoutingSnapshot[]) {
 			snapshots.sort((a, b) => b.timestamp - a.timestamp);
 			snapshots = snapshots.slice(0, 10);
 		}
+
+		// 更新全局缓存
+		(eda as any)[CACHE_KEY] = [...snapshots];
+
 		await eda.sys_Storage.setExtensionUserConfig(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshots));
 	}
 	catch (e: any) {

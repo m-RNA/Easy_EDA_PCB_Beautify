@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -758,11 +758,44 @@
                 
                 // 注册快照变化回调，当主代码创建/删除快照时自动刷新列表
                 const api = API || getEda();
-                if (api) {
+                if (api && api.jlc_eda_smooth_snapshot && typeof api.jlc_eda_smooth_snapshot.registerSnapshotChangeCallback === 'function') {
+                    // 使用新版显式注册接口
+                    api.jlc_eda_smooth_snapshot.registerSnapshotChangeCallback(() => {
+                        refreshSnapshots().catch(err => {
+                            console.error('[Settings] Snapshot refresh failed:', err);
+                        });
+                    });
+                    console.log('[Settings] Snapshot callback registered');
+                } else if (api) {
+                   // 兼容旧版
                     api._onSnapshotChange = () => {
                         refreshSnapshots();
                     };
+                    console.log('[Settings] Using fallback _onSnapshotChange');
                 }
+                
+                // 额外保险：定时轮询检查快照数量变化
+                let lastSnapshotCount = -1;
+                
+                const poller = async () => {
+                    const currentApi = API || getEda();
+                    if (!currentApi || !currentApi.jlc_eda_smooth_snapshot) return;
+                    
+                    try {
+                        const snapshots = await currentApi.jlc_eda_smooth_snapshot.getSnapshots();
+                        
+                        // 只有数量变化时才重绘列表
+                        if (snapshots.length !== lastSnapshotCount && lastSnapshotCount !== -1) {
+                            refreshSnapshots();
+                        }
+                        lastSnapshotCount = snapshots.length;
+                    } catch (e) {
+                         // ignore polling errors
+                    }
+                };
+
+                // 启动轮询 (3秒一次，维持低频心跳)
+                setInterval(poller, 3000);
             });
         }
     </script>

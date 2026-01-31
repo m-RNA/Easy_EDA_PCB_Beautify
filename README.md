@@ -49,6 +49,10 @@ npm run build
 
 构建产物：`dist/` 目录下的 `.eext` 扩展包
 
+### 开发注意事项
+
+详见 [DEVELOPER_NOTES.md](./DEVELOPER_NOTES.md)
+
 ## 📁 结构
 
 ```
