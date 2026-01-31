@@ -8,7 +8,7 @@ import { getCachedSettings } from './settings';
 /**
  * 日志类型
  */
-type LogType = 'info' | 'warning' | 'error';
+type LogType = 'info' | 'warn' | 'error';
 
 /**
  * 添加日志
@@ -32,7 +32,7 @@ export function logInfo(message: string): void {
  * 输出警告日志
  */
 export function logWarn(message: string): void {
-	log(message, 'warning');
+	log(message, 'warn');
 }
 
 /**
