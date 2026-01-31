@@ -108,6 +108,99 @@ async function saveSnapshots(snapshots: RoutingSnapshot[]) {
 	}
 }
 
+// 辅助函数：浮点数比较
+function isClose(a: number, b: number, eps: number = 0.001) {
+	return Math.abs(a - b) < eps;
+}
+
+// 辅助函数：比较 Line 是否一致
+function isLineEqual(a: any, b: any) {
+	if (a.layer !== b.layer || a.net !== b.net)
+		return false;
+	if (!isClose(a.startX, b.startX))
+		return false;
+	if (!isClose(a.startY, b.startY))
+		return false;
+	if (!isClose(a.endX, b.endX))
+		return false;
+	if (!isClose(a.endY, b.endY))
+		return false;
+	if (!isClose(a.lineWidth, b.lineWidth))
+		return false;
+	return true;
+}
+
+// 辅助函数：比较 Arc 是否一致
+function isArcEqual(a: any, b: any) {
+	if (a.layer !== b.layer || a.net !== b.net)
+		return false;
+	if (!isClose(a.startX, b.startX))
+		return false;
+	if (!isClose(a.startY, b.startY))
+		return false;
+	if (!isClose(a.endX, b.endX))
+		return false;
+	if (!isClose(a.endY, b.endY))
+		return false;
+	if (!isClose(a.arcAngle, b.arcAngle))
+		return false;
+	if (!isClose(a.lineWidth, b.lineWidth))
+		return false;
+	return true;
+}
+
+// 辅助函数：提取图元数据
+function extractPrimitiveData(items: any[], type: 'line' | 'arc', pcbId: string) {
+	return items.map((p) => {
+		const base = {
+			net: p.getState_Net ? p.getState_Net() : p.net,
+			layer: p.getState_Layer ? p.getState_Layer() : p.layer,
+			id: p.getState_PrimitiveId ? p.getState_PrimitiveId() : p.primitiveId,
+		};
+
+		if (type === 'line') {
+			const lineWidth = p.getState_LineWidth ? p.getState_LineWidth() : p.lineWidth;
+			return {
+				...base,
+				startX: p.getState_StartX ? p.getState_StartX() : p.startX,
+				startY: p.getState_StartY ? p.getState_StartY() : p.startY,
+				endX: p.getState_EndX ? p.getState_EndX() : p.endX,
+				endY: p.getState_EndY ? p.getState_EndY() : p.endY,
+				lineWidth,
+			};
+		}
+		else if (type === 'arc') {
+			const arcAngle = p.getState_ArcAngle ? p.getState_ArcAngle() : p.arcAngle;
+			const arcId = base.id;
+
+			// Priority: Global Map -> API -> Property
+			const arcWidthMap = getArcLineWidthMap();
+			const mapKey = makeArcWidthKey(pcbId, arcId);
+			let lineWidth = arcWidthMap.get(mapKey);
+
+			if (lineWidth === undefined) {
+				if (p.getState_LineWidth) {
+					lineWidth = p.getState_LineWidth();
+				}
+				else if (p.lineWidth !== undefined) {
+					lineWidth = p.lineWidth;
+				}
+			}
+
+			return {
+				...base,
+				startX: p.getState_StartX ? p.getState_StartX() : p.startX,
+				startY: p.getState_StartY ? p.getState_StartY() : p.startY,
+				endX: p.getState_EndX ? p.getState_EndX() : p.endX,
+				endY: p.getState_EndY ? p.getState_EndY() : p.endY,
+				arcAngle,
+				lineWidth: lineWidth ?? 0.254,
+			};
+		}
+		return base;
+	});
+}
+
 /**
  * 创建当前布线状态的快照
  */
@@ -150,98 +243,19 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 		// 自动附加 PCB 名称前缀
 		let finalName = name;
 		if (pcbTitle) {
-			// 如果传入的名称已经是特定格式，避免重复添加? 暂且假设 name 只是操作名
 			finalName = `[${pcbTitle}] ${name}`;
-		}
-		else {
-			debugLog('[Snapshot] PCB title is empty, using name only');
 		}
 
 		// 获取所有导线、圆弧
-		// 注意：不保存过孔，以免恢复时丢失网络
 		const lines = await eda.pcb_PrimitiveLine.getAll();
 		const arcs = await eda.pcb_PrimitiveArc.getAll();
-		// const vias = await eda.pcb_PrimitiveVia.getAll();
-
-		// 提取必要数据以减小体积
-		// 但是要能恢复，需保留所有创建所需的参数
-		// 我们保存原始对象的数据结构，或者简化它
-		// getAll 返回的是对象，我们需要序列化它
-		// eda对象通常有 extract/getState 方法，或者就是 plain object?
-		// 之前的代码中用 `getState_StartX()` 等，说明是 API 对象
-		// 我们需要提取纯数据
-
-		const extractData = (items: any[], type: 'line' | 'arc' | 'via') => {
-			return items.map((p) => {
-				const base = {
-					net: p.getState_Net ? p.getState_Net() : p.net,
-					layer: p.getState_Layer ? p.getState_Layer() : p.layer,
-					id: p.getState_PrimitiveId ? p.getState_PrimitiveId() : p.primitiveId,
-				};
-
-				if (type === 'line') {
-					const lineWidth = p.getState_LineWidth ? p.getState_LineWidth() : p.lineWidth;
-					return {
-						...base,
-						startX: p.getState_StartX ? p.getState_StartX() : p.startX,
-						startY: p.getState_StartY ? p.getState_StartY() : p.startY,
-						endX: p.getState_EndX ? p.getState_EndX() : p.endX,
-						endY: p.getState_EndY ? p.getState_EndY() : p.endY,
-						lineWidth,
-					};
-				}
-				else if (type === 'arc') {
-					// Arc API actually supports getState_StartX/Y/EndX/Y/ArcAngle
-					const arcAngle = p.getState_ArcAngle ? p.getState_ArcAngle() : p.arcAngle;
-					const arcId = p.getState_PrimitiveId ? p.getState_PrimitiveId() : p.primitiveId;
-
-					// 优先从全局 Map 获取线宽（因为 API 返回的值可能不正确）
-					// 使用 pcbId_arcId 作为 key 以区分不同 PCB
-					const arcWidthMap = getArcLineWidthMap();
-					const mapKey = makeArcWidthKey(pcbId, arcId);
-					let lineWidth = arcWidthMap.get(mapKey);
-
-					if (lineWidth === undefined) {
-						// Map 中没有，尝试从 API 获取
-						if (p.getState_LineWidth) {
-							lineWidth = p.getState_LineWidth();
-						}
-						else if (p.lineWidth !== undefined) {
-							lineWidth = p.lineWidth;
-						}
-					}
-
-					return {
-						...base,
-						startX: p.getState_StartX ? p.getState_StartX() : p.startX,
-						startY: p.getState_StartY ? p.getState_StartY() : p.startY,
-						endX: p.getState_EndX ? p.getState_EndX() : p.endX,
-						endY: p.getState_EndY ? p.getState_EndY() : p.endY,
-						arcAngle,
-						lineWidth: lineWidth ?? 0.254,
-					};
-				}
-				else if (type === 'via') {
-					return {
-						...base,
-						x: p.getState_X ? p.getState_X() : p.x,
-						y: p.getState_Y ? p.getState_Y() : p.y,
-						drill: p.getState_Drill ? p.getState_Drill() : p.drill,
-						diameter: p.getState_Diameter ? p.getState_Diameter() : p.diameter,
-						// vias usually have start/end layer too?
-						// 简单起见假设是通孔或 API 能处理默认值
-					};
-				}
-				return base;
-			});
-		};
 
 		const snapshot: RoutingSnapshot = {
 			id: Date.now(),
 			name: finalName,
 			timestamp: Date.now(),
-			lines: extractData(lines || [], 'line'),
-			arcs: extractData(arcs || [], 'arc'),
+			lines: extractPrimitiveData(lines || [], 'line', pcbId),
+			arcs: extractPrimitiveData(arcs || [], 'arc', pcbId),
 		};
 
 		const snapshots = await getSnapshots();
@@ -269,11 +283,11 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 }
 
 /**
- * 恢复快照
+ * 恢复快照 (差分恢复)
+ * 只修改变化的部分，避免全图重绘
  */
 export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 	try {
-		// 输出日志以便调试
 		debugLog(`[Snapshot] Restoring snapshot with id: ${snapshotId}`);
 		const snapshots = await getSnapshots();
 
@@ -284,37 +298,113 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 			return false;
 		}
 
-		debugLog(`[Snapshot] Found snapshot: name='${snapshot.name}', lines=${snapshot.lines.length}, arcs=${snapshot.arcs.length}`);
+		debugLog(`[Snapshot] Found snapshot: name='${snapshot.name}'`);
 
 		if (eda.sys_LoadingAndProgressBar) {
 			eda.sys_LoadingAndProgressBar.showLoading();
 		}
 
-		// 1. 清除当前布线 (Line, Arc, Via)
-		// 这一步比较危险，所以通常需要用户确认。但在 restoreSnapshot 函数内部我们假设已确认。
-		debugLog('[Snapshot] Clearing current routing...');
+		// 获取当前 PCB Info 用于数据提取
+		let pcbId = 'unknown';
+		try {
+			const pcbInfo = await eda.dmt_Pcb.getCurrentPcbInfo();
+			if (pcbInfo) {
+				pcbId = pcbInfo.uuid;
+			}
+			else {
+				const boardInfo = await eda.dmt_Board.getCurrentBoardInfo();
+				if (boardInfo && boardInfo.pcb) {
+					pcbId = boardInfo.pcb.uuid;
+				}
+			}
+		}
+		catch { /* ignore */ }
 
-		// 删除所有 Line
-		const currentLines = await eda.pcb_PrimitiveLine.getAllPrimitiveId();
-		if (currentLines && currentLines.length > 0) {
-			// 分批删除以防 ID 列表过大? API 能处理吗？
-			// 假设能。
-			await eda.pcb_PrimitiveLine.delete(currentLines);
+		// 1. 获取当前画板的所有 Line 和 Arc
+		debugLog('[Snapshot] Fetching current primitives...');
+		const currentLinesRaw = await eda.pcb_PrimitiveLine.getAll();
+		const currentArcsRaw = await eda.pcb_PrimitiveArc.getAll();
+
+		// 转换数据格式
+		const currentLines = extractPrimitiveData(currentLinesRaw || [], 'line', pcbId);
+		const currentArcs = extractPrimitiveData(currentArcsRaw || [], 'arc', pcbId);
+
+		debugLog(`[Snapshot] Current board: ${currentLines.length} lines, ${currentArcs.length} arcs`);
+
+		// 2. 比较差异: Line
+		const currentLineMap = new Map(currentLines.map(l => [l.id, l]));
+		const linesToDelete: string[] = [];
+		const linesToCreate: any[] = [];
+
+		for (const snapLine of snapshot.lines) {
+			if (currentLineMap.has(snapLine.id)) {
+				const current = currentLineMap.get(snapLine.id);
+				// 比较属性
+				if (isLineEqual(snapLine, current)) {
+					// 完全一致，保留（从 Map 移除表示不需要删除）
+					currentLineMap.delete(snapLine.id);
+				}
+				else {
+					// 不一致（被修改过），需要删除旧的，创建新的
+					// 注意：这里删除的是"Current"中的 ID（虽然假设 ID 相同）
+					linesToDelete.push(snapLine.id);
+					linesToCreate.push(snapLine);
+					currentLineMap.delete(snapLine.id);
+				}
+			}
+			else {
+				// Snapshot 中有，但当前画布没有 -> 需要创建
+				linesToCreate.push(snapLine);
+			}
 		}
 
-		// 删除所有 Arc
-		const currentArcs = await eda.pcb_PrimitiveArc.getAllPrimitiveId();
-		if (currentArcs && currentArcs.length > 0) {
-			await eda.pcb_PrimitiveArc.delete(currentArcs);
+		// Current Map 中剩余的，是 Current 有但 Snapshot 没有的 -> 需要删除
+		for (const id of currentLineMap.keys()) {
+			linesToDelete.push(id);
 		}
 
-		// 2. 恢复快照中的对象
-		debugLog('[Snapshot] Restoring objects...');
+		// 3. 比较差异: Arc
+		const currentArcMap = new Map(currentArcs.map(a => [a.id, a]));
+		const arcsToDelete: string[] = [];
+		const arcsToCreate: any[] = [];
 
-		// 恢复 Line
-		for (const line of snapshot.lines) {
+		for (const snapArc of snapshot.arcs) {
+			if (currentArcMap.has(snapArc.id)) {
+				const current = currentArcMap.get(snapArc.id);
+				if (isArcEqual(snapArc, current)) {
+					currentArcMap.delete(snapArc.id);
+				}
+				else {
+					arcsToDelete.push(snapArc.id);
+					arcsToCreate.push(snapArc);
+					currentArcMap.delete(snapArc.id);
+				}
+			}
+			else {
+				arcsToCreate.push(snapArc);
+			}
+		}
+
+		for (const id of currentArcMap.keys()) {
+			arcsToDelete.push(id);
+		}
+
+		debugLog(`[Snapshot] Diff result:
+          Line: Delete ${linesToDelete.length}, Create ${linesToCreate.length}
+          Arc:  Delete ${arcsToDelete.length}, Create ${arcsToCreate.length}`);
+
+		// 4. 执行操作
+		// Delete
+		if (linesToDelete.length > 0) {
+			await eda.pcb_PrimitiveLine.delete(linesToDelete);
+		}
+		if (arcsToDelete.length > 0) {
+			await eda.pcb_PrimitiveArc.delete(arcsToDelete);
+		}
+
+		// Create Lines
+		for (const line of linesToCreate) {
 			try {
-				// 确保 lineWidth 有值
 				const lineWidth = line.lineWidth ?? 0.254;
 				await eda.pcb_PrimitiveLine.create(
 					line.net,
@@ -327,17 +417,14 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 				);
 			}
 			catch (e: any) {
-				logWarn(`Failed to restore line: ${e.message || e}`);
+				logWarn(`Failed to restore line: ${e}`);
 			}
 		}
 
-		// 恢复 Arc
-		// eda.pcb_PrimitiveArc.create(net, layer, startX, startY, endX, endY, arcAngle, lineWidth)
-		for (const arc of snapshot.arcs) {
+		// Create Arcs
+		for (const arc of arcsToCreate) {
 			try {
-				// Arc 需要 startX/Y, endX/Y, arcAngle
 				if (arc.startX !== undefined && arc.arcAngle !== undefined) {
-					// 确保 lineWidth 有值，如果没有则使用默认值 0.254 (10mil)
 					const lineWidth = arc.lineWidth ?? 0.254;
 					await eda.pcb_PrimitiveArc.create(
 						arc.net,
@@ -350,17 +437,14 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 						lineWidth,
 					);
 				}
-				else {
-					logWarn(`Cannot restore arc: missing required properties (startX/Y, endX/Y, or arcAngle)`);
-				}
 			}
 			catch (e: any) {
-				logWarn(`Failed to restore arc: ${e.message || e}`);
+				logWarn(`Failed to restore arc: ${e}`);
 			}
 		}
 
 		if (eda.sys_Message)
-			eda.sys_Message.showToastMessage('布线已恢复');
+			eda.sys_Message.showToastMessage(`布线已恢复 (Line: -${linesToDelete.length}/+${linesToCreate.length}, Arc: -${arcsToDelete.length}/+${arcsToCreate.length})`);
 		return true;
 	}
 	catch (e: any) {
