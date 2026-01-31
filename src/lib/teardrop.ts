@@ -46,16 +46,12 @@ export async function addTeardrops() {
 
 		// 如果没有有效的选中对象，则处理全体
 		if (pins.length === 0) {
-			if (settings.debug) {
-				debugLog('[Teardrop Debug] 未选中对象，获取全板焊盘和过孔');
-			}
+			debugLog('[Teardrop] 未选中对象，获取全板焊盘和过孔');
 			// 获取全板焊盘和过孔的ID，然后逐个获取对象
 			const padIds = await eda.pcb_PrimitivePad.getAllPrimitiveId();
 			const viaIds = await eda.pcb_PrimitiveVia.getAllPrimitiveId();
 
-			if (settings.debug) {
-				debugLog(`[Teardrop Debug] 找到 ${padIds.length} 个焊盘, ${viaIds.length} 个过孔`);
-			}
+			debugLog(`[Teardrop] 找到 ${padIds.length} 个焊盘, ${viaIds.length} 个过孔`);
 
 			for (const id of padIds) {
 				const pad = await eda.pcb_PrimitivePad.get(id);
@@ -69,31 +65,18 @@ export async function addTeardrops() {
 			}
 		}
 
-		if (settings.debug) {
-			debugLog(`[Teardrop Debug] 开始处理 ${pins.length} 个焊盘/过孔`);
-		}
+		debugLog(`[Teardrop] 开始处理 ${pins.length} 个焊盘/过孔`);
 
 		let processedCount = 0;
 		for (const pin of pins) {
-			if (settings.debug && processedCount < 3) {
-				debugLog('[Teardrop Debug] Pin对象:', pin);
-				debugLog('[Teardrop Debug] Pin类型:', typeof pin, 'PrimitiveType函数:', typeof pin.getState_PrimitiveType);
-			}
-
 			const net = pin.getState_Net();
 			if (!net) {
-				if (settings.debug && processedCount < 3) {
-					debugLog('[Teardrop Debug] 跳过：无网络');
-				}
 				continue;
 			}
 
 			const px = pin.getState_X();
 			const py = pin.getState_Y();
 
-			if (settings.debug && processedCount < 3) {
-				debugLog(`[Teardrop Debug] 处理焊盘: 网络=${net}, 坐标=(${px},${py})`);
-			}
 			processedCount++;
 
 			// 获取连接到此焊盘的导线（遍历所有层）
@@ -115,9 +98,7 @@ export async function addTeardrops() {
 			}
 		}
 
-		if (settings.debug) {
-			debugLog(`[Teardrop Debug] 处理完成，共处理 ${processedCount} 个焊盘/过孔`);
-		}
+		debugLog(`[Teardrop] 处理完成，共处理 ${processedCount} 个焊盘/过孔`);
 
 		if (
 			eda.sys_Message

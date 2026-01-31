@@ -36,13 +36,6 @@ export async function getSnapshots(): Promise<RoutingSnapshot[]> {
 		if (stored) {
 			const snapshots = JSON.parse(stored);
 			debugLog(`[Snapshot] Loaded ${snapshots.length} snapshots from storage`);
-			// 打印前2个快照的基本信息
-			snapshots.slice(0, 2).forEach((s: any, i: number) => {
-				debugLog(`[Snapshot]   [${i}] id=${s.id}, name='${s.name}', lines=${s.lines?.length}, arcs=${s.arcs?.length}`);
-				if (s.arcs?.length > 0) {
-					debugLog(`[Snapshot]      First arc lineWidth: ${s.arcs[0].lineWidth}, arcAngle: ${s.arcs[0].arcAngle}`);
-				}
-			});
 			return snapshots;
 		}
 	}
@@ -118,7 +111,6 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 
 				if (type === 'line') {
 					const lineWidth = p.getState_LineWidth ? p.getState_LineWidth() : p.lineWidth;
-					debugLog(`[Snapshot] Extracting line: lineWidth=${lineWidth}`);
 					return {
 						...base,
 						startX: p.getState_StartX ? p.getState_StartX() : p.startX,
@@ -138,8 +130,6 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 					const arcWidthMap = getArcLineWidthMap();
 					const mapKey = makeArcWidthKey(pcbId, arcId);
 					let lineWidth = arcWidthMap.get(mapKey);
-
-					debugLog(`[Snapshot] Arc key=${mapKey}, mapSize=${arcWidthMap.size}, lineWidth from map=${lineWidth}`);
 
 					if (lineWidth === undefined) {
 						// Map 中没有，尝试从 API 获取
@@ -216,7 +206,6 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 		// 输出日志以便调试
 		debugLog(`[Snapshot] Restoring snapshot with id: ${snapshotId}`);
 		const snapshots = await getSnapshots();
-		debugLog(`[Snapshot] Found ${snapshots.length} snapshots, ids: ${snapshots.map(s => s.id).join(', ')}`);
 
 		const snapshot = snapshots.find(s => s.id === snapshotId);
 		if (!snapshot) {
@@ -225,12 +214,7 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 			return false;
 		}
 
-		debugLog(`[Snapshot] Found snapshot: name='${snapshot.name}', timestamp=${snapshot.timestamp}, lines=${snapshot.lines.length}, arcs=${snapshot.arcs.length}`);
-		// 打印前 3 个圆弧的线宽
-		if (snapshot.arcs.length > 0) {
-			const sample = snapshot.arcs.slice(0, 3).map(a => `lineWidth=${a.lineWidth}`).join(', ');
-			debugLog(`[Snapshot] Sample arc widths: ${sample}`);
-		}
+		debugLog(`[Snapshot] Found snapshot: name='${snapshot.name}', lines=${snapshot.lines.length}, arcs=${snapshot.arcs.length}`);
 
 		if (eda.sys_LoadingAndProgressBar) {
 			eda.sys_LoadingAndProgressBar.showLoading();
@@ -254,13 +238,6 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 			await eda.pcb_PrimitiveArc.delete(currentArcs);
 		}
 
-		// 删除所有 Via
-		/*
-		const currentVias = await eda.pcb_PrimitiveVia.getAllPrimitiveId();
-		if (currentVias && currentVias.length > 0) {
-			 await eda.pcb_PrimitiveVia.delete(currentVias);
-		}
-		*/
 		// 2. 恢复快照中的对象
 		debugLog('[Snapshot] Restoring objects...');
 
@@ -269,7 +246,6 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 			try {
 				// 确保 lineWidth 有值
 				const lineWidth = line.lineWidth ?? 0.254;
-				debugLog(`[Snapshot] Restoring line: (${line.startX},${line.startY})->(${line.endX},${line.endY}), lineWidth=${lineWidth}`);
 				await eda.pcb_PrimitiveLine.create(
 					line.net,
 					line.layer,
@@ -293,7 +269,6 @@ export async function restoreSnapshot(snapshotId: number): Promise<boolean> {
 				if (arc.startX !== undefined && arc.arcAngle !== undefined) {
 					// 确保 lineWidth 有值，如果没有则使用默认值 0.254 (10mil)
 					const lineWidth = arc.lineWidth ?? 0.254;
-					debugLog(`[Snapshot] Restoring arc: startX=${arc.startX}, startY=${arc.startY}, arcAngle=${arc.arcAngle}, lineWidth=${lineWidth}`);
 					await eda.pcb_PrimitiveArc.create(
 						arc.net,
 						arc.layer,

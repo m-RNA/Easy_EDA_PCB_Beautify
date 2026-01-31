@@ -146,14 +146,10 @@ export async function addWidthTransitionsAll() {
 		// 保存数据
 		await saveTransitionData(result.data);
 
-		if (settings.debug) {
-			debugLog(`[Width Transition] 自动过渡完成，处理了 ${result.count} 个连接点`);
-		}
+		debugLog(`[Width Transition] 自动过渡完成，处理了 ${result.count} 个连接点`);
 	}
 	catch (e: any) {
-		if (settings.debug) {
-			debugLog(`[Width Transition Error] ${e.message}`);
-		}
+		debugLog(`[Width Transition Error] ${e.message}`);
 	}
 	finally {
 		eda.sys_LoadingAndProgressBar?.destroyLoading?.();
@@ -168,9 +164,7 @@ async function processWidthTransitions(
 	savedData: TransitionData,
 	settings: any,
 ): Promise<{ data: TransitionData; count: number }> {
-	if (settings.debug) {
-		debugLog(`[Width Transition] 获取到 ${tracks.length} 条导线`);
-	}
+	debugLog(`[Width Transition] 获取到 ${tracks.length} 条导线`);
 
 	// 按网络和层分组
 	const netLayerMap = new Map<string, any[]>();
@@ -187,9 +181,7 @@ async function processWidthTransitions(
 		netLayerMap.get(groupKey)!.push(track);
 	}
 
-	if (settings.debug) {
-		debugLog(`[Width Transition] 共 ${netLayerMap.size} 个分组`);
-	}
+	debugLog(`[Width Transition] 共 ${netLayerMap.size} 个分组`);
 
 	// 构建记录映射方便查找
 	const recordsMap = new Map<string, TransitionRecord>();
@@ -276,9 +268,6 @@ async function processWidthTransitions(
 
 					// 检查是否有旧的过渡数据，如果有则清理
 					if (recordsMap.has(key)) {
-						if (settings.debug) {
-							debugLog(`[Width Transition] 清理旧过渡: ${key}`);
-						}
 						const oldRecord = recordsMap.get(key)!;
 						if (oldRecord.ids && oldRecord.ids.length > 0) {
 							try {
@@ -307,9 +296,7 @@ async function processWidthTransitions(
 						continue;
 					}
 
-					if (settings.debug) {
-						debugLog(`[Width Transition] 找到线宽过渡点: w1=${w1.toFixed(2)}, w2=${w2.toFixed(2)}, point=${key}`);
-					}
+					debugLog(`[Width Transition] 找到线宽过渡点: w1=${w1.toFixed(2)}, w2=${w2.toFixed(2)}, point=${key}`);
 
 					// 标记为已处理
 					processedPointsInCurrentRun.add(key);
@@ -331,10 +318,6 @@ async function processWidthTransitions(
 						// t2 是窄线
 						transitionDir = { x: conn.t2Dir.x, y: conn.t2Dir.y };
 						narrowTrackLength = t2Length;
-					}
-
-					if (settings.debug) {
-						debugLog(`[Width Transition] 窄端线长: ${narrowTrackLength.toFixed(2)}`);
 					}
 
 					// 创建过渡线段
@@ -367,9 +350,7 @@ async function processWidthTransitions(
 		}
 	}
 
-	if (settings.debug) {
-		debugLog(`[Width Transition] 完成，创建了 ${transitionCount} 个过渡`);
-	}
+	debugLog(`[Width Transition] 完成，创建了 ${transitionCount} 个过渡`);
 
 	return {
 		data: {
@@ -429,15 +410,11 @@ async function createWidthTransition(
 
 	// 如果过渡长度太短，跳过
 	if (transitionLength < 1) {
-		if (settings.debug) {
-			debugLog(`[Width Transition] 跳过：过渡长度太短 (${transitionLength.toFixed(2)})`);
-		}
+		debugLog(`[Width Transition] 跳过：过渡长度太短 (${transitionLength.toFixed(2)})`);
 		return createdIds;
 	}
 
-	if (settings.debug) {
-		debugLog(`[Width Transition] 理想长度=${idealLength.toFixed(2)}, 窄端限制=${maxAllowedLength.toFixed(2)}, 实际长度=${transitionLength.toFixed(2)}`);
-	}
+	debugLog(`[Width Transition] 理想长度=${idealLength.toFixed(2)}, 实际长度=${transitionLength.toFixed(2)}`);
 
 	// 过渡段数计算
 	// 动态计算需要的段数以保证平滑度
@@ -459,9 +436,7 @@ async function createWidthTransition(
 		segments = Math.min(segments, 6);
 	}
 
-	if (settings.debug) {
-		debugLog(`[Width Transition] 创建贝塞尔过渡: 长度=${transitionLength.toFixed(2)}, 动态段数=${segments} (Diff=${widthDiff.toFixed(2)})`);
-	}
+	debugLog(`[Width Transition] 创建贝塞尔过渡: 长度=${transitionLength.toFixed(2)}, 段数=${segments}`);
 
 	// 使用贝塞尔曲线插值创建渐变线段
 	// 从连接点（t=0, wideWidth）向窄线方向延伸（t=1, narrowWidth）
@@ -488,10 +463,6 @@ async function createWidthTransition(
 		};
 
 		try {
-			if (settings.debug && i === 0) {
-				debugLog(`[Width Transition] 创建线段: net=${net}, layer=${layer}, p1=(${p1.x.toFixed(2)}, ${p1.y.toFixed(2)}), p2=(${p2.x.toFixed(2)}, ${p2.y.toFixed(2)}), w=${w.toFixed(2)}`);
-			}
-
 			const line = await eda.pcb_PrimitiveLine.create(
 				net,
 				layer,
@@ -503,18 +474,12 @@ async function createWidthTransition(
 				false,
 			);
 
-			if (settings.debug && i === 0) {
-				debugLog(`[Width Transition] 创建结果: ${line ? '成功' : '失败'}, id=${line?.getState_PrimitiveId?.()}`);
-			}
-
 			if (line?.getState_PrimitiveId) {
 				createdIds.push(line.getState_PrimitiveId());
 			}
 		}
 		catch (err) {
-			if (settings.debug) {
-				debugLog(`[Width Transition Error] 创建线段失败: ${err}`);
-			}
+			debugLog(`[Width Transition Error] 创建线段失败: ${err}`);
 		}
 	}
 

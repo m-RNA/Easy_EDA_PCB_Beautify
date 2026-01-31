@@ -12,13 +12,18 @@
  */
 
 import { logError, logInfo, logWarn } from './lib/logger';
+import { getSettings } from './lib/settings';
 import { smoothRouting as smoothTask, undoLastOperation as undoTask } from './lib/smooth';
 import * as Snapshot from './lib/snapshot';
 import { addWidthTransitionsAll, addWidthTransitionsSelected } from './lib/widthTransition';
 
 export function activate(_status?: 'onStartupFinished', _arg?: string): void {
-	// 将快照功能挂载到 eda 全局对象，供 settings.html 调用
+	// 初始化设置（加载到缓存）
+	getSettings();
+
+	// 将功能挂载到 eda 全局对象，供 settings.html 调用
 	(eda as any).jlc_eda_smooth_snapshot = Snapshot;
+	(eda as any).jlc_eda_smooth_refreshSettings = getSettings;
 
 	// 动态刷新顶部菜单，确保菜单正确显示
 	try {

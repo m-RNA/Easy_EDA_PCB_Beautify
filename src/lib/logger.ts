@@ -1,3 +1,5 @@
+import { getCachedSettings } from './settings';
+
 /**
  * 调试日志工具
  * 使用 eda.sys_Log 来输出日志信息
@@ -45,6 +47,8 @@ export function logError(message: string): void {
  * @param messages - 要输出的消息
  */
 export function debugLog(...messages: any[]): void {
+	if (!getCachedSettings().debug)
+		return;
 	const msg = messages.map(m => typeof m === 'object' ? JSON.stringify(m) : String(m)).join(' ');
 	log(`[Debug] ${msg}`, 'info');
 }

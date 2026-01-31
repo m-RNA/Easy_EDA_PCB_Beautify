@@ -413,7 +413,7 @@
         <div class="setting-item">
             <div class="setting-info">
                 <div class="setting-label" data-i18n="调试模式">调试模式</div>
-                <div class="setting-desc" data-i18n="启用调试日志">在控制台打印详细日志</div>
+                <div class="setting-desc" data-i18n="启用调试日志">在日志栏打印</div>
             </div>
             <div class="setting-control">
                 <div class="switch-container">
@@ -611,6 +611,11 @@
             try {
                 await api.sys_Storage.setExtensionAllUserConfigs(settings);
                 updateSwitchLabels();
+                
+                // 通知插件主进程刷新设置缓存
+                if (typeof api.jlc_eda_smooth_refreshSettings === 'function') {
+                    await api.jlc_eda_smooth_refreshSettings();
+                }
                 
                 if (!silent) {
                     const msg = api.sys_I18n ? api.sys_I18n.text('已保存') : 'Saved';
