@@ -89,10 +89,11 @@ export async function getSnapshots(): Promise<RoutingSnapshot[]> {
  */
 async function saveSnapshots(snapshots: RoutingSnapshot[]) {
 	try {
+		// 始终按时间倒序排列 (最新的在前)
+		snapshots.sort((a, b) => b.timestamp - a.timestamp);
+
 		// 限制快照数量，例如最近 10 个
 		if (snapshots.length > 10) {
-			// 保留最新的 10 个
-			snapshots.sort((a, b) => b.timestamp - a.timestamp);
 			snapshots = snapshots.slice(0, 10);
 		}
 

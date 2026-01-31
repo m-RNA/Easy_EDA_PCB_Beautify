@@ -673,7 +673,10 @@
                     return;
                 }
 
-                [...snapshots].reverse().forEach(snap => {
+                // 确保按时间倒序显示（最新的在最上面）
+                const sorted = [...snapshots].sort((a, b) => b.timestamp - a.timestamp);
+                
+                sorted.forEach(snap => {
                     const div = document.createElement('div');
                     div.className = 'snapshot-item';
                     
