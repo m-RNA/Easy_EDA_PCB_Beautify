@@ -70,4 +70,4 @@ pro-api-sdk/              # Git子模块 (EDA API SDK)
 
 ## 📜 License
 
-Apache-2.0
+[Apache-2.0](./LICENSE)
