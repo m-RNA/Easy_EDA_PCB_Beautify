@@ -1,6 +1,6 @@
 import type { Point } from './math';
 import { getSafeSelectedTracks } from './eda_utils';
-import { debugLog, logError, logWarn } from './logger';
+import { debugLog, debugWarn, logError } from './logger';
 import { dist, getAngleBetween, getLineIntersection, lerp } from './math';
 import { getSettings } from './settings';
 import { createSnapshot } from './snapshot';
@@ -534,11 +534,18 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 							// 1. 检查线段长度限制
 							// 如果实际切线距离显著小于理论距离 (小于 95%)，说明发生了严重缩放
 							// 用户要求：若线段太短使得一侧不能相切时，不生成圆弧，只打印警告
+							// 新增 Force Arc 选项：如果开启，则强制生成（接受缩放后的半径），否则跳过
 							if (d > 0.001 && actualD < d * 0.95) {
-								clampedCorners++;
-								isSkippedDueToClamp = true;
-
-								logWarn(`[Smooth Warning] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Segment too short for radius. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
+								if (settings.forceArc) {
+									// 强制模式：仅记录调试日志，不跳过
+									debugLog(`[Smooth Debug] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) clamped. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
+								}
+								else {
+									clampedCorners++;
+									isSkippedDueToClamp = true;
+									// 使用 debugWarn 避免给用户不可靠的感觉
+									debugWarn(`[Smooth Warning] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Segment too short for radius. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
+								}
 							}
 
 							// 2. 检查线宽限制 (线宽过大导致内圆弧半径为负或不相切)
@@ -551,7 +558,7 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 								// 使用一个微小的容差 (0.05) 以允许浮点数误差范围内的 "Radius == Width/2"
 								if (effectiveRadius < (maxLineWidth / 2) - 0.05) {
 									isSkippedDueToClamp = true;
-									logWarn(`[Smooth Warning] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Radius too small for line width. Radius: ${effectiveRadius.toFixed(2)}, Width: ${maxLineWidth}`);
+									debugWarn(`[Smooth Warning] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Radius too small for line width. Radius: ${effectiveRadius.toFixed(2)}, Width: ${maxLineWidth}`);
 								}
 							}
 

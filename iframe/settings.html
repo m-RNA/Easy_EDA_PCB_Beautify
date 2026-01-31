@@ -431,6 +431,26 @@
             </div>
         </div>
 
+        <!-- Force Arc -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label">
+                    <span data-i18n="强制生成圆弧">强制生成圆弧</span>
+                    <span style="background:#fff3e0;color:#ef6c00;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
+                </div>
+                <div class="setting-desc" data-i18n="短线段导致圆弧不相切也生成（半径减小）">短线段导致圆弧不相切也生成（半径减小）</div>
+            </div>
+            <div class="setting-control">
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="forceArc" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="switch-label" id="forceArcLabel" data-i18n="启用">启用</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Debug -->
         <div class="setting-item">
             <div class="setting-info">
@@ -549,6 +569,7 @@
         const elSegments = document.getElementById('widthTransitionSegments');
         const elRatio = document.getElementById('widthTransitionRatio');
         const elDebug = document.getElementById('debug');
+        const elForceArc = document.getElementById('forceArc');
         
         const elMergeShortSegments = document.getElementById('mergeShortSegments');
         
@@ -556,6 +577,7 @@
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
         const elDebugLabel = document.getElementById('debugLabel');
         const elMergeShortSegmentsLabel = document.getElementById('mergeShortSegmentsLabel');
+        const elForceArcLabel = document.getElementById('forceArcLabel');
 
         // 默认配置 (将在 init 中从 API 获取)
         let DEFAULT_CONFIG = {};
@@ -570,11 +592,13 @@
             elSyncWidthLabel.textContent = elSyncWidth.checked ? enabledText : disabledText;
             elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
             elMergeShortSegmentsLabel.textContent = elMergeShortSegments.checked ? enabledText : disabledText;
+            elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
             
             // Visual feedback color for label
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elMergeShortSegmentsLabel.style.color = elMergeShortSegments.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
         }
 
         // Load
@@ -607,6 +631,7 @@
                 elSegments.value = config.widthTransitionSegments;
                 elRatio.value = config.widthTransitionRatio;
                 elDebug.checked = config.debug;
+                elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
                 
                 updateSwitchLabels();
 
@@ -638,6 +663,7 @@
                 widthTransitionSegments: segments,
                 widthTransitionRatio: ratio,
                 debug: elDebug.checked,
+                forceArc: elForceArc.checked,
             };
             
             try {
@@ -668,7 +694,7 @@
             });
         });
         
-        [elSyncWidth, elDebug, elMergeShortSegments].forEach(el => {
+        [elSyncWidth, elDebug, elMergeShortSegments, elForceArc].forEach(el => {
             el.addEventListener('change', () => saveSettings());
         });
 

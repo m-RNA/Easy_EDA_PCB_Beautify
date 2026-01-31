@@ -6,6 +6,7 @@ export interface SmoothSettings {
 	mergeShortSegments: boolean; // 是否合并短线段
 	unit: 'mm' | 'mil'; // 单位设置
 	debug: boolean; // 调试模式
+	forceArc: boolean; // 强制生成圆弧 (即使线段太短导致被截断)
 }
 
 const DEFAULT_SETTINGS: SmoothSettings = {
@@ -16,6 +17,7 @@ const DEFAULT_SETTINGS: SmoothSettings = {
 	mergeShortSegments: false,
 	unit: 'mil',
 	debug: false,
+	forceArc: true,
 };
 
 const SETTINGS_CACHE_KEY = '_jlc_smooth_settings_cache';

@@ -1,4 +1,6 @@
 {
+	"强制生成圆弧": "Force Arc Generation",
+	"短线段导致圆弧不相切也生成（半径减小）": "Generate even if segment is too short (reduce radius)",
 	"上次撤销至此": "Last Undo Point",
 	"最新": "Latest",
 	"自动快照": "Auto Snapshot",

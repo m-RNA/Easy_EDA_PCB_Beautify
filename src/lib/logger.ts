@@ -49,6 +49,16 @@ export function logError(message: string): void {
 export function debugLog(...messages: any[]): void {
 	if (!getCachedSettings().debug)
 		return;
-	const msg = messages.map(m => typeof m === 'object' ? JSON.stringify(m) : String(m)).join(' ');
-	log(`[Debug] ${msg}`, 'info');
+
+	const msg = messages.map(m => (typeof m === 'object' ? JSON.stringify(m) : String(m))).join(' ');
+	log(msg, 'info');
+}
+
+/**
+ * 输出调试警告 (仅在调试模式下输出警告)
+ */
+export function debugWarn(message: string): void {
+	if (!getCachedSettings().debug)
+		return;
+	log(message, 'warn');
 }
