@@ -361,8 +361,11 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 				if (points.length >= 3) {
 					processedPaths++;
 					let radius = settings.cornerRadius;
-					if (settings.unit === 'mil') {
-						radius = radius * 0.0254;
+
+					// JLC EDA API 的系统单位固定为 mil (SYS_Unit.getSystemDataUnit() -> MIL)
+					// 因此所有坐标计算都必须基于 mil
+					if (settings.unit === 'mm') {
+						radius = eda.sys_Unit.mmToMil(radius); // mm -> mil
 					}
 
 					// 生成新的几何结构 - 每个元素包含自己的线宽
