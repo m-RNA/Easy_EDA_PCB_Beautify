@@ -68,14 +68,14 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 					},
 				],
 			});
-			logInfo('[JLC-EDA-Smooth] Header menus registered successfully');
+			logInfo('[EASY-EDA-Smooth] Header menus registered successfully');
 		}
 		else {
-			logWarn('[JLC-EDA-Smooth] sys_HeaderMenu not available');
+			logWarn('[EASY-EDA-Smooth] sys_HeaderMenu not available');
 		}
 	}
 	catch (e: any) {
-		logWarn(`[JLC-EDA-Smooth] Failed to register header menus dynamically: ${e.message || e}`);
+		logWarn(`[EASY-EDA-Smooth] Failed to register header menus dynamically: ${e.message || e}`);
 	}
 }
 
