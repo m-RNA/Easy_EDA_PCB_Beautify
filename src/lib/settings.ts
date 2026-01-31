@@ -1,10 +1,7 @@
 export interface SmoothSettings {
-	replaceOriginal: boolean; // 是否替换原始线段
 	syncWidthTransition: boolean; // 平滑时同步处理线宽过渡
-	smoothRatio: number; // 平滑系数
 	widthTransitionRatio: number; // 线宽过渡长度系数
 	widthTransitionSegments: number; // 线宽过渡分段数
-	iterations: number; // Catmull-Clark 平滑迭代次数
 	cornerRadius: number; // 圆角半径
 	mergeShortSegments: boolean; // 是否合并短线段
 	unit: 'mm' | 'mil'; // 单位设置
@@ -12,12 +9,9 @@ export interface SmoothSettings {
 }
 
 const DEFAULT_SETTINGS: SmoothSettings = {
-	replaceOriginal: true,
 	syncWidthTransition: false,
-	smoothRatio: 0.2,
 	widthTransitionRatio: 3, // 过渡长度 = 线宽差 * 3
 	widthTransitionSegments: 25,
-	iterations: 1,
 	cornerRadius: 20, // 默认 20mil
 	mergeShortSegments: true,
 	unit: 'mil',
