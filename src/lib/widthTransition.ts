@@ -5,7 +5,7 @@
  */
 
 import { debugLog, logError } from './logger';
-import { dist, isClose } from './math';
+import { dist, isClose, smootherStep } from './math';
 import { getSettings } from './settings';
 import { createSnapshot } from './snapshot';
 
@@ -19,15 +19,6 @@ interface TransitionRecord {
 
 interface TransitionData {
 	records: TransitionRecord[];
-}
-
-/**
- * 五次贝塞尔缓动函数 (smootherStep)
- * t: 0-1 的参数
- * 返回: 0-1 的平滑值
- */
-function smootherStep(t: number): number {
-	return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 /**

@@ -1,26 +1,9 @@
 import type { Point } from './math';
 import { debugLog, logError, logWarn } from './logger';
-import { dist, getAngleBetween, lerp } from './math';
+import { dist, getAngleBetween, getLineIntersection, lerp } from './math';
 import { getSettings } from './settings';
 import { createSnapshot } from './snapshot';
 import { addWidthTransitionsAll } from './widthTransition';
-
-/**
- * 计算两条线的交点
- */
-function getLineIntersection(p1: Point, p2: Point, p3: Point, p4: Point): Point | null {
-	if (!p1 || !p2 || !p3 || !p4)
-		return null;
-	const d = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
-	if (Math.abs(d) < 1e-6)
-		return null; // Parallel
-
-	const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / d;
-	return {
-		x: p1.x + t * (p2.x - p1.x),
-		y: p1.y + t * (p2.y - p1.y),
-	};
-}
 
 /**
  * 获取全局圆弧线宽 Map

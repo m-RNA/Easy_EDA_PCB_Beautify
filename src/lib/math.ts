@@ -51,3 +51,29 @@ export function cubicBezier(p0: Point, p1: Point, p2: Point, p3: Point, t: numbe
 		y: mt ** 3 * p0.y + 3 * mt ** 2 * t * p1.y + 3 * mt * t ** 2 * p2.y + t ** 3 * p3.y,
 	};
 }
+
+/**
+ * 计算两条线的交点
+ */
+export function getLineIntersection(p1: Point, p2: Point, p3: Point, p4: Point): Point | null {
+	if (!p1 || !p2 || !p3 || !p4)
+		return null;
+	const d = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+	if (Math.abs(d) < 1e-6)
+		return null; // Parallel
+
+	const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / d;
+	return {
+		x: p1.x + t * (p2.x - p1.x),
+		y: p1.y + t * (p2.y - p1.y),
+	};
+}
+
+/**
+ * 五次贝塞尔缓动函数 (smootherStep)
+ * t: 0-1 的参数
+ * 返回: 0-1 的平滑值
+ */
+export function smootherStep(t: number): number {
+	return t * t * t * (t * (t * 6 - 15) + 10);
+}

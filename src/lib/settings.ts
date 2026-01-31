@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS: SmoothSettings = {
 	widthTransitionRatio: 3, // 过渡长度 = 线宽差 * 3
 	widthTransitionSegments: 25,
 	cornerRadius: 20, // 默认 20mil
-	mergeShortSegments: true,
+	mergeShortSegments: false,
 	unit: 'mil',
 	debug: false,
 };
