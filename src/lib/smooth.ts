@@ -1,9 +1,26 @@
 import type { Point } from './math';
-import { debugLog, logError } from './logger';
+import { debugLog, logError, logWarn } from './logger';
 import { dist, getAngleBetween, lerp } from './math';
 import { getSettings } from './settings';
 import { createSnapshot, getSnapshots, restoreSnapshot } from './snapshot';
 import { addWidthTransitionsAll } from './widthTransition';
+
+/**
+ * 计算两条线的交点
+ */
+function getLineIntersection(p1: Point, p2: Point, p3: Point, p4: Point): Point | null {
+	if (!p1 || !p2 || !p3 || !p4)
+		return null;
+	const d = (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x);
+	if (Math.abs(d) < 1e-6)
+		return null; // Parallel
+
+	const t = ((p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x)) / d;
+	return {
+		x: p1.x + t * (p2.x - p1.x),
+		y: p1.y + t * (p2.y - p1.y),
+	};
+}
 
 /**
  * 获取全局圆弧线宽 Map
@@ -102,7 +119,41 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 		// 通过 ID 列表获取导线对象
 		// 注意：eda.pcb_PrimitiveLine.get 传入数组返回数组
 		let primitives: any[] = [];
-		const lineObjects = await eda.pcb_PrimitiveLine.get(selectedIds);
+		let lineObjects: any = null;
+
+		// 过滤无效 ID
+		const validIds = selectedIds.filter(id => id && typeof id === 'string');
+
+		if (validIds.length > 0) {
+			try {
+				lineObjects = await eda.pcb_PrimitiveLine.get(validIds);
+			}
+			catch (err: any) {
+				debugLog(`[Smooth Warning] standard get() failed, trying getAll() fallback: ${err.message}`);
+				// Fallback: 如果直接获取失败（可能是因为混合了不支持的图元ID导致 API 内部错误），
+				// 则降级为获取所有线并在内存中过滤
+				try {
+					const allLines = await eda.pcb_PrimitiveLine.getAll();
+					if (Array.isArray(allLines)) {
+						const idSet = new Set(validIds);
+						lineObjects = allLines.filter((line: any) => {
+							let pid = '';
+							if (typeof line.getState_PrimitiveId === 'function')
+								pid = line.getState_PrimitiveId();
+							else if (line.primitiveId)
+								pid = line.primitiveId;
+
+							return pid && idSet.has(pid);
+						});
+						debugLog(`[Smooth] Fallback recovered ${lineObjects.length} lines`);
+					}
+				}
+				catch (e2: any) {
+					logError(`[Smooth Error] Fallback getAll() also failed: ${e2.message}`);
+				}
+			}
+		}
+
 		if (lineObjects) {
 			if (Array.isArray(lineObjects)) {
 				primitives = lineObjects.filter(p => p !== null && p !== undefined);
@@ -358,6 +409,12 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 			for (const path of paths) {
 				const { points, orderedSegs } = path;
 
+				// 检查数据完整性
+				if (!points || points.some(p => !p || typeof p.x !== 'number' || typeof p.y !== 'number')) {
+					debugLog('[Smooth Error] Path contains invalid points, skipping');
+					continue;
+				}
+
 				if (points.length >= 3) {
 					processedPaths++;
 					let radius = settings.cornerRadius;
@@ -389,87 +446,263 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 						const prevSegWidth = orderedSegs[i - 1]?.width ?? orderedSegs[0].width;
 						const nextSegWidth = orderedSegs[i]?.width ?? prevSegWidth;
 
-						// 计算导线之间的角度
-						const v1 = {
-							x: pPrev.x - pCorner.x,
-							y: pPrev.y - pCorner.y,
-						};
-						const v2 = {
-							x: pNext.x - pCorner.x,
-							y: pNext.y - pCorner.y,
-						};
+						let isMerged = false;
 
-						const mag1 = Math.sqrt(v1.x ** 2 + v1.y ** 2);
-						const mag2 = Math.sqrt(v2.x ** 2 + v2.y ** 2);
+						try {
+							// 尝试合并短线段逻辑 (解决 U 型弯中间线段过短无法圆滑的问题)
+							if (settings.mergeShortSegments && i < points.length - 2) {
+								const pAfter = points[i + 2];
+								// 额外检查 pAfter 是否存在
+								if (pAfter) {
+									const segLen = dist(pCorner, pNext);
 
-						// 夹角计算
-						const dot = (v1.x * v2.x + v1.y * v2.y) / (mag1 * mag2);
-						// 限制 dot 范围防止数值误差
-						const safeDot = Math.max(-1, Math.min(1, dot));
-						const angleRad = Math.acos(safeDot);
+									// 当中间线段长度小于圆角半径的 1.5 倍时尝试合并 (放宽条件，之前是 < radius)
+									// 或者如果计算出的切线需求 distance 大于线段的一半，说明可能需要合并
+									if (segLen < radius * 1.5) {
+										const vIn = { x: pPrev.x - pCorner.x, y: pPrev.y - pCorner.y };
+										const vMid = { x: pNext.x - pCorner.x, y: pNext.y - pCorner.y };
+										const vOut = { x: pAfter.x - pNext.x, y: pAfter.y - pNext.y }; // 注意向量方向
 
-						// 计算切点距离
-						// d = R / tan(angle / 2)
-						// 当角度接近 180度 (PI) 时，tan(PI/2) -> Inf, d -> 0
-						// 当角度接近 0度 (0) 时，tan(0) -> 0, d -> Inf
-						const tanVal = Math.tan(angleRad / 2);
-						let d = 0;
-						if (Math.abs(tanVal) > 0.0001) {
-							d = radius / tanVal;
+										// 计算拐角方向
+										// getAngleBetween 返回 v1 到 v2 的角度
+										const angle1 = getAngleBetween({ x: -vIn.x, y: -vIn.y }, { x: vMid.x, y: vMid.y });
+										// 修复：Angle2 也应该使用 "Forward Incoming" (vMid) 和 "Forward Outgoing" (vOut)
+										const angle2 = getAngleBetween({ x: vMid.x, y: vMid.y }, { x: vOut.x, y: vOut.y });
+
+										// 如果两个拐角同向 (乘积 > 0)，且角度不是极小
+										// 放宽检测：允许轻微的S型如果角度很小？
+										// 还是严格同向。
+										if (angle1 * angle2 > 0 && Math.abs(angle1) > 1 && Math.abs(angle2) > 1) {
+											// 计算两条长边的交点 (pPrev->pCorner 和 pNext->pAfter 的延长线交点)
+											// 由于我们要用 pPrev 和 pAfter 作为远端点，这里传入延长线上的点即可
+											const intersection = getLineIntersection(pPrev, pCorner, pNext, pAfter);
+
+											if (intersection) {
+												// 检查交点是否在合理范围内
+												// 如果交点离 pCorner 或 pNext 极远，说明两线几乎平行，可能不适合硬合并
+												const dInt1 = dist(intersection, pCorner);
+												const dInt2 = dist(intersection, pNext);
+
+												// 限制条件：交点距离不应超过线段长度的 10 倍，防止平行线产生的远交点
+												if (dInt1 < segLen * 10 && dInt2 < segLen * 10) {
+													// 找到了交点，尝试以交点为中心构建大圆弧
+													const t_v1 = { x: pPrev.x - intersection.x, y: pPrev.y - intersection.y };
+													const t_v2 = { x: pAfter.x - intersection.x, y: pAfter.y - intersection.y };
+													const t_mag1 = Math.sqrt(t_v1.x ** 2 + t_v1.y ** 2);
+													const t_mag2 = Math.sqrt(t_v2.x ** 2 + t_v2.y ** 2);
+
+													// 计算夹角
+													const t_dot = (t_v1.x * t_v2.x + t_v1.y * t_v2.y) / (t_mag1 * t_mag2);
+													const t_safeDot = Math.max(-1, Math.min(1, t_dot));
+													const t_angleRad = Math.acos(t_safeDot);
+
+													// 计算几何限制半径 (防突起)
+													// 我们只在半径非常大的情况下进行限制，
+													// 并且限制条件不能太严格，否则会阻止切除短线段。
+													// 策略：只有当 calculated radius 导致的 tangent distance
+													// 使得圆弧过于 "远离" 桥接线段时才限制。
+													// 实际上，t_maxAllowedRadius (限制在 leg length 95%) 已经是对 Bulge 最好的限制。
+													// 之前的 t_limitRadius 基于 "distIM" (桥接线段深度) 是错误的，因为在合并时我们正是要消除这个深度。
+													// 所以移除该限制。
+
+													const t_tanVal = Math.tan(t_angleRad / 2);
+													let t_d = 0;
+													if (Math.abs(t_tanVal) > 0.0001) {
+														t_d = radius / t_tanVal;
+													}
+
+													// 限制半径，防止吞噬掉太多的线段
+													// t_mag1 和 t_mag2 是 交点到 pPrev/pAfter 的距离。
+													// 如果圆弧太大，切点会超出 segs 的范围。
+													const t_maxAllowedRadius = Math.min(t_mag1 * 0.95, t_mag2 * 0.95);
+													const t_actualD = Math.min(t_d, t_maxAllowedRadius);
+
+													let t_limitByWidth = false;
+
+													// 用户要求：带线宽的检查
+													// 如果合并后的圆弧有效半径小于线宽的一半，则不生成（防止自交/尖角）
+													// t_actualD 是切线长度。Effective Radius = actualD * tan(theta/2)
+													const t_effectiveRadius = t_actualD * Math.abs(t_tanVal);
+													const t_maxLineWidth = Math.max(prevSegWidth, nextSegWidth); // 取较大线宽作为保守估计
+
+													if (t_effectiveRadius < (t_maxLineWidth / 2) - 0.05) {
+														t_limitByWidth = true;
+														debugLog(`[Smooth Debug] Merge skipped on ${net}: Radius too small for width (Radius=${t_effectiveRadius.toFixed(2)}, Width=${t_maxLineWidth})`);
+													}
+
+													if (t_actualD > 0.05 && !t_limitByWidth) {
+														const pStart = lerp(intersection, pPrev, t_actualD / t_mag1);
+														const pEnd = lerp(intersection, pAfter, t_actualD / t_mag2);
+
+														// 添加直线
+														if (dist(currentStart, pStart) > 0.001) {
+															newPath.push({
+																type: 'line',
+																start: currentStart,
+																end: pStart,
+																width: prevSegWidth,
+															});
+														}
+
+														// 计算 Arc 角度
+														const t_sweptAngle = getAngleBetween(
+															{ x: -t_v1.x, y: -t_v1.y },
+															{ x: t_v2.x, y: t_v2.y },
+														);
+
+														// 使用合并后的下一段线宽
+														const afterSegWidth = orderedSegs[i + 1]?.width ?? nextSegWidth;
+
+														newPath.push({
+															type: 'arc',
+															start: pStart,
+															end: pEnd,
+															angle: t_sweptAngle,
+															width: afterSegWidth,
+														});
+
+														createdArcs++;
+														currentStart = pEnd;
+
+														// 成功合并，跳过下一个点
+														i++;
+														isMerged = true;
+
+														// Log
+														debugLog(`[Smooth] Merged short segment on ${net} at index ${i - 1}, segLen: ${segLen.toFixed(2)}, new radius usage: ${t_actualD.toFixed(2)}`);
+													}
+													else {
+														debugLog(`[Smooth Info] Merge calc failed on ${net}. actualD too small (${t_actualD})`);
+													}
+												}
+												else {
+													debugLog(`[Smooth Debug] Merge skipped on ${net}: Intersection too far (dInt1=${dInt1.toFixed(2)}, dInt2=${dInt2.toFixed(2)}, limit=${(segLen * 10).toFixed(2)})`);
+												}
+											}
+											else {
+												debugLog(`[Smooth Debug] Merge skipped on ${net}: Lines Parallel or No Intersection`);
+											}
+										}
+										else {
+											debugLog(`[Smooth Debug] Merge skipped on ${net}: Angles not suitable for U-turn (angle1=${angle1.toFixed(1)}, angle2=${angle2.toFixed(1)})`);
+										}
+									}
+								}
+							}
+						}
+						catch (err: any) {
+							logError(`[Smooth Error] Merge logic failed at index ${i} on ${net}: ${err.message}`);
+							// fall through to normal logic
 						}
 
-						// 如果线段太短，必须缩小半径以适应
-						const maxAllowedRadius = Math.min(mag1 * 0.45, mag2 * 0.45);
-						const actualD = Math.min(d, maxAllowedRadius);
+						if (!isMerged) {
+							// 计算导线之间的角度
+							const v1 = {
+								x: pPrev.x - pCorner.x,
+								y: pPrev.y - pCorner.y,
+							};
+							const v2 = {
+								x: pNext.x - pCorner.x,
+								y: pNext.y - pCorner.y,
+							};
 
-						// 如果实际切线距离显著小于理论距离 (小于 90%)，说明发生了缩放
-						if (d > 0.001 && actualD < d * 0.9) {
-							clampedCorners++;
-						}
+							const mag1 = Math.sqrt(v1.x ** 2 + v1.y ** 2);
+							const mag2 = Math.sqrt(v2.x ** 2 + v2.y ** 2);
 
-						// 只有当计算出的切线距离有效且足够大时，才生成圆弧
-						// 增加一个最小阈值，比如 0.05 (假设单位是mm，则很小；如果是mil，则极小)
-						if (actualD > 0.05) {
-							const pStart = lerp(pCorner, pPrev, actualD / mag1);
-							const pEnd = lerp(pCorner, pNext, actualD / mag2);
+							// 夹角计算
+							const dot = (v1.x * v2.x + v1.y * v2.y) / (mag1 * mag2);
+							// 限制 dot 范围防止数值误差
+							const safeDot = Math.max(-1, Math.min(1, dot));
+							const angleRad = Math.acos(safeDot);
 
-							// 添加 [当前起点 -> 切点1] 的直线，使用前一段的线宽
-							newPath.push({
-								type: 'line',
-								start: currentStart,
-								end: pStart,
-								width: prevSegWidth,
-							});
+							// 计算切点距离
+							// d = R / tan(angle / 2)
+							// 当角度接近 180度 (PI) 时，tan(PI/2) -> Inf, d -> 0
+							// 当角度接近 0度 (0) 时，tan(0) -> 0, d -> Inf
+							const tanVal = Math.tan(angleRad / 2);
+							let d = 0;
+							if (Math.abs(tanVal) > 0.0001) {
+								d = radius / tanVal;
+							}
 
-							// 计算 Arc 角度
-							// 使用有符号角度
-							const sweptAngle = getAngleBetween(
-								{ x: -v1.x, y: -v1.y },
-								{ x: v2.x, y: v2.y },
-							);
+							// 如果线段太短，必须缩小半径以适应 (max limit 45% of seg length)
+							const maxAllowedRadius = Math.min(mag1 * 0.45, mag2 * 0.45);
+							const actualD = Math.min(d, maxAllowedRadius);
 
-							// 添加圆弧，使用后一段的线宽（与下一段线连接更自然）
-							const arcWidth = nextSegWidth;
-							newPath.push({
-								type: 'arc',
-								start: pStart,
-								end: pEnd,
-								angle: sweptAngle,
-								width: arcWidth,
-							});
+							let isSkippedDueToClamp = false;
 
-							createdArcs++;
-							currentStart = pEnd;
-						}
-						else {
-							// 无法圆滑（半径太大或角度不合适），保留原拐角
-							newPath.push({
-								type: 'line',
-								start: currentStart,
-								end: pCorner,
-								width: prevSegWidth,
-							});
-							currentStart = pCorner;
+							// 1. 检查线段长度限制
+							// 如果实际切线距离显著小于理论距离 (小于 95%)，说明发生了严重缩放
+							// 用户要求：若线段太短使得一侧不能相切时，不生成圆弧，只打印警告
+							if (d > 0.001 && actualD < d * 0.95) {
+								clampedCorners++;
+								isSkippedDueToClamp = true;
+
+								logWarn(`[Smooth Warning] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Segment too short for radius. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
+							}
+
+							// 2. 检查线宽限制 (线宽过大导致内圆弧半径为负或不相切)
+							if (!isSkippedDueToClamp) {
+								const effectiveRadius = actualD * Math.abs(tanVal);
+								const maxLineWidth = Math.max(prevSegWidth, nextSegWidth);
+								// 内侧半径 = 中心半径 - 线宽/2
+								// 允许内侧半径为 0 (即尖角)，但不能为负
+								// 必须保证 effectiveRadius >= maxLineWidth / 2
+								// 使用一个微小的容差 (0.05) 以允许浮点数误差范围内的 "Radius == Width/2"
+								if (effectiveRadius < (maxLineWidth / 2) - 0.05) {
+									isSkippedDueToClamp = true;
+									logWarn(`[Smooth Warning] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Radius too small for line width. Radius: ${effectiveRadius.toFixed(2)}, Width: ${maxLineWidth}`);
+								}
+							}
+
+							// 只有当计算出的切线距离有效且足够大时，才生成圆弧
+							if (actualD > 0.05 && !isSkippedDueToClamp) {
+								const pStart = lerp(pCorner, pPrev, actualD / mag1);
+								const pEnd = lerp(pCorner, pNext, actualD / mag2);
+
+								// 添加 [当前起点 -> 切点1] 的直线，使用前一段的线宽
+								newPath.push({
+									type: 'line',
+									start: currentStart,
+									end: pStart,
+									width: prevSegWidth,
+								});
+
+								// 计算 Arc 角度
+								// 使用有符号角度
+								const sweptAngle = getAngleBetween(
+									{ x: -v1.x, y: -v1.y },
+									{ x: v2.x, y: v2.y },
+								);
+
+								// 添加圆弧，使用后一段的线宽（与下一段线连接更自然）
+								const arcWidth = nextSegWidth;
+								newPath.push({
+									type: 'arc',
+									start: pStart,
+									end: pEnd,
+									angle: sweptAngle,
+									width: arcWidth,
+								});
+
+								createdArcs++;
+								currentStart = pEnd;
+							}
+							else {
+								// 无法圆滑（半径太大或角度不合适），保留原拐角
+								newPath.push({
+									type: 'line',
+									start: currentStart,
+									end: pCorner,
+									width: prevSegWidth,
+								});
+								currentStart = pCorner;
+
+								// Log failure
+								if (!isSkippedDueToClamp && eda.sys_Log && typeof eda.sys_Log.add === 'function') {
+									eda.sys_Log.add(`[Smooth Info] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) skipped. Angle or Radius invalid. actualD=${actualD.toFixed(3)}`);
+								}
+							}
 						}
 					}
 

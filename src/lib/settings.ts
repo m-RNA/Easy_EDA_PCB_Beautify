@@ -6,6 +6,7 @@ export interface SmoothSettings {
 	widthTransitionSegments: number; // 线宽过渡分段数
 	iterations: number;
 	cornerRadius: number;
+	mergeShortSegments: boolean; // 是否合并短线段
 	unit: 'mm' | 'mil'; // 单位设置
 	debug: boolean; // 调试模式
 }
@@ -18,6 +19,7 @@ const DEFAULT_SETTINGS: SmoothSettings = {
 	widthTransitionSegments: 5,
 	iterations: 1,
 	cornerRadius: 25.4, // 默认 25.4mm (1000mil)
+	mergeShortSegments: true,
 	unit: 'mil',
 	debug: false,
 };

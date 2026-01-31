@@ -359,6 +359,23 @@
             </div>
         </div>
 
+        <!-- Merge Short Segments -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="合并短线段">合并短线段</div>
+                <div class="setting-desc" data-i18n="自动合并过短的中间线段以生成圆弧">自动合并过短的中间线段以生成圆弧</div>
+            </div>
+            <div class="setting-control">
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="mergeShortSegments" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span class="switch-label" id="mergeShortSegmentsLabel" data-i18n="启用">启用</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Sync Width -->
         <div class="setting-item">
             <div class="setting-info">
@@ -528,14 +545,18 @@
         const elRatio = document.getElementById('widthTransitionRatio');
         const elDebug = document.getElementById('debug');
         
+        const elMergeShortSegments = document.getElementById('mergeShortSegments');
+        
         // I18n labels update
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
         const elDebugLabel = document.getElementById('debugLabel');
+        const elMergeShortSegmentsLabel = document.getElementById('mergeShortSegmentsLabel');
 
         // 默认配置
         const DEFAULT_CONFIG = {
             cornerRadius: 500,
             unit: 'mil',
+            mergeShortSegments: true,
             syncWidthTransition: false,
             widthTransitionSegments: 25,
             widthTransitionRatio: 2.5,
@@ -551,10 +572,12 @@
             
             elSyncWidthLabel.textContent = elSyncWidth.checked ? enabledText : disabledText;
             elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
+            elMergeShortSegmentsLabel.textContent = elMergeShortSegments.checked ? enabledText : disabledText;
             
             // Visual feedback color for label
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elMergeShortSegmentsLabel.style.color = elMergeShortSegments.checked ? 'var(--primary)' : 'var(--text-secondary)';
         }
 
         // Load
@@ -571,6 +594,7 @@
                 elCornerRadius.value = config.cornerRadius;
                 elUnitSelect.value = config.unit;
                 currentUnitState = config.unit;
+                elMergeShortSegments.checked = config.mergeShortSegments !== undefined ? config.mergeShortSegments : true;
                 elSyncWidth.checked = config.syncWidthTransition;
                 elSegments.value = config.widthTransitionSegments;
                 elRatio.value = config.widthTransitionRatio;
@@ -601,6 +625,7 @@
             const settings = {
                 cornerRadius: radius,
                 unit: elUnitSelect.value,
+                mergeShortSegments: elMergeShortSegments.checked,
                 syncWidthTransition: elSyncWidth.checked,
                 widthTransitionSegments: segments,
                 widthTransitionRatio: ratio,
@@ -636,7 +661,7 @@
             });
         });
         
-        [elSyncWidth, elDebug].forEach(el => {
+        [elSyncWidth, elDebug, elMergeShortSegments].forEach(el => {
             el.addEventListener('change', () => saveSettings());
         });
 
