@@ -791,7 +791,7 @@ export async function smoothRouting(scope: 'selected' | 'all' = 'selected') {
 		) {
 			if (createdArcs > 0) {
 				eda.sys_Message.showToastMessage(
-					`${eda.sys_I18n.text('圆弧优化完成')}: ${eda.sys_I18n.text('处理了')} ${processedPaths} ${eda.sys_I18n.text('条路径')}, ${eda.sys_I18n.text('创建了')} ${createdArcs} ${eda.sys_I18n.text('个圆弧')}`,
+					`${eda.sys_I18n.text('圆弧美化完成')}: ${eda.sys_I18n.text('处理了')} ${processedPaths} ${eda.sys_I18n.text('条路径')}, ${eda.sys_I18n.text('创建了')} ${createdArcs} ${eda.sys_I18n.text('个圆弧')}`,
 				);
 
 				if (clampedCorners > 0) {

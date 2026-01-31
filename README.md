@@ -1,8 +1,18 @@
-# 熔化PCB - 圆滑布线 & 线宽过渡
+# 美化PCB
 
-嘉立创EDA专业版扩展 —— 将直角走线转换为平滑圆弧，支持平滑线宽过渡。
+嘉立创EDA专业版扩展 —— **美化PCB**：一键将PCB拐角美化为圆弧，线宽突变处贝塞尔美化（更好的泪滴）支持多步撤销、快照管理、合并短线段，强制圆弧生成等高级美化功能
 
-![效果预览](./images/preview.gif)
+1、拐角美化为圆弧（可二次编辑半径）
+
+![效果预览](./images/preview1.gif)
+
+2、突变线宽平滑美化（基于贝塞尔曲线）
+
+![效果预览](./images/preview2.gif)
+
+3、快照管理 & 撤销支持
+
+![效果预览](./images/preview3.gif)
 
 > ⚠️ 插件开发中，建议操作前备份工程，遇到问题欢迎反馈。
 
@@ -10,26 +20,37 @@
 
 | 功能 | 说明 |
 | ------ | ------ |
-| 圆滑布线 | 直角拐角 → 平滑圆弧，可调节半径 |
-| 线宽过渡 | 不同线宽间平滑渐变，基于贝塞尔曲线 |
-| 快照管理 | 一键备份/恢复布线状态 |
-| 撤销支持 | 操作前自动备份，随时回退 |
+| 圆滑布线 | 折线拐角 → 平滑圆弧，可调节最大半径 |
+| 线宽过渡 | 不同线宽间平滑渐变（更好的泪滴），基于贝塞尔曲线算法 |
+| 快照管理 | 自动/手动快照，随时一键恢复布线状态，防止误操作 |
+| 高级控制 | 支持强制小半径圆弧生成、合并短线段等高级策略 (Beta) |
 
 ## 📖 使用
 
-**菜单位置：** PCB编辑器 → 熔化PCB
+**菜单位置：** 高级 → 美化PCB
 
-- **圆滑布线（选中/全部）** - 处理走线拐角(基于圆弧走线)
-- **过渡线宽（选中/全部）** - 生成线宽渐变(基于贝塞尔曲线)
-- **设置** - 配置半径、过渡参数等
+- **圆滑布线（选中/全部）** - 处理走线拐角(基于圆弧走线美化)
+- **过渡线宽（选中/全部）** - 生成线宽渐变(基于贝塞尔曲线美化)
+- **撤销** - 回退到上一步操作（支持多步撤销）
+- **设置** - 配置半径、过渡参数、快照等选项
 
-## 🚀 开发
+![效果预览](./images/topMenu.png)
+
+![效果预览](./images/setting.png)
+
+可通过 高级 → 扩展管理器 → 已安装扩展 → 美化PCB → 配置 勾选显示在顶部菜单，方便使用
+
+![效果预览](./images/topMenuConfig.png)
+
+## 🚀 参与贡献
+
+欢迎Fork & PR！开发环境搭建如下：
 
 ### 克隆仓库
 
 ```bash
-git clone --recursive https://github.com/m-RNA/Easy_EDA_Smooth.git
-cd Easy_EDA_Smooth
+git clone --recursive https://github.com/m-RNA/Easy_EDA_PCB_Beautify.git
+cd Easy_EDA_PCB_Beautify
 ```
 
 ### 已克隆？拉取子模块
@@ -47,27 +68,30 @@ npm install
 npm run build
 ```
 
-构建产物：`dist/` 目录下的 `.eext` 扩展包
+构建产物：`build/dist/` 目录下的 `.eext` 扩展包
 
-### 开发注意事项
+### 开发注意
 
-详见 [DEVELOPER_NOTES.md](./DEVELOPER_NOTES.md)
+劳请阅读此文件，不要踩坑： [DEVELOPER_NOTES.md](./DEVELOPER_NOTES.md)
 
 ## 📁 结构
 
 ```txt
 src/
-├── index.ts              # 入口 & 菜单注册
+├── index.ts               # 入口 & 菜单注册
 └── lib/
-    ├── smooth.ts         # 圆滑布线核心
+    ├── smooth.ts          # 圆滑布线
     ├── widthTransition.ts # 线宽过渡
-    ├── snapshot.ts       # 快照管理
-    └── settings.ts       # 配置
+    ├── snapshot.ts        # 快照管理
+    ├── math.ts            # 数学工具
+    ├── eda_utils.ts       # EDA 工具
+    ├── logger.ts          # 日志打印
+    └── settings.ts        # 设置读写
 iframe/
-└── settings.html         # 设置界面
-pro-api-sdk/              # Git子模块 (EDA API SDK)
+└── settings.html          # 设置界面
+pro-api-sdk/               # Git子模块 (嘉立创专业版扩展API SDK)
 ```
 
 ## 📜 License
 
-[Apache-2.0](./LICENSE)
+这个项目采用 Apache-2.0 许可证，详情见 [【Apache-2.0 许可证】](https://www.apache.org/licenses/LICENSE-2.0.txt)

@@ -1,29 +1,36 @@
 {
-	"name": "easy-eda-smooth",
+	"name": "easy-eda-beautify",
 	"uuid": "3911cc55444d4833b5762da1521fe616",
-	"displayName": "圆滑布线-线宽过渡-熔化PCB",
-	"description": "基于圆弧平滑熔化，支持线宽平滑过渡，可以自己再次修改圆弧半径，支持撤销",
+	"displayName": "美化PCB",
+	"description": "一键拐角圆弧美化 线宽突变处贝塞尔美化 多步撤销 快照 合并短线段 强制圆弧生成等高级美化功能",
 	"version": "1.0.0",
 	"publisher": "m-RNA",
 	"engines": {
-		"eda": "^2.3.0"
+		"eda": "^3.0.0"
 	},
 	"license": "Apache-2.0",
 	"repository": {
-		"type": "extension-store",
-		"url": ""
+		"type": "github",
+		"url": "https://github.com/m-RNA/Easy_EDA_PCB_Beautify.git"
 	},
 	"categories": "PCB",
 	"keywords": [
+		"Beautify",
+		"美化",
 		"PCB",
+		"圆滑布线",
+		"线宽过渡",
 		"Smooth",
-		"Routing"
+		"WidthTransition",
+		"Routing",
+		"优化",
+		"Curve"
 	],
 	"images": {
 		"logo": "./images/logo.png"
 	},
-	"homepage": "https://github.com/m-RNA/Easy_EDA_Smooth",
-	"bugs": "https://github.com/m-RNA/Easy_EDA_Smooth",
+	"homepage": "https://github.com/m-RNA/Easy_EDA_PCB_Beautify",
+	"bugs": "https://github.com/m-RNA/Easy_EDA_PCB_Beautify/issues",
 	"activationEvents": {
 		"onStartupFinished": true
 	},
@@ -32,8 +39,8 @@
 	"headerMenus": {
 		"pcb": [
 			{
-				"id": "MeltPCB",
-				"title": "熔化PCB",
+				"id": "BeautifyPCB",
+				"title": "美化PCB",
 				"menuItems": [
 					{
 						"id": "SmoothSelected",

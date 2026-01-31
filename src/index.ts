@@ -34,7 +34,7 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 				pcb: [
 					{
 						id: 'MeltPCB',
-						title: eda.sys_I18n ? eda.sys_I18n.text('熔化PCB') : '熔化PCB',
+						title: eda.sys_I18n ? eda.sys_I18n.text('美化PCB') : '美化PCB',
 						menuItems: [
 							{
 								id: 'SmoothSelected',

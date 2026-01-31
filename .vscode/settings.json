@@ -74,6 +74,7 @@
 		"outdir",
 		"sandboxed",
 		"segs",
+		"smoothable",
 		"SZJLC",
 		"TDMT",
 		"teardrop",
@@ -92,16 +93,16 @@
 		"editor.defaultFormatter": "vscode.typescript-language-features"
 	},
 	"search.exclude": {
-		"EDA_EX_DOC": false,
+		"node_modules": false,
+		"node_modules/*": true,
 		"node_modules/@jlceda/pro-api-types": false,
-		"**/node_modules/@jlceda/pro-api-types": false,
-		"EDA_EX_DOC/**/*.js*": true,
-		"EDA_EX_DOC/**/*_files": true
+		"**/EDA_EX_DOC/**/*.js*": true,
+		"**/EDA_EX_DOC/**/*_files/**": true,
+		"**/*.js.下载": true
 	},
 	"files.exclude": {
-		"EDA_EX_DOC": false,
-		"node_modules/@jlceda/pro-api-types": false,
-		"**/node_modules/@jlceda/pro-api-types": false
+		"**/EDA_EX_DOC/**/*.js*": true,
+		"**/EDA_EX_DOC/**/*_files/**": true
 	},
 	"search.useIgnoreFiles": false
 }
