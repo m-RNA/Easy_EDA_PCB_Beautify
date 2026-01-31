@@ -85,8 +85,40 @@ export async function addWidthTransitionsSelected() {
 	}
 
 	try {
-		// 获取选中的导线对象（传入数组返回数组）
-		const lineObjects = await eda.pcb_PrimitiveLine.get(allSelectedIds);
+		// 尝试获取选中的导线对象
+		// 增加容错逻辑：当选中混合对象（如 Track + Arc）时，eda.pcb_PrimitiveLine.get 可能会崩溃
+		let lineObjects: any = null;
+
+		try {
+			// 过滤非法 ID
+			const validIds = allSelectedIds.filter(id => id && typeof id === 'string');
+			if (validIds.length > 0) {
+				lineObjects = await eda.pcb_PrimitiveLine.get(validIds);
+			}
+		}
+		catch (err: any) {
+			debugLog(`[Width Transition] standard get() failed, trying getAll() fallback: ${err.message}`);
+			// Fallback: 降级为获取所有线并在内存中过滤
+			try {
+				const allLines = await eda.pcb_PrimitiveLine.getAll();
+				if (Array.isArray(allLines)) {
+					const idSet = new Set(allSelectedIds);
+					lineObjects = allLines.filter((line: any) => {
+						let pid = '';
+						if (typeof line.getState_PrimitiveId === 'function')
+							pid = line.getState_PrimitiveId();
+						else if (line.primitiveId)
+							pid = line.primitiveId;
+
+						return pid && idSet.has(pid);
+					});
+					debugLog(`[Width Transition] Fallback recovered ${lineObjects.length} lines`);
+				}
+			}
+			catch (e2: any) {
+				logError(`[Width Transition Error] Fallback getAll() also failed: ${e2.message}`);
+			}
+		}
 
 		// 确保返回的是数组，并过滤掉 null/undefined
 		let selectedTracks: any[] = [];
