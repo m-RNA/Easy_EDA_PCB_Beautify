@@ -89,5 +89,18 @@
 	},
 	"[typescript]": {
 		"editor.defaultFormatter": "vscode.typescript-language-features"
-	}
+	},
+	"search.exclude": {
+		"EDA_EX_DOC": false,
+		"node_modules/@jlceda/pro-api-types": false,
+		"**/node_modules/@jlceda/pro-api-types": false,
+		"EDA_EX_DOC/**/*.js*": true,
+		"EDA_EX_DOC/**/*_files": true
+	},
+	"files.exclude": {
+		"EDA_EX_DOC": false,
+		"node_modules/@jlceda/pro-api-types": false,
+		"**/node_modules/@jlceda/pro-api-types": false
+	},
+	"search.useIgnoreFiles": false
 }
