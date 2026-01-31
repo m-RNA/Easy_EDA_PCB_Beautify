@@ -696,20 +696,24 @@
                     div.innerHTML = '<div><div class="snapshot-meta">' + nameStr + '</div><div class="snapshot-details">' + timeStr + ' · ' + linesText + '</div></div><button type="button" class="btn btn-white" style="padding:4px 10px;font-size:12px;">' + recoverText + '</button>';
                     
                     // Attach click
-                    div.querySelector('button').onclick = async () => {
+                    div.querySelector('button').onclick = () => {
                         const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要恢复到此状态吗？') : 'Confirm restore?';
-                        if (confirm(confirmText)) {
-                            try {
-                                const result = await api.jlc_eda_smooth_snapshot.restoreSnapshot(snap.id);
-                                if (result) {
-                                    const restoredText = api.sys_I18n ? api.sys_I18n.text('已恢复') : 'Restored';
-                                    showToast(restoredText);
-                                } else {
-                                    alert('Restore returned false');
+                        if (api.sys_Dialog) {
+                            api.sys_Dialog.showConfirmationMessage(confirmText, api.sys_I18n ? api.sys_I18n.text('恢复快照') : 'Restore Snapshot', undefined, undefined, async (ok) => {
+                                if (ok) {
+                                    try {
+                                        const result = await api.jlc_eda_smooth_snapshot.restoreSnapshot(snap.id);
+                                        if (result) {
+                                            const restoredText = api.sys_I18n ? api.sys_I18n.text('已恢复') : 'Restored';
+                                            showToast(restoredText);
+                                        } else {
+                                            api.sys_Dialog.showInformationMessage('Restore returned false');
+                                        }
+                                    } catch(err) {
+                                        api.sys_Dialog.showInformationMessage('Restore failed: ' + err);
+                                    }
                                 }
-                            } catch(err) {
-                                alert('Restore failed: ' + err);
-                            }
+                            });
                         }
                     };
                     
@@ -724,7 +728,11 @@
         document.getElementById('createSnapshotBtn').onclick = async () => {
             const api = API || getEda();
             if (!api || !api.jlc_eda_smooth_snapshot) {
-                alert('API not ready (jlc_eda_smooth_snapshot missing)');
+                if (api && api.sys_Dialog) {
+                    api.sys_Dialog.showInformationMessage('API not ready (jlc_eda_smooth_snapshot missing)');
+                } else {
+                    console.error('API not ready (jlc_eda_smooth_snapshot missing)');
+                }
                 return;
             }
             try {
@@ -734,18 +742,27 @@
                 showToast(api.sys_I18n ? api.sys_I18n.text('快照已创建') : 'Snapshot Created');
             } catch (e) {
                 console.error('Create Snapshot Error:', e);
-                alert('Create Snapshot Error: ' + e);
+                if (api.sys_Dialog) {
+                    api.sys_Dialog.showInformationMessage('Create Snapshot Error: ' + e);
+                } else {
+                    console.error('Create Snapshot Error: ' + e);
+                }
             }
         };
 
-        document.getElementById('clearSnapshotsBtn').onclick = async () => {
+        document.getElementById('clearSnapshotsBtn').onclick = () => {
             const api = API || getEda();
             if (!api || !api.jlc_eda_smooth_snapshot) return;
             const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要清除所有快照吗？') : 'Clear all snapshots?';
-            if (confirm(confirmText)) {
-                await api.jlc_eda_smooth_snapshot.clearSnapshots();
-                await refreshSnapshots();
-                showToast(api.sys_I18n ? api.sys_I18n.text('已清除') : 'Cleared');
+            
+            if (api.sys_Dialog) {
+                api.sys_Dialog.showConfirmationMessage(confirmText, api.sys_I18n ? api.sys_I18n.text('清除快照') : 'Clear Snapshots', undefined, undefined, async (ok) => {
+                    if (ok) {
+                        await api.jlc_eda_smooth_snapshot.clearSnapshots();
+                        await refreshSnapshots();
+                        showToast(api.sys_I18n ? api.sys_I18n.text('已清除') : 'Cleared');
+                    }
+                });
             }
         };
 
