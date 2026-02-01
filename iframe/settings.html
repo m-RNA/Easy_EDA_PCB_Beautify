@@ -578,7 +578,6 @@
         const elRatio = document.getElementById('widthTransitionRatio');
         const elDebug = document.getElementById('debug');
         const elForceArc = document.getElementById('forceArc');
-        
         const elMergeShortSegments = document.getElementById('mergeShortSegments');
 
         // I18n labels update
@@ -647,12 +646,10 @@
                 if (currentUnitState === 'mm') {
                     // 0.1 mm
                     elCornerRadius.setAttribute('data-step', '0.1');
-                    elCornerRadius.setAttribute('data-decimals', '3'); // Allow up to 3 decimals
                 }
                 else {
                     // 1 mil (User requested 1 mil step, not 0.1)
                     elCornerRadius.setAttribute('data-step', '1');
-                    elCornerRadius.setAttribute('data-decimals', '0'); // Usually mil is integer, but let's allow decimals if calculated
                 }
 
                 elMergeShortSegments.checked = config.mergeShortSegments !== undefined ? config.mergeShortSegments : true;
@@ -1105,13 +1102,6 @@
                         });
                     });
                     console.log('[Settings] Snapshot callback registered');
-                }
-                else if (api) {
-                    // 兼容旧版
-                    api._onSnapshotChange = () => {
-                        refreshSnapshots();
-                    };
-                    console.log('[Settings] Using fallback _onSnapshotChange');
                 }
 
                 // 额外保险：定时轮询检查快照数量变化

@@ -46,21 +46,9 @@ function notifySnapshotChange() {
 	if (typeof registeredCallback === 'function') {
 		try {
 			registeredCallback();
-			return;
 		}
 		catch (e) {
 			logError(`UI callback failed: ${e}`, 'Snapshot');
-		}
-	}
-
-	// Fallback to global property (兼容旧版)
-	const callback = (eda as any)._onSnapshotChange;
-	if (typeof callback === 'function') {
-		try {
-			callback();
-		}
-		catch (e) {
-			logError(`Global callback failed: ${e}`, 'Snapshot');
 		}
 	}
 }
