@@ -1,5 +1,5 @@
 {
-	"name": "easy-eda-beautify",
+	"name": "eext-pcb-beautify",
 	"uuid": "3911cc55444d4833b5762da1521fe616",
 	"displayName": "美化PCB",
 	"description": "一键拐角圆弧美化 线宽突变处贝塞尔美化 多步撤销 快照 合并短线段 强制圆弧生成等高级美化功能",
