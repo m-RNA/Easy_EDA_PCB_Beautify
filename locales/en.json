@@ -91,5 +91,6 @@
 	"强制恢复前备份": "Backup (Pre-Force Restore)",
 	"确定要恢复到此快照状态吗？当前画布将被覆盖。": "Restore this snapshot? Current canvas will be overwritten.",
 	"快照所属PCB与当前PCB不一致，强制恢复可能导致未知的错误，是否继续？": "Current PCB does not match snapshot PCB. Continue restoration?",
-	"没有找到当前PCB的可撤销快照": "No undo snapshot found for current PCB"
+	"没有找到当前PCB的可撤销快照": "No undo snapshot found for current PCB",
+	"当前布线状态与最新快照一致，无需重复创建": "Current state matches the latest snapshot. No need to create new one."
 }

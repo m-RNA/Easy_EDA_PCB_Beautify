@@ -296,6 +296,18 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 				if (isIdentical) {
 					// Identical, skip saving
 					debugLog('Snapshot skipped: Identical to the latest one.', 'Snapshot');
+
+					// 如果是手动创建 (用户明确请求) -> 提示已是最新
+					// 我们通过名字来判断是否是手动，默认 'Auto Save'，手动通常是 'Manual Snapshot'
+					const isManual = name.includes('Manual Snapshot') || name.includes('手动快照');
+
+					if (isManual) {
+						if (eda.sys_Message) {
+							const msg = eda.sys_I18n ? eda.sys_I18n.text('当前布线状态与最新快照一致，无需重复创建') : 'Current state matches the latest snapshot. No need to create new one.';
+							eda.sys_Message.showToastMessage(msg);
+						}
+					}
+
 					if (eda.sys_LoadingAndProgressBar) {
 						eda.sys_LoadingAndProgressBar.destroyLoading();
 					}
