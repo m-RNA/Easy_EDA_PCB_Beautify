@@ -74,6 +74,8 @@ export interface RoutingSnapshot {
 	// vias: any[]; // Vias removed to preserve network connectivity
 }
 
+export const SNAPSHOT_LIMIT = 20;
+
 /**
  * 获取所有快照
  */
@@ -108,9 +110,9 @@ async function saveSnapshots(snapshots: RoutingSnapshot[]) {
 		// 始终按时间倒序排列 (最新的在前)
 		snapshots.sort((a, b) => b.timestamp - a.timestamp);
 
-		// 限制快照数量，例如最近 10 个
-		if (snapshots.length > 10) {
-			snapshots = snapshots.slice(0, 10);
+		// 限制快照数量
+		if (snapshots.length > SNAPSHOT_LIMIT) {
+			snapshots = snapshots.slice(0, SNAPSHOT_LIMIT);
 		}
 
 		// 更新全局缓存 (安全写入)
@@ -520,8 +522,14 @@ export async function undoLastOperation() {
 		const lastRestoredId = getLastRestoredId();
 
 		if (lastRestoredId === null) {
-			// First step: restore latest
-			targetSnapshot = snapshots[0];
+			// First step: try to restore the previous snapshot (Index 1)
+			if (snapshots.length > 1) {
+				targetSnapshot = snapshots[1];
+			}
+			else {
+				// If only one snapshot exists, restore it (undoing un-snapshotted changes)
+				targetSnapshot = snapshots[0];
+			}
 		}
 		else {
 			// Continuing from history

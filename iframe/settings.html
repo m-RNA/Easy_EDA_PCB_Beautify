@@ -476,7 +476,7 @@
                         <span data-i18n="布线状态管理">布线状态管理</span>
                         <span id="snapshotCount" style="font-weight: normal; color: var(--text-hint); font-size: 12px; margin-left: 4px;"></span>
                     </div>
-                    <div class="setting-desc" data-i18n="记录当前的布线状态，随时恢复">记录当前的布线状态，随时恢复</div>
+                    <div class="setting-desc" data-i18n="记录当前的布线状态">记录当前的布线状态</div>
                 </div>
                 <div class="setting-control" style="gap: 10px;">
                     <button type="button" class="btn btn-primary" id="createSnapshotBtn" data-i18n="记录当前布线状态">记录当前布线状态</button>
@@ -730,7 +730,10 @@
                 
                 // Update Count safely
                 const countEl = document.getElementById('snapshotCount');
-                if (countEl) countEl.textContent = '(' + snapshots.length + ')';
+                // 获取限制数量，默认为 20
+                const limit = (api.jlc_eda_beautify_snapshot && api.jlc_eda_beautify_snapshot.SNAPSHOT_LIMIT) ? api.jlc_eda_beautify_snapshot.SNAPSHOT_LIMIT : 20;
+                
+                if (countEl) countEl.textContent = '(' + snapshots.length + '/' + limit + ')';
                 
                 snapshotList.innerHTML = '';
                 if (snapshots.length === 0) {

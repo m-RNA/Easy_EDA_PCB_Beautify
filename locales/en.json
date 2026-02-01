@@ -8,7 +8,7 @@
 	"暂无快照": "No Snapshots",
 	"快照已创建": "Snapshot Created",
 	"布线状态管理": "Snapshot Manager",
-	"记录当前的布线状态，随时恢复": "Record current routing state for restoration",
+	"记录当前的布线状态": "Record current routing state for restoration",
 	"记录当前布线状态": "Create Snapshot",
 	"清除快照": "Clear Snapshots",
 	"恢复": "Restore",

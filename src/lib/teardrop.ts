@@ -1,6 +1,7 @@
-import { debugLog } from './logger';
+import { debugLog, logError } from './logger';
 import { cubicBezier, dist, lerp } from './math';
 import { getSettings } from './settings';
+import { createSnapshot } from './snapshot';
 
 export async function addTeardrops() {
 	const settings = await getSettings();
@@ -10,6 +11,25 @@ export async function addTeardrops() {
 		&& typeof eda.sys_LoadingAndProgressBar.showLoading === 'function'
 	) {
 		eda.sys_LoadingAndProgressBar.showLoading();
+	}
+
+	let scopeLabel = '(All)';
+	try {
+		const selectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
+		if (selectedIds && selectedIds.length > 0) {
+			scopeLabel = '(Selected)';
+		}
+	}
+	catch {
+		// ignore
+	}
+
+	// 创建操作前快照
+	try {
+		await createSnapshot(`Teardrop ${scopeLabel} Before`);
+	}
+	catch (e: any) {
+		logError(`Failed to create snapshot: ${e.message || e}`);
 	}
 
 	try {
@@ -105,6 +125,14 @@ export async function addTeardrops() {
 			&& typeof eda.sys_Message.showToastMessage === 'function'
 		) {
 			eda.sys_Message.showToastMessage(eda.sys_I18n.text(`泪滴处理完成 (处理了${processedCount}个)`));
+		}
+
+		// 创建操作后快照
+		try {
+			await createSnapshot(`Teardrop ${scopeLabel} After`);
+		}
+		catch (e: any) {
+			logError(`Failed to create result snapshot: ${e.message || e}`);
 		}
 	}
 	catch (e: any) {

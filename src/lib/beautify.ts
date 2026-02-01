@@ -162,8 +162,8 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 	// 创建快照 (Undo 支持)
 	try {
-		const snapshotName = scope === 'all' ? 'Beautify (All)' : 'Beautify (Selected)';
-		await createSnapshot(snapshotName);
+		const name = scope === 'all' ? 'Beautify (All) Before' : 'Beautify (Selected) Before';
+		await createSnapshot(name);
 	}
 	catch (e: any) {
 		logError(`Failed to create snapshot: ${e.message || e}`);
@@ -808,6 +808,15 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		if (settings.syncWidthTransition) {
 			// 在 Beautify 流程中调用，不需要额外快照（Beautify 已创建）
 			await addWidthTransitionsAll(false);
+		}
+
+		// 操作完成后再次创建快照 (保存结果)
+		try {
+			const name = scope === 'all' ? 'Beautify (All) After' : 'Beautify (Selected) After';
+			await createSnapshot(name);
+		}
+		catch (e: any) {
+			logError(`Failed to create result snapshot: ${e.message || e}`);
 		}
 	}
 	catch (e: any) {

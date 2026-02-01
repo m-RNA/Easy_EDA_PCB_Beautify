@@ -79,7 +79,7 @@ export async function addWidthTransitionsSelected() {
 
 	// 创建快照 (Undo 支持)
 	try {
-		await createSnapshot('Width (Selected)');
+		await createSnapshot('Width (Selected) Before');
 	}
 	catch (e: any) {
 		logError(`Failed to create snapshot: ${e.message || e}`);
@@ -102,6 +102,14 @@ export async function addWidthTransitionsSelected() {
 		eda.sys_Message?.showToastMessage(
 			eda.sys_I18n.text(`线宽过渡完成，处理了 ${result.count} 个连接点`),
 		);
+
+		// 保存操作后的快照
+		try {
+			await createSnapshot('Width (Selected) After');
+		}
+		catch (e: any) {
+			logError(`Failed to create result snapshot: ${e.message || e}`);
+		}
 	}
 	catch (e: any) {
 		eda.sys_Dialog?.showInformationMessage(e.message, 'Width Transition Error');
@@ -127,7 +135,7 @@ export async function addWidthTransitionsAll(createBackup: boolean = true) {
 
 	if (createBackup) {
 		try {
-			await createSnapshot('Width (All)');
+			await createSnapshot('Width (All) Before');
 		}
 		catch (e: any) {
 			logError(`Failed to create snapshot: ${e.message || e}`);
@@ -147,6 +155,16 @@ export async function addWidthTransitionsAll(createBackup: boolean = true) {
 		await saveTransitionData(result.data);
 
 		debugLog(`自动过渡完成，处理了 ${result.count} 个连接点`, 'Transitions');
+
+		// 如果独立运行，保存操作后的快照
+		if (createBackup) {
+			try {
+				await createSnapshot('Width (All) After');
+			}
+			catch (e: any) {
+				logError(`Failed to create result snapshot: ${e.message || e}`);
+			}
+		}
 	}
 	catch (e: any) {
 		logError(e.message, 'Transitions');
