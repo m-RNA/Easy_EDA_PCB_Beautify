@@ -607,9 +607,9 @@
             if (!api) return;
             
             // 尝试同步默认配置配置
-            if (typeof api.jlc_eda_smooth_getDefaultSettings === 'function') {
+            if (typeof api.jlc_eda_beautify_getDefaultSettings === 'function') {
                 try {
-                    DEFAULT_CONFIG = api.jlc_eda_smooth_getDefaultSettings();
+                    DEFAULT_CONFIG = api.jlc_eda_beautify_getDefaultSettings();
                     console.log('Loaded defaults from API', DEFAULT_CONFIG);
                 } catch(e) {
                     console.error('Failed to load defaults', e);
@@ -671,8 +671,8 @@
                 updateSwitchLabels();
                 
                 // 通知插件主进程刷新设置缓存
-                if (typeof api.jlc_eda_smooth_refreshSettings === 'function') {
-                    await api.jlc_eda_smooth_refreshSettings();
+                if (typeof api.jlc_eda_beautify_refreshSettings === 'function') {
+                    await api.jlc_eda_beautify_refreshSettings();
                 }
                 
                 if (!silent) {
@@ -716,13 +716,13 @@
         
         async function refreshSnapshots() {
             const api = API || getEda();
-            if (!api || !api.jlc_eda_smooth_snapshot) return;
+            if (!api || !api.jlc_eda_beautify_snapshot) return;
             try {
-                const snapshots = await api.jlc_eda_smooth_snapshot.getSnapshots();
+                const snapshots = await api.jlc_eda_beautify_snapshot.getSnapshots();
                 // 获取最后一次撤销的ID，用于显示标记
                 let lastRestoredId = null;
-                if (typeof api.jlc_eda_smooth_snapshot.getLastRestoredId === 'function') {
-                    lastRestoredId = api.jlc_eda_smooth_snapshot.getLastRestoredId();
+                if (typeof api.jlc_eda_beautify_snapshot.getLastRestoredId === 'function') {
+                    lastRestoredId = api.jlc_eda_beautify_snapshot.getLastRestoredId();
                     console.log('[Settings] Got lastRestoredId from API:', lastRestoredId, 'type:', typeof lastRestoredId);
                 }
                 
@@ -794,7 +794,7 @@
                             api.sys_Dialog.showConfirmationMessage(confirmText, api.sys_I18n ? api.sys_I18n.text('恢复快照') : 'Restore Snapshot', undefined, undefined, async (ok) => {
                                 if (ok) {
                                     try {
-                                        const result = await api.jlc_eda_smooth_snapshot.restoreSnapshot(snap.id);
+                                        const result = await api.jlc_eda_beautify_snapshot.restoreSnapshot(snap.id);
                                         if (result) {
                                             const restoredText = api.sys_I18n ? api.sys_I18n.text('已恢复') : 'Restored';
                                             showToast(restoredText);
@@ -816,7 +816,7 @@
                          if (api.sys_Dialog) {
                              api.sys_Dialog.showConfirmationMessage(confirmDelText, api.sys_I18n ? api.sys_I18n.text('删除快照') : 'Delete Snapshot', undefined, undefined, async (ok) => {
                                  if (ok) {
-                                     await api.jlc_eda_smooth_snapshot.deleteSnapshot(snap.id);
+                                     await api.jlc_eda_beautify_snapshot.deleteSnapshot(snap.id);
                                  }
                              });
                          }
@@ -832,17 +832,17 @@
 
         document.getElementById('createSnapshotBtn').onclick = async () => {
             const api = API || getEda();
-            if (!api || !api.jlc_eda_smooth_snapshot) {
+            if (!api || !api.jlc_eda_beautify_snapshot) {
                 if (api && api.sys_Dialog) {
-                    api.sys_Dialog.showInformationMessage('API not ready (jlc_eda_smooth_snapshot missing)');
+                    api.sys_Dialog.showInformationMessage('API not ready (jlc_eda_beautify_snapshot missing)');
                 } else {
-                    console.error('API not ready (jlc_eda_smooth_snapshot missing)');
+                    console.error('API not ready (jlc_eda_beautify_snapshot missing)');
                 }
                 return;
             }
             try {
                 const name = api.sys_I18n ? api.sys_I18n.text('手动快照') : 'Manual Snapshot';
-                await api.jlc_eda_smooth_snapshot.createSnapshot(name);
+                await api.jlc_eda_beautify_snapshot.createSnapshot(name);
                 await refreshSnapshots();
                 showToast(api.sys_I18n ? api.sys_I18n.text('快照已创建') : 'Snapshot Created');
             } catch (e) {
@@ -857,13 +857,13 @@
 
         document.getElementById('clearSnapshotsBtn').onclick = () => {
             const api = API || getEda();
-            if (!api || !api.jlc_eda_smooth_snapshot) return;
+            if (!api || !api.jlc_eda_beautify_snapshot) return;
             const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要清除所有快照吗？') : 'Clear all snapshots?';
             
             if (api.sys_Dialog) {
                 api.sys_Dialog.showConfirmationMessage(confirmText, api.sys_I18n ? api.sys_I18n.text('清除快照') : 'Clear Snapshots', undefined, undefined, async (ok) => {
                     if (ok) {
-                        await api.jlc_eda_smooth_snapshot.clearSnapshots();
+                        await api.jlc_eda_beautify_snapshot.clearSnapshots();
                         await refreshSnapshots();
                         showToast(api.sys_I18n ? api.sys_I18n.text('已清除') : 'Cleared');
                     }
@@ -885,9 +885,9 @@
                 
                 // 注册快照变化回调，当主代码创建/删除快照时自动刷新列表
                 const api = API || getEda();
-                if (api && api.jlc_eda_smooth_snapshot && typeof api.jlc_eda_smooth_snapshot.registerSnapshotChangeCallback === 'function') {
+                if (api && api.jlc_eda_beautify_snapshot && typeof api.jlc_eda_beautify_snapshot.registerSnapshotChangeCallback === 'function') {
                     // 使用新版显式注册接口
-                    api.jlc_eda_smooth_snapshot.registerSnapshotChangeCallback(() => {
+                    api.jlc_eda_beautify_snapshot.registerSnapshotChangeCallback(() => {
                         refreshSnapshots().catch(err => {
                             console.error('[Settings] Snapshot refresh failed:', err);
                         });
@@ -906,10 +906,10 @@
                 
                 const poller = async () => {
                     const currentApi = API || getEda();
-                    if (!currentApi || !currentApi.jlc_eda_smooth_snapshot) return;
+                    if (!currentApi || !currentApi.jlc_eda_beautify_snapshot) return;
                     
                     try {
-                        const snapshots = await currentApi.jlc_eda_smooth_snapshot.getSnapshots();
+                        const snapshots = await currentApi.jlc_eda_beautify_snapshot.getSnapshots();
                         
                         // 只有数量变化时才重绘列表
                         if (snapshots.length !== lastSnapshotCount && lastSnapshotCount !== -1) {

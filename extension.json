@@ -43,14 +43,14 @@
 				"title": "美化PCB",
 				"menuItems": [
 					{
-						"id": "SmoothSelected",
+						"id": "BeautifySelected",
 						"title": "圆滑布线（选中）",
-						"registerFn": "smoothSelected"
+						"registerFn": "beautifySelected"
 					},
 					{
-						"id": "SmoothAll",
+						"id": "BeautifyAll",
 						"title": "圆滑布线（全部）",
-						"registerFn": "smoothAll"
+						"registerFn": "beautifyAll"
 					},
 					{
 						"id": "WidthSelected",

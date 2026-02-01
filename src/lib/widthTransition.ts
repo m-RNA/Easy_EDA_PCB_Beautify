@@ -113,7 +113,7 @@ export async function addWidthTransitionsSelected() {
 
 /**
  * 添加线宽过渡 - 处理所有线段（熔化时自动调用）
- * @param createBackup 是否创建快照 (如果是 Smooth 调用，通常已经创建了快照，这里可以选择 false)
+ * @param createBackup 是否创建快照 (如果是 Beautify 调用，通常已经创建了快照，这里可以选择 false)
  */
 export async function addWidthTransitionsAll(createBackup: boolean = true) {
 	const settings = await getSettings();

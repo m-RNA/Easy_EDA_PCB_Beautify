@@ -11,9 +11,9 @@
  * https://prodocs.lceda.cn/cn/api/guide/
  */
 
+import { beautifyRouting as beautifyTask } from './lib/beautify';
 import { logError, logInfo, logWarn } from './lib/logger';
 import { getDefaultSettings, getSettings } from './lib/settings';
-import { smoothRouting as smoothTask } from './lib/smooth';
 import { undoLastOperation as undoTask } from './lib/snapshot';
 import * as Snapshot from './lib/snapshot';
 import { addWidthTransitionsAll, addWidthTransitionsSelected } from './lib/widthTransition';
@@ -23,9 +23,9 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 	getSettings();
 
 	// 将功能挂载到 eda 全局对象，供 settings.html 调用
-	(eda as any).jlc_eda_smooth_snapshot = Snapshot;
-	(eda as any).jlc_eda_smooth_refreshSettings = getSettings;
-	(eda as any).jlc_eda_smooth_getDefaultSettings = getDefaultSettings;
+	(eda as any).jlc_eda_beautify_snapshot = Snapshot;
+	(eda as any).jlc_eda_beautify_refreshSettings = getSettings;
+	(eda as any).jlc_eda_beautify_getDefaultSettings = getDefaultSettings;
 
 	// 动态刷新顶部菜单，确保菜单正确显示
 	try {
@@ -33,18 +33,18 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 			eda.sys_HeaderMenu.replaceHeaderMenus({
 				pcb: [
 					{
-						id: 'MeltPCB',
+						id: 'BeautifyPCB',
 						title: eda.sys_I18n ? eda.sys_I18n.text('美化PCB') : '美化PCB',
 						menuItems: [
 							{
-								id: 'SmoothSelected',
+								id: 'BeautifySelected',
 								title: eda.sys_I18n ? eda.sys_I18n.text('圆滑布线（选中）') : '圆滑布线（选中）',
-								registerFn: 'smoothSelected',
+								registerFn: 'beautifySelected',
 							},
 							{
-								id: 'SmoothAll',
+								id: 'BeautifyAll',
 								title: eda.sys_I18n ? eda.sys_I18n.text('圆滑布线（全部）') : '圆滑布线（全部）',
-								registerFn: 'smoothAll',
+								registerFn: 'beautifyAll',
 							},
 							{
 								id: 'WidthSelected',
@@ -70,23 +70,23 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 					},
 				],
 			});
-			logInfo('[EASY-EDA-Smooth] Header menus registered successfully');
+			logInfo('[Beautify-PCB] Header menus registered successfully');
 		}
 		else {
-			logWarn('[EASY-EDA-Smooth] sys_HeaderMenu not available');
+			logWarn('[Beautify-PCB] sys_HeaderMenu not available');
 		}
 	}
 	catch (e: any) {
-		logWarn(`[EASY-EDA-Smooth] Failed to register header menus dynamically: ${e.message || e}`);
+		logWarn(`[Beautify-PCB] Failed to register header menus dynamically: ${e.message || e}`);
 	}
 }
 
 /**
  * 圆滑所选布线
  */
-export async function smoothSelected() {
+export async function beautifySelected() {
 	try {
-		await smoothTask('selected');
+		await beautifyTask('selected');
 	}
 	catch (e: any) {
 		handleError(e);
@@ -96,9 +96,9 @@ export async function smoothSelected() {
 /**
  * 圆滑所有布线
  */
-export async function smoothAll() {
+export async function beautifyAll() {
 	try {
-		await smoothTask('all');
+		await beautifyTask('all');
 	}
 	catch (e: any) {
 		handleError(e);
@@ -106,14 +106,14 @@ export async function smoothAll() {
 }
 
 function handleError(e: any) {
-	logError(`Smooth Routing Error: ${e.message || e}`);
+	logError(`Beautify Routing Error: ${e.message || e}`);
 	if (
 		eda.sys_Dialog
 		&& typeof eda.sys_Dialog.showInformationMessage === 'function'
 	) {
 		eda.sys_Dialog.showInformationMessage(
 			e.message || 'Error',
-			'Smooth Error',
+			'Beautify Error',
 		);
 	}
 }

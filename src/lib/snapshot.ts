@@ -1,17 +1,17 @@
+import { getArcLineWidthMap, makeArcWidthKey } from './beautify';
 import { debugLog, logError, logWarn } from './logger';
 import { isClose } from './math';
-import { getArcLineWidthMap, makeArcWidthKey } from './smooth';
 
-const SNAPSHOT_STORAGE_KEY = 'jlc_eda_smooth_snapshots';
+const SNAPSHOT_STORAGE_KEY = 'jlc_eda_beautify_snapshots';
 
 // 内存缓存 key，挂载在 eda 对象上
-const CACHE_KEY = '_jlc_smooth_snapshots_cache';
+const CACHE_KEY = '_jlc_beautify_snapshots_cache';
 // 回调 key
-const CALLBACK_KEY = '_jlc_smooth_snapshot_callback';
+const CALLBACK_KEY = '_jlc_beautify_snapshot_callback';
 // 记录上一次撤销恢复到的快照ID
-const LAST_RESTORED_KEY = '_jlc_smooth_last_restored_id';
+const LAST_RESTORED_KEY = '_jlc_beautify_last_restored_id';
 // 撤销锁 Key
-const UNDO_LOCK_KEY = '_jlc_smooth_undo_lock';
+const UNDO_LOCK_KEY = '_jlc_beautify_undo_lock';
 
 export function getLastRestoredId(): number | null {
 	return (eda as any)[LAST_RESTORED_KEY] ?? null;
@@ -49,7 +49,7 @@ function notifySnapshotChange() {
 			return;
 		}
 		catch (e) {
-			logError(`[Snapshot] UI callback failed: ${e}`);
+			logError(`[Beautify-Snapshot] UI callback failed: ${e}`);
 		}
 	}
 
@@ -60,7 +60,7 @@ function notifySnapshotChange() {
 			callback();
 		}
 		catch (e) {
-			logError(`[Snapshot] Global callback failed: ${e}`);
+			logError(`[Beautify-Snapshot] Global callback failed: ${e}`);
 		}
 	}
 }
@@ -120,7 +120,7 @@ async function saveSnapshots(snapshots: RoutingSnapshot[]) {
 			}
 		}
 		catch (cacheErr) {
-			logWarn(`[Snapshot] Failed to update cache: ${cacheErr}`);
+			logWarn(`[Beautify-Snapshot] Failed to update cache: ${cacheErr}`);
 		}
 
 		await eda.sys_Storage.setExtensionUserConfig(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshots));
@@ -255,7 +255,7 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 			}
 		}
 		catch (e: any) {
-			logWarn(`[Snapshot] Failed to get board info: ${e.message || e}`);
+			logWarn(`[Beautify-Snapshot] Failed to get board info: ${e.message || e}`);
 		}
 
 		// 自动附加 PCB 名称前缀
@@ -286,7 +286,7 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 		return snapshot;
 	}
 	catch (e: any) {
-		logError(`[Snapshot] Create failed: ${e.message || e}`);
+		logError(`[Beautify-Snapshot] Create failed: ${e.message || e}`);
 		if (eda.sys_Message)
 			eda.sys_Message.showToastMessage(`创建快照失败: ${e.message}`);
 		return null;
@@ -310,7 +310,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 
 		const snapshot = snapshots.find(s => s.id === snapshotId);
 		if (!snapshot) {
-			logError(`[Snapshot] Snapshot not found with id: ${snapshotId}`);
+			logError(`[Beautify-Snapshot] Snapshot not found with id: ${snapshotId}`);
 			eda.sys_Message?.showToastMessage('未找到指定快照');
 			return false;
 		}
@@ -400,7 +400,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 			arcsToDelete.push(id);
 		}
 
-		debugLog(`[Snapshot] Diff result:
+		debugLog(`[Beautify-Snapshot] Diff result:
           Line: Delete ${linesToDelete.length}, Create ${linesToCreate.length}
           Arc:  Delete ${arcsToDelete.length}, Create ${arcsToCreate.length}`);
 
@@ -465,7 +465,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		return true;
 	}
 	catch (e: any) {
-		logError(`[Snapshot] Restore failed: ${e.message || e}`);
+		logError(`[Beautify-Snapshot] Restore failed: ${e.message || e}`);
 		if (eda.sys_Message)
 			eda.sys_Message.showToastMessage(`恢复快照失败: ${e.message}`);
 		return false;

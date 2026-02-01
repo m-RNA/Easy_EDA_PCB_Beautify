@@ -80,7 +80,7 @@ npm run build
 src/
 ├── index.ts               # 入口 & 菜单注册
 └── lib/
-    ├── smooth.ts          # 圆滑布线
+    ├── beautify.ts        # 拐角圆滑 (Beautify)
     ├── widthTransition.ts # 线宽过渡
     ├── snapshot.ts        # 快照管理
     ├── math.ts            # 数学工具
