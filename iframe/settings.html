@@ -350,9 +350,9 @@
             </div>
             <div class="setting-control">
                 <div class="input-group">
-                    <input type="number" id="cornerRadius" min="0.1" step="0.1" value="500">
+                    <input type="text" id="cornerRadius" data-min="0.1" data-step="1" value="500">
                     <select id="unitSelect">
-                        <option value="mil">mil</option>
+                        <option value="mil" selected>mil</option>
                         <option value="mm">mm</option>
                     </select>
                 </div>
@@ -386,7 +386,7 @@
             </div>
             <div class="setting-control">
                 <div class="input-group">
-                    <input type="number" id="widthTransitionSegments" min="5" max="100" value="25">
+                    <input type="text" id="widthTransitionSegments" data-min="5" data-max="100" data-step="1" value="25">
                     <span class="addon" data-i18n="段">段</span>
                 </div>
             </div>
@@ -400,7 +400,7 @@
             </div>
             <div class="setting-control">
                 <div class="input-group">
-                    <input type="number" id="widthTransitionRatio" min="0.5" max="10" step="0.1" value="2.5">
+                    <input type="text" id="widthTransitionRatio" data-min="0.5" data-max="10" data-step="0.1" value="2.5">
                     <span class="addon">X</span>
                 </div>
             </div>
@@ -622,14 +622,36 @@
                     ...DEFAULT_CONFIG,
                     ...settings,
                 };
+                
+                // Ensure default unit is mil if not set (fixing default startup state)
+                if (!config.unit) config.unit = 'mil';
 
                 elCornerRadius.value = config.cornerRadius;
+                elCornerRadius.setAttribute('data-last-valid', config.cornerRadius);
+
                 elUnitSelect.value = config.unit;
                 currentUnitState = config.unit;
+                
+                // Initialize step based on unit for keyboard/custom stepper
+                if (currentUnitState === 'mm') {
+                    // 0.1 mm
+                    elCornerRadius.setAttribute('data-step', '0.1');
+                    elCornerRadius.setAttribute('data-decimals', '3'); // Allow up to 3 decimals
+                } else {
+                    // 1 mil (User requested 1 mil step, not 0.1)
+                    elCornerRadius.setAttribute('data-step', '1');
+                    elCornerRadius.setAttribute('data-decimals', '0'); // Usually mil is integer, but let's allow decimals if calculated
+                }
+
                 elMergeShortSegments.checked = config.mergeShortSegments !== undefined ? config.mergeShortSegments : true;
                 elSyncWidth.checked = config.syncWidthTransition;
+                
                 elSegments.value = config.widthTransitionSegments;
+                elSegments.setAttribute('data-last-valid', config.widthTransitionSegments);
+
                 elRatio.value = config.widthTransitionRatio;
+                elRatio.setAttribute('data-last-valid', config.widthTransitionRatio);
+
                 elDebug.checked = config.debug;
                 elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
                 
@@ -685,14 +707,150 @@
         }
 
         // Bind Events
-        [elCornerRadius, elSegments, elRatio].forEach(el => {
-            el.addEventListener('change', () => saveSettings());
-            // Debounce blur to prevent double save with change
-            el.addEventListener('blur', (e) => {
-               // Only save if value changed or just to be safe
-               saveSettings(); 
-            });
-        });
+        function bindSmartInput(el, isInt = false) {
+             function validateAndSave() {
+                 let val = el.value.trim();
+                 if (!val) {
+                     el.value = el.getAttribute('data-last-valid') || (isInt ? '0' : '0.0');
+                     return;
+                 }
+
+                 // Check for math operators (Supports +, -, *, /, ())
+                 if (/[\+\-\*\/]/.test(val)) {
+                     try {
+                         // Security check: strictly limit allowed characters
+                         if (/^[0-9\.\+\-\*\/\(\)\s]+$/.test(val)) {
+                             // eslint-disable-next-line no-new-func
+                             let result = new Function('return ' + val)();
+                             if (isFinite(result)) {
+                                 if (isInt) {
+                                     result = Math.round(result);
+                                 } else {
+                                     // Allow up to 3 decimal places
+                                     result = parseFloat(result.toFixed(3));
+                                 }
+                                 el.value = result;
+                                 val = String(result);
+                             } else {
+                                 // Calculation resulted in error/infinity, revert
+                                 el.value = el.getAttribute('data-last-valid');
+                                 return;
+                             }
+                         } else {
+                             // Illegal characters found, revert
+                             el.value = el.getAttribute('data-last-valid');
+                             return;
+                         }
+                     } catch (e) {
+                         // Eval failed, revert
+                         el.value = el.getAttribute('data-last-valid');
+                         return;
+                     }
+                 }
+
+                 let num = parseFloat(val);
+                 
+                 if (isNaN(num)) {
+                     el.value = el.getAttribute('data-last-valid');
+                     return;
+                 }
+                 
+                 const min = parseFloat(el.getAttribute('data-min') || '-99999999');
+                 const max = parseFloat(el.getAttribute('data-max') || '99999999');
+
+                 if (num < min) num = min;
+                 if (num > max) num = max;
+                 
+                 if (isInt) {
+                     num = Math.round(num);
+                 } else {
+                    // Normalize to max 3 decimals
+                    num = parseFloat(num.toFixed(3));
+                 }
+
+                 el.value = num;
+                 
+                 // Check if actually changed to avoid redundant saves
+                 const last = parseFloat(el.getAttribute('data-last-valid'));
+                 if (num !== last) {
+                     el.setAttribute('data-last-valid', num);
+                     saveSettings();
+                 }
+             }
+             
+             // Unified step logic
+             function applyStep(direction, multiplier) {
+                // Don't step if current value is formula
+                let val = el.value.trim();
+                if (/[\+\-\*\/]/.test(val)) {
+                    validateAndSave(); 
+                    val = el.value.trim();
+                }
+                
+                let num = parseFloat(val);
+                if (isNaN(num)) num = 0;
+                
+                let step = parseFloat(el.getAttribute('data-step') || '1');
+                if (isNaN(step)) step = 1;
+                
+                step *= multiplier;
+                
+                if (direction > 0) num += step; // up
+                else num -= step; // down
+                
+                const min = parseFloat(el.getAttribute('data-min') || '-99999999');
+                const max = parseFloat(el.getAttribute('data-max') || '99999999');
+                
+                if (num < min) num = min;
+                if (num > max) num = max;
+                
+                if (isInt) {
+                     num = Math.round(num);
+                } else {
+                     num = parseFloat(num.toFixed(3));
+                }
+                
+                el.value = num;
+                el.setAttribute('data-last-valid', num);
+                
+                // Debounce save for rapid wheel/key events
+                if (el.saveTimer) clearTimeout(el.saveTimer);
+                el.saveTimer = setTimeout(() => {
+                    saveSettings();
+                }, 300);
+             }
+
+             // Handle Keyboard stepping (Up/Down) since type="text" doesn't have it natively
+             function handleKeyDown(e) {
+                 if (e.key === 'Enter') {
+                     el.blur();
+                     return;
+                 }
+                 
+                 if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    applyStep(e.key === 'ArrowUp' ? 1 : -1, e.shiftKey ? 10 : 1);
+                 }
+             }
+             
+             // Handle Mouse Wheel
+             function handleWheel(e) {
+                 if (document.activeElement !== el) return;
+                 e.preventDefault();
+                 // deltaY < 0 means scrolling up (increment)
+                 applyStep(e.deltaY < 0 ? 1 : -1, e.shiftKey ? 10 : 1);
+             }
+
+             el.addEventListener('change', validateAndSave);
+             el.addEventListener('blur', validateAndSave);
+             el.addEventListener('keydown', handleKeyDown);
+             el.addEventListener('wheel', handleWheel, { passive: false });
+        }
+
+        bindSmartInput(elCornerRadius, false);
+        bindSmartInput(elSegments, true);
+        bindSmartInput(elRatio, false);
+
         
         [elSyncWidth, elDebug, elMergeShortSegments, elForceArc].forEach(el => {
             el.addEventListener('change', () => saveSettings());
@@ -703,10 +861,21 @@
             const newUnit = e.target.value;
             const val = parseFloat(elCornerRadius.value);
             let newVal = val;
-            if (currentUnitState === 'mm' && newUnit === 'mil') newVal = val * 39.3701;
-            else if (currentUnitState === 'mil' && newUnit === 'mm') newVal = val / 39.3701;
             
-            elCornerRadius.value = newVal.toFixed(2);
+            // Adjust step and calculate new value
+            if (newUnit === 'mm') {
+                if (currentUnitState === 'mil') newVal = val / 39.3701;
+                elCornerRadius.setAttribute('data-step', '0.1');
+            } else { // mil
+                if (currentUnitState === 'mm') newVal = val * 39.3701;
+                elCornerRadius.setAttribute('data-step', '1');
+            }
+            
+            // Format to reasonable precision (keep 2 decimal places for conversion stability, but inputs accept 3)
+            // Using 3 here to align with the new input capability
+            elCornerRadius.value = parseFloat(newVal.toFixed(3));
+            elCornerRadius.setAttribute('data-last-valid', elCornerRadius.value);
+            
             currentUnitState = newUnit;
             saveSettings();
         });
