@@ -46,12 +46,12 @@ export async function addTeardrops() {
 
 		// 如果没有有效的选中对象，则处理全体
 		if (pins.length === 0) {
-			debugLog('[Teardrop] 未选中对象，获取全板焊盘和过孔');
+			debugLog('未选中对象，获取全板焊盘和过孔', 'Teardrop');
 			// 获取全板焊盘和过孔的ID，然后逐个获取对象
 			const padIds = await eda.pcb_PrimitivePad.getAllPrimitiveId();
 			const viaIds = await eda.pcb_PrimitiveVia.getAllPrimitiveId();
 
-			debugLog(`[Teardrop] 找到 ${padIds.length} 个焊盘, ${viaIds.length} 个过孔`);
+			debugLog(`找到 ${padIds.length} 个焊盘, ${viaIds.length} 个过孔`, 'Teardrop');
 
 			for (const id of padIds) {
 				const pad = await eda.pcb_PrimitivePad.get(id);
@@ -65,7 +65,7 @@ export async function addTeardrops() {
 			}
 		}
 
-		debugLog(`[Teardrop] 开始处理 ${pins.length} 个焊盘/过孔`);
+		debugLog(`开始处理 ${pins.length} 个焊盘/过孔`, 'Teardrop');
 
 		let processedCount = 0;
 		for (const pin of pins) {
@@ -98,7 +98,7 @@ export async function addTeardrops() {
 			}
 		}
 
-		debugLog(`[Teardrop] 处理完成，共处理 ${processedCount} 个焊盘/过孔`);
+		debugLog(`处理完成，共处理 ${processedCount} 个焊盘/过孔`, 'Teardrop');
 
 		if (
 			eda.sys_Message

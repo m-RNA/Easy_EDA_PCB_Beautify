@@ -70,14 +70,14 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 					},
 				],
 			});
-			logInfo('[Beautify-PCB] Header menus registered successfully');
+			logInfo('Header menus registered successfully', 'PCB');
 		}
 		else {
-			logWarn('[Beautify-PCB] sys_HeaderMenu not available');
+			logWarn('sys_HeaderMenu not available', 'PCB');
 		}
 	}
 	catch (e: any) {
-		logWarn(`[Beautify-PCB] Failed to register header menus dynamically: ${e.message || e}`);
+		logWarn(`Failed to register header menus dynamically: ${e.message || e}`, 'PCB');
 	}
 }
 

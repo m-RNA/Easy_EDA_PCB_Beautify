@@ -41,7 +41,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 	if (scope === 'all') {
 		// 处理所有导线
-		debugLog('[Beautify] 处理所有导线');
+		debugLog('处理所有导线');
 		tracks = await eda.pcb_PrimitiveLine.getAll();
 	}
 	else {
@@ -49,7 +49,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		// 使用 getAllSelectedPrimitives_PrimitiveId 获取选中的 ID 列表，更可靠
 		const selectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
 
-		debugLog('[Beautify] 获取选中对象 ID:', selectedIds?.length || 0);
+		debugLog('获取选中对象 ID:', selectedIds?.length || 0);
 
 		if (!selectedIds || !Array.isArray(selectedIds) || selectedIds.length === 0) {
 			// 未选中任何对象，提示用户
@@ -64,7 +64,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		// 使用安全获取函数处理混合选中
 		const primitives = await getSafeSelectedTracks(selectedIds);
 
-		debugLog(`[Beautify] 获取到 ${primitives.length} 个原始对象`);
+		debugLog(`获取到 ${primitives.length} 个原始对象`);
 
 		// 过滤支持的类型：Track, Line, Polyline 以及其他可能的线条类型
 		// 同时包括没有网络的线条
@@ -89,7 +89,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			},
 		);
 
-		debugLog(`[Beautify] 过滤后得到 ${filtered.length} 个导线对象`);
+		debugLog(`过滤后得到 ${filtered.length} 个导线对象`);
 
 		// 将Polyline转换为Line段
 		for (const obj of filtered) {
@@ -311,7 +311,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 				// 检查数据完整性
 				if (!points || points.some(p => !p || typeof p.x !== 'number' || typeof p.y !== 'number')) {
-					debugLog('[Beautify Error] Path contains invalid points, skipping');
+					logError('Path contains invalid points, skipping');
 					continue;
 				}
 
@@ -427,7 +427,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 													if (t_effectiveRadius < (t_maxLineWidth / 2) - 0.05) {
 														t_limitByWidth = true;
-														debugLog(`[Beautify Debug] Merge skipped on ${net}: Radius too small for width (Radius=${t_effectiveRadius.toFixed(2)}, Width=${t_maxLineWidth})`);
+														debugLog(`Merge skipped on ${net}: Radius too small for width (Radius=${t_effectiveRadius.toFixed(2)}, Width=${t_maxLineWidth})`);
 													}
 
 													if (t_actualD > 0.05 && !t_limitByWidth) {
@@ -469,29 +469,29 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 														isMerged = true;
 
 														// Log
-														debugLog(`[Beautify] Merged short segment on ${net} at index ${i - 1}, segLen: ${segLen.toFixed(2)}, new radius usage: ${t_actualD.toFixed(2)}`);
+														debugLog(`Merged short segment on ${net} at index ${i - 1}, segLen: ${segLen.toFixed(2)}, new radius usage: ${t_actualD.toFixed(2)}`);
 													}
 													else {
-														debugLog(`[Beautify Info] Merge calc failed on ${net}. actualD too small (${t_actualD})`);
+														logInfo(`Merge calc failed on ${net}. actualD too small (${t_actualD})`);
 													}
 												}
 												else {
-													debugLog(`[Beautify Debug] Merge skipped on ${net}: Intersection too far (dInt1=${dInt1.toFixed(2)}, dInt2=${dInt2.toFixed(2)}, limit=${(segLen * 10).toFixed(2)})`);
+													debugLog(`Merge skipped on ${net}: Intersection too far (dInt1=${dInt1.toFixed(2)}, dInt2=${dInt2.toFixed(2)}, limit=${(segLen * 10).toFixed(2)})`);
 												}
 											}
 											else {
-												debugLog(`[Beautify Debug] Merge skipped on ${net}: Lines Parallel or No Intersection`);
+												debugLog(`Merge skipped on ${net}: Lines Parallel or No Intersection`);
 											}
 										}
 										else {
-											debugLog(`[Beautify Debug] Merge skipped on ${net}: Angles not suitable for U-turn (angle1=${angle1.toFixed(1)}, angle2=${angle2.toFixed(1)})`);
+											debugLog(`Merge skipped on ${net}: Angles not suitable for U-turn (angle1=${angle1.toFixed(1)}, angle2=${angle2.toFixed(1)})`);
 										}
 									}
 								}
 							}
 						}
 						catch (err: any) {
-							logError(`[Beautify Error] Merge logic failed at index ${i} on ${net}: ${err.message}`);
+							logError(`Merge logic failed at index ${i} on ${net}: ${err.message}`);
 							// fall through to normal logic
 						}
 
@@ -538,13 +538,13 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 							if (d > 0.001 && actualD < d * 0.95) {
 								if (settings.forceArc) {
 									// 强制模式：仅记录调试日志，不跳过
-									debugLog(`[Beautify Debug] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) clamped. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
+									debugLog(`Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) clamped. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
 								}
 								else {
 									clampedCorners++;
 									isSkippedDueToClamp = true;
 									// 使用 debugWarn 避免给用户不可靠的感觉
-									debugWarn(`[Beautify Warning] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Segment too short for radius. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
+									debugWarn(`Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Segment too short for radius. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
 								}
 							}
 
@@ -558,7 +558,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 								// 使用一个微小的容差 (0.05) 以允许浮点数误差范围内的 "Radius == Width/2"
 								if (effectiveRadius < (maxLineWidth / 2) - 0.05) {
 									isSkippedDueToClamp = true;
-									debugWarn(`[Beautify Warning] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Radius too small for line width. Radius: ${effectiveRadius.toFixed(2)}, Width: ${maxLineWidth}`);
+									debugWarn(`Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Radius too small for line width. Radius: ${effectiveRadius.toFixed(2)}, Width: ${maxLineWidth}`);
 								}
 							}
 
@@ -606,8 +606,8 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 								currentStart = pCorner;
 
 								// Log failure
-								if (!isSkippedDueToClamp && eda.sys_Log && typeof eda.sys_Log.add === 'function') {
-									eda.sys_Log.add(`[Beautify Info] Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) skipped. Angle or Radius invalid. actualD=${actualD.toFixed(3)}`);
+								if (!isSkippedDueToClamp) {
+									logInfo(`Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) skipped. Angle or Radius invalid. actualD=${actualD.toFixed(3)}`);
 								}
 							}
 						}
@@ -678,7 +678,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 							}
 						}
 						catch (e: any) {
-							debugLog(`[Beautify Debug] 删除 Polyline 失败: ${e.message}`);
+							debugLog(`删除 Polyline 失败: ${e.message}`);
 						}
 					}
 
@@ -691,7 +691,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 								await eda.pcb_PrimitiveLine.delete([lid]);
 							}
 							catch (e: any) {
-								debugLog(`[Beautify Debug] 删除 Line ${lid} 失败: ${e.message}`);
+								debugLog(`删除 Line ${lid} 失败: ${e.message}`);
 							}
 						}
 					}

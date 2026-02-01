@@ -49,7 +49,7 @@ function notifySnapshotChange() {
 			return;
 		}
 		catch (e) {
-			logError(`[Beautify-Snapshot] UI callback failed: ${e}`);
+			logError(`UI callback failed: ${e}`, 'Snapshot');
 		}
 	}
 
@@ -60,7 +60,7 @@ function notifySnapshotChange() {
 			callback();
 		}
 		catch (e) {
-			logError(`[Beautify-Snapshot] Global callback failed: ${e}`);
+			logError(`Global callback failed: ${e}`, 'Snapshot');
 		}
 	}
 }
@@ -120,7 +120,7 @@ async function saveSnapshots(snapshots: RoutingSnapshot[]) {
 			}
 		}
 		catch (cacheErr) {
-			logWarn(`[Beautify-Snapshot] Failed to update cache: ${cacheErr}`);
+			logWarn(`Failed to update cache: ${cacheErr}`, 'Snapshot');
 		}
 
 		await eda.sys_Storage.setExtensionUserConfig(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshots));
@@ -255,7 +255,7 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 			}
 		}
 		catch (e: any) {
-			logWarn(`[Beautify-Snapshot] Failed to get board info: ${e.message || e}`);
+			logWarn(`Failed to get board info: ${e.message || e}`, 'Snapshot');
 		}
 
 		// 自动附加 PCB 名称前缀
@@ -286,7 +286,7 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 		return snapshot;
 	}
 	catch (e: any) {
-		logError(`[Beautify-Snapshot] Create failed: ${e.message || e}`);
+		logError(`Create failed: ${e.message || e}`, 'Snapshot');
 		if (eda.sys_Message)
 			eda.sys_Message.showToastMessage(`创建快照失败: ${e.message}`);
 		return null;
@@ -310,7 +310,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 
 		const snapshot = snapshots.find(s => s.id === snapshotId);
 		if (!snapshot) {
-			logError(`[Beautify-Snapshot] Snapshot not found with id: ${snapshotId}`);
+			logError(`Snapshot not found with id: ${snapshotId}`, 'Snapshot');
 			eda.sys_Message?.showToastMessage('未找到指定快照');
 			return false;
 		}
@@ -400,9 +400,9 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 			arcsToDelete.push(id);
 		}
 
-		debugLog(`[Beautify-Snapshot] Diff result:
+		debugLog(`Diff result:
           Line: Delete ${linesToDelete.length}, Create ${linesToCreate.length}
-          Arc:  Delete ${arcsToDelete.length}, Create ${arcsToCreate.length}`);
+          Arc:  Delete ${arcsToDelete.length}, Create ${arcsToCreate.length}`, 'Snapshot');
 
 		// 4. 执行操作
 		// Delete
@@ -465,7 +465,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		return true;
 	}
 	catch (e: any) {
-		logError(`[Beautify-Snapshot] Restore failed: ${e.message || e}`);
+		logError(`Restore failed: ${e.message || e}`, 'Snapshot');
 		if (eda.sys_Message)
 			eda.sys_Message.showToastMessage(`恢复快照失败: ${e.message}`);
 		return false;

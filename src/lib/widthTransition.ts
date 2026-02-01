@@ -146,10 +146,10 @@ export async function addWidthTransitionsAll(createBackup: boolean = true) {
 		// 保存数据
 		await saveTransitionData(result.data);
 
-		debugLog(`[Width Transition] 自动过渡完成，处理了 ${result.count} 个连接点`);
+		debugLog(`自动过渡完成，处理了 ${result.count} 个连接点`, 'Transitions');
 	}
 	catch (e: any) {
-		debugLog(`[Width Transition Error] ${e.message}`);
+		logError(e.message, 'Transitions');
 	}
 	finally {
 		eda.sys_LoadingAndProgressBar?.destroyLoading?.();
@@ -164,7 +164,7 @@ async function processWidthTransitions(
 	savedData: TransitionData,
 	settings: any,
 ): Promise<{ data: TransitionData; count: number }> {
-	debugLog(`[Width Transition] 获取到 ${tracks.length} 条导线`);
+	debugLog(`获取到 ${tracks.length} 条导线`, 'Transitions');
 
 	// 按网络和层分组
 	const netLayerMap = new Map<string, any[]>();
@@ -181,7 +181,7 @@ async function processWidthTransitions(
 		netLayerMap.get(groupKey)!.push(track);
 	}
 
-	debugLog(`[Width Transition] 共 ${netLayerMap.size} 个分组`);
+	debugLog(`共 ${netLayerMap.size} 个分组`, 'Transitions');
 
 	// 构建记录映射方便查找
 	const recordsMap = new Map<string, TransitionRecord>();
@@ -291,12 +291,12 @@ async function processWidthTransitions(
 					// 角度差小于 30 度
 					if (Math.abs(Math.abs(dot) - 1) > 0.13) {
 						if (settings.debug) {
-							debugLog(`[Width Transition] 跳过非共线连接点: dot=${dot.toFixed(3)}`);
+							debugLog(`跳过非共线连接点: dot=${dot.toFixed(3)}`, 'Transitions');
 						}
 						continue;
 					}
 
-					debugLog(`[Width Transition] 找到线宽过渡点: w1=${w1.toFixed(2)}, w2=${w2.toFixed(2)}, point=${key}`);
+					debugLog(`找到线宽过渡点: w1=${w1.toFixed(2)}, w2=${w2.toFixed(2)}, point=${key}`, 'Transitions');
 
 					// 标记为已处理
 					processedPointsInCurrentRun.add(key);
@@ -350,7 +350,7 @@ async function processWidthTransitions(
 		}
 	}
 
-	debugLog(`[Width Transition] 完成，创建了 ${transitionCount} 个过渡`);
+	debugLog(`完成，创建了 ${transitionCount} 个过渡`, 'Transitions');
 
 	return {
 		data: {
@@ -410,11 +410,11 @@ async function createWidthTransition(
 
 	// 如果过渡长度太短，跳过
 	if (transitionLength < 1) {
-		debugLog(`[Width Transition] 跳过：过渡长度太短 (${transitionLength.toFixed(2)})`);
+		debugLog(`跳过：过渡长度太短 (${transitionLength.toFixed(2)})`, 'Transitions');
 		return createdIds;
 	}
 
-	debugLog(`[Width Transition] 理想长度=${idealLength.toFixed(2)}, 实际长度=${transitionLength.toFixed(2)}`);
+	debugLog(`理想长度=${idealLength.toFixed(2)}, 实际长度=${transitionLength.toFixed(2)}`, 'Transitions');
 
 	// 过渡段数计算
 	// 动态计算需要的段数以保证平滑度
@@ -436,7 +436,7 @@ async function createWidthTransition(
 		segments = Math.min(segments, 6);
 	}
 
-	debugLog(`[Width Transition] 创建贝塞尔过渡: 长度=${transitionLength.toFixed(2)}, 段数=${segments}`);
+	debugLog(`创建贝塞尔过渡: 长度=${transitionLength.toFixed(2)}, 段数=${segments}`, 'Transitions');
 
 	// 使用贝塞尔曲线插值创建渐变线段
 	// 从连接点（t=0, wideWidth）向窄线方向延伸（t=1, narrowWidth）
@@ -479,7 +479,7 @@ async function createWidthTransition(
 			}
 		}
 		catch (err) {
-			debugLog(`[Width Transition Error] 创建线段失败: ${err}`);
+			logError(`创建线段失败: ${err}`, 'Transitions');
 		}
 	}
 
