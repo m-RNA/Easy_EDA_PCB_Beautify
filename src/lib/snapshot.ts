@@ -281,6 +281,29 @@ export async function createSnapshot(name: string = 'Auto Save'): Promise<Routin
 		};
 
 		const snapshots = await getSnapshots();
+
+		// Check if the new snapshot is identical to the latest one (for the same PCB)
+		if (snapshots.length > 0) {
+			const latest = snapshots[0];
+			// Only compare if they are from the same PCB (or both unknown)
+			if (latest.pcbId === pcbId) {
+				const isIdentical
+					= latest.lines.length === snapshot.lines.length
+						&& latest.arcs.length === snapshot.arcs.length
+						&& latest.lines.every((l, i) => isLineEqual(l, snapshot.lines[i]))
+						&& latest.arcs.every((a, i) => isArcEqual(a, snapshot.arcs[i]));
+
+				if (isIdentical) {
+					// Identical, skip saving
+					debugLog('Snapshot skipped: Identical to the latest one.', 'Snapshot');
+					if (eda.sys_LoadingAndProgressBar) {
+						eda.sys_LoadingAndProgressBar.destroyLoading();
+					}
+					return null;
+				}
+			}
+		}
+
 		snapshots.push(snapshot);
 		await saveSnapshots(snapshots);
 
