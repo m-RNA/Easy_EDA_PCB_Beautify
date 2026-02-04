@@ -59,64 +59,64 @@ async function saveTransitionData(data: TransitionData): Promise<void> {
 export async function addWidthTransitionsSelected() {
 	const settings = await getSettings();
 
-	// 获取选中的图元 ID
-	const allSelectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
-	if (!allSelectedIds || allSelectedIds.length === 0) {
-		eda.sys_Message?.showToastMessage(eda.sys_I18n.text('请先选择要处理的导线'));
-		return;
-	}
-
-	// 读取已保存的过渡数据
-	const savedData = await getSavedTransitionData();
-
-	// 这里的逻辑已经修改：
-	// 不再询问是否全部清除，而是在 processWidthTransitions 中根据坐标点自动清理旧的过渡线段
-	// 这样可以支持局部更新，用户只处理选中的部分，就只更新这部分的过渡
-
+	// 提前显示进度条
 	if (eda.sys_LoadingAndProgressBar?.showLoading) {
 		eda.sys_LoadingAndProgressBar.showLoading();
 	}
 
-	// 创建快照 (Undo 支持)
 	try {
-		await createSnapshot('Width (Selected) Before');
-	}
-	catch (e: any) {
-		logError(`Failed to create snapshot: ${e.message || e}`);
-	}
-
-	try {
-		// 使用安全获取函数处理混合选中
-		const selectedTracks = await getSafeSelectedTracks(allSelectedIds);
-
-		if (selectedTracks.length === 0) {
-			eda.sys_Message?.showToastMessage(eda.sys_I18n.text('没有找到导线'));
-			return;
+		// 获取选中的图元 ID
+		const allSelectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
+		if (!allSelectedIds || allSelectedIds.length === 0) {
+			eda.sys_Message?.showToastMessage(eda.sys_I18n.text('请先选择要处理的导线'));
+			return; // finally会处理进度条
 		}
 
-		const result = await processWidthTransitions(selectedTracks, savedData, settings);
+		// 读取已保存的过渡数据
+		const savedData = await getSavedTransitionData();
 
-		// 保存数据
-		await saveTransitionData(result.data);
-
-		eda.sys_Message?.showToastMessage(
-			eda.sys_I18n.text(`线宽过渡完成，处理了 ${result.count} 个连接点`),
-		);
-
-		// 保存操作后的快照
+		// 创建快照 (Undo 支持)
 		try {
-			await createSnapshot('Width (Selected) After');
+			await createSnapshot('Width (Selected) Before');
 		}
 		catch (e: any) {
-			logError(`Failed to create result snapshot: ${e.message || e}`);
+			logError(`Failed to create snapshot: ${e.message || e}`);
+		}
+
+		try {
+			// 使用安全获取函数处理混合选中
+			const selectedTracks = await getSafeSelectedTracks(allSelectedIds);
+
+			if (selectedTracks.length === 0) {
+				eda.sys_Message?.showToastMessage(eda.sys_I18n.text('没有找到导线'));
+				return;
+			}
+
+			const result = await processWidthTransitions(selectedTracks, savedData, settings);
+
+			// 保存数据
+			await saveTransitionData(result.data);
+
+			eda.sys_Message?.showToastMessage(
+				eda.sys_I18n.text(`线宽过渡完成，处理了 ${result.count} 个连接点`),
+			);
+
+			// 保存操作后的快照
+			try {
+				await createSnapshot('Width (Selected) After');
+			}
+			catch (e: any) {
+				logError(`Failed to create result snapshot: ${e.message || e}`);
+			}
+		}
+		catch (e: any) {
+			eda.sys_Dialog?.showInformationMessage(e.message, 'Width Transition Error');
+		}
+		finally {
+			eda.sys_LoadingAndProgressBar?.destroyLoading?.();
 		}
 	}
-	catch (e: any) {
-		eda.sys_Dialog?.showInformationMessage(e.message, 'Width Transition Error');
-	}
-	finally {
-		eda.sys_LoadingAndProgressBar?.destroyLoading?.();
-	}
+	catch { }
 }
 
 /**
