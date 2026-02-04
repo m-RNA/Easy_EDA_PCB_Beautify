@@ -334,6 +334,10 @@
             opacity: 1;
             transform: translate(-50%, 0);
         }
+
+        /* Animation */
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .rotating { animation: spin 0.6s cubic-bezier(0.4, 0.0, 0.2, 1) infinite; display: inline-block; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -469,24 +473,32 @@
         </div>
 
         <!-- Snapshot -->
-        <div style="margin-top: 24px;">
-            <div class="setting-item" style="border-top: 1px solid var(--border); padding-top: 20px; margin-bottom: 12px;">
-                <div class="setting-info">
-                    <div class="setting-label">
-                        <span data-i18n="布线状态管理">布线状态管理</span>
-                        <span id="snapshotCount" style="font-weight: normal; color: var(--text-hint); font-size: 12px; margin-left: 4px;"></span>
-                    </div>
-                    <div class="setting-desc" data-i18n="记录当前的布线状态">记录当前的布线状态</div>
-                </div>
-                <div class="setting-control" style="gap: 10px;">
-                    <button type="button" class="btn btn-primary" id="createSnapshotBtn" data-i18n="记录当前布线状态">记录当前布线状态</button>
-                    <button type="button" class="btn btn-danger" id="clearSnapshotsBtn" data-i18n="清除快照">清除快照</button>
-                </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">
+            <span data-i18n="布线状态管理">布线状态管理</span>
+            <span id="snapshotCount" style="font-weight: normal; color: var(--text-hint); font-size: 12px; margin-left: 4px;"></span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <!-- View Toggle -->
+            <div class="filter-bar" style="display: flex; gap: 4px; background: #eee; padding: 4px; border-radius: 6px;">
+                <button id="btnShowManual" class="btn btn-ghost" style="padding: 4px 10px; font-size: 12px; border-radius: 4px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.1); color: var(--primary);" data-i18n="手动快照">手动快照</button>
+                <button id="btnShowAuto" class="btn btn-ghost" style="padding: 4px 10px; font-size: 12px; border-radius: 4px; color: var(--text-secondary);" data-i18n="自动快照">自动快照</button>
+                <div style="width: 1px; background: #ddd; margin: 2px 0;"></div>
+                <button type="button" class="btn btn-ghost" id="refreshSnapshotBtn" style="padding: 4px 10px; font-size: 16px; line-height: 1; border-radius: 4px;" title="刷新列表"><span class="refresh-icon" style="display:inline-block">↻</span></button>
             </div>
 
-            <div id="snapshotList" class="snapshot-container">
-                <div class="snapshot-placeholder" data-i18n="暂无快照">暂无快照</div>
+            <!-- Actions -->
+            <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-primary" id="createSnapshotBtn" style="padding: 4px 12px; font-size: 12px;" data-i18n="新增快照">新增快照</button>
+                <button type="button" class="btn btn-danger" id="clearSnapshotsBtn" style="padding: 4px 12px; font-size: 12px;" data-i18n="清除手动">清除手动</button>
             </div>
+        </div>
+
+        <div id="snapshotList" class="snapshot-container">
+            <div class="snapshot-placeholder" data-i18n="暂无快照">暂无快照</div>
         </div>
     </div>
 
@@ -929,21 +941,96 @@
 
         // Snapshots
         const snapshotList = document.getElementById('snapshotList');
+        let currentPcbId = null;
+
+        // 定期检查 PCB 切换
+        // View Mode State
+        let currentViewType = 'manual';
+
+        async function checkPcbChange() {
+            const api = API || getEda();
+            if (!api || !api.dmt_Pcb) return;
+            try {
+                let pid = null;
+                const info = await api.dmt_Pcb.getCurrentPcbInfo();
+                if (info) pid = info.uuid;
+                else {
+                    const boardInfo = await api.dmt_Board.getCurrentBoardInfo();
+                    if (boardInfo && boardInfo.pcb) pid = boardInfo.pcb.uuid;
+                }
+
+                if (pid && pid !== currentPcbId) {
+                    currentPcbId = pid;
+                    refreshSnapshots(); // PCB 改变，刷新列表
+                }
+            } catch (e) { /* ignore */ }
+        }
+        setInterval(checkPcbChange, 2000);
+
+        // Toggle Buttons
+        const btnShowManual = document.getElementById('btnShowManual');
+        const btnShowAuto = document.getElementById('btnShowAuto');
+
+        function updateToggleStyles() {
+            if (currentViewType === 'manual') {
+                btnShowManual.style.background = '#fff';
+                btnShowManual.style.color = 'var(--primary)';
+                btnShowManual.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
+                
+                btnShowAuto.style.background = 'transparent';
+                btnShowAuto.style.color = 'var(--text-secondary)';
+                btnShowAuto.style.boxShadow = 'none';
+            } else {
+                btnShowAuto.style.background = '#fff';
+                btnShowAuto.style.color = 'var(--primary)';
+                btnShowAuto.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
+
+                btnShowManual.style.background = 'transparent';
+                btnShowManual.style.color = 'var(--text-secondary)';
+                btnShowManual.style.boxShadow = 'none';
+            }
+        }
+
+        if (btnShowManual && btnShowAuto) {
+            btnShowManual.onclick = () => {
+                if (currentViewType !== 'manual') {
+                    currentViewType = 'manual';
+                    updateToggleStyles();
+                    refreshSnapshots();
+                }
+            };
+
+            btnShowAuto.onclick = () => {
+                if (currentViewType !== 'auto') {
+                    currentViewType = 'auto';
+                    updateToggleStyles();
+                    refreshSnapshots();
+                }
+            };
+        }
 
         async function refreshSnapshots() {
             const api = API || getEda();
             if (!api || !api.jlc_eda_beautify_snapshot)
                 return;
+                
             try {
-                const snapshots = await api.jlc_eda_beautify_snapshot.getSnapshots();
-                // 获取最后一次撤销的ID，用于显示标记
-                let lastRestoredId = null;
-                if (typeof api.jlc_eda_beautify_snapshot.getLastRestoredId === 'function') {
-                    lastRestoredId = api.jlc_eda_beautify_snapshot.getLastRestoredId();
-                    console.log('[Settings] Got lastRestoredId from API:', lastRestoredId, 'type:', typeof lastRestoredId);
+                // 确保我们有当前的 PCB ID
+                if (!currentPcbId) {
+                   await checkPcbChange();
                 }
 
-                console.log('[Settings] Snapshots:', snapshots.map(s => ({ id: s.id, name: s.name })));
+                if (!currentPcbId) {
+                     // 依然没有 PCB，可能是没打开文档
+                     snapshotList.innerHTML = `<div class="snapshot-placeholder">${api.sys_I18n ? api.sys_I18n.text('请先打开PCB文档') : 'Please open a PCB'}</div>`;
+                     document.getElementById('snapshotCount').textContent = `(0/0)`;
+                     return;
+                }
+
+                // 根据当前视图模式获取快照
+                const snapshots = await api.jlc_eda_beautify_snapshot.getSnapshots(currentPcbId, currentViewType);
+
+                 console.log(`[Settings] Snapshots for PCB ${currentPcbId} (${currentViewType}): ${snapshots.length}`);
 
                 // Update Count safely
                 const countEl = document.getElementById('snapshotCount');
@@ -953,6 +1040,11 @@
                 if (countEl)
                     countEl.textContent = `(${snapshots.length}/${limit})`;
 
+                // Fix: Sync the poller counter to avoid double-refresh on view toggle
+                if (currentViewType === 'auto') {
+                    lastSnapshotCount = snapshots.length;
+                }
+
                 snapshotList.innerHTML = '';
                 if (snapshots.length === 0) {
                     const emptyText = api.sys_I18n ? api.sys_I18n.text('暂无快照') : '暂无快照';
@@ -960,8 +1052,12 @@
                     return;
                 }
 
-                // 确保按时间倒序显示（最新的在最上面）
-                const sorted = [...snapshots].sort((a, b) => b.timestamp - a.timestamp);
+                // 列表是已经排好序的(如果后端没排，这里再排一次)
+                // const sorted = [...snapshots].sort((a, b) => b.timestamp - a.timestamp);
+                const sorted = snapshots;
+                
+                // 获取最后一次恢复的 ID
+                const lastRestoredId = api.jlc_eda_beautify_snapshot.getLastRestoredId ? api.jlc_eda_beautify_snapshot.getLastRestoredId() : null;
 
                 sorted.forEach((snap, index) => {
                     const div = document.createElement('div');
@@ -1048,6 +1144,24 @@
             }
         }
 
+        document.getElementById('refreshSnapshotBtn').onclick = async function() {
+            const btn = this;
+            const icon = btn.querySelector('.refresh-icon'); 
+            if (icon) icon.classList.add('rotating');
+            
+            try {
+                // 强制检查一次 PCB ID 变化
+                await checkPcbChange();
+                await refreshSnapshots();
+            }
+            finally {
+                // 至少转 500ms (正好一圈)
+                setTimeout(() => {
+                    if (icon) icon.classList.remove('rotating');
+                }, 500);
+            }
+        };
+
         document.getElementById('createSnapshotBtn').onclick = async () => {
             const api = API || getEda();
             if (!api || !api.jlc_eda_beautify_snapshot) {
@@ -1061,7 +1175,7 @@
             }
             try {
                 const name = api.sys_I18n ? api.sys_I18n.text('手动快照') : 'Manual Snapshot';
-                await api.jlc_eda_beautify_snapshot.createSnapshot(name);
+                await api.jlc_eda_beautify_snapshot.createSnapshot(name, true);
                 await refreshSnapshots();
                 showToast(api.sys_I18n ? api.sys_I18n.text('快照已创建') : 'Snapshot Created');
             }
@@ -1080,10 +1194,10 @@
             const api = API || getEda();
             if (!api || !api.jlc_eda_beautify_snapshot)
                 return;
-            const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要清除所有快照吗？') : 'Clear all snapshots?';
+            const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要清除所有手动快照吗？') : 'Clear all manual snapshots?';
 
             if (api.sys_Dialog) {
-                api.sys_Dialog.showConfirmationMessage(confirmText, api.sys_I18n ? api.sys_I18n.text('清除快照') : 'Clear Snapshots', undefined, undefined, async (ok) => {
+                api.sys_Dialog.showConfirmationMessage(confirmText, api.sys_I18n ? api.sys_I18n.text('清除手动快照') : 'Clear Manual Snapshots', undefined, undefined, async (ok) => {
                     if (ok) {
                         await api.jlc_eda_beautify_snapshot.clearSnapshots();
                         await refreshSnapshots();
@@ -1100,6 +1214,9 @@
         else {
             init();
         }
+
+        // Global for polling
+        let lastSnapshotCount = -1;
 
         function init() {
             loadSettings().then(() => {
@@ -1119,15 +1236,16 @@
                 }
 
                 // 额外保险：定时轮询检查快照数量变化
-                let lastSnapshotCount = -1;
-
                 const poller = async () => {
+                    // 如果是手动模式，不轮询
+                    if (currentViewType === 'manual') return;
+
                     const currentApi = API || getEda();
-                    if (!currentApi || !currentApi.jlc_eda_beautify_snapshot)
+                    if (!currentApi || !currentApi.jlc_eda_beautify_snapshot || !currentPcbId)
                         return;
 
                     try {
-                        const snapshots = await currentApi.jlc_eda_beautify_snapshot.getSnapshots();
+                        const snapshots = await currentApi.jlc_eda_beautify_snapshot.getSnapshots(currentPcbId, 'auto');
 
                         // 只有数量变化时才重绘列表
                         if (snapshots.length !== lastSnapshotCount && lastSnapshotCount !== -1) {
@@ -1140,8 +1258,8 @@
                     }
                 };
 
-                // 启动轮询 (3秒一次，维持低频心跳)
-                setInterval(poller, 3000);
+                // 启动轮询 (2秒一次)
+                setInterval(poller, 2000);
             });
         }
 	</script>
