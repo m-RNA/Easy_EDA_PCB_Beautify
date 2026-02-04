@@ -141,6 +141,8 @@ export async function getSnapshots(pcbId: string, type?: 'manual' | 'auto'): Pro
 
 // 辅助函数：比较 Line 是否一致
 function isLineEqual(a: any, b: any) {
+	if (a.id !== b.id)
+		return false; // ID must match
 	if (a.layer !== b.layer || a.net !== b.net)
 		return false;
 	if (!isClose(a.startX, b.startX))
@@ -158,6 +160,8 @@ function isLineEqual(a: any, b: any) {
 
 // 辅助函数：比较 Arc 是否一致
 function isArcEqual(a: any, b: any) {
+	if (a.id !== b.id)
+		return false; // ID must match
 	if (a.layer !== b.layer || a.net !== b.net)
 		return false;
 	if (!isClose(a.startX, b.startX))
@@ -172,6 +176,35 @@ function isArcEqual(a: any, b: any) {
 		return false;
 	if (!isClose(a.lineWidth, b.lineWidth))
 		return false;
+	return true;
+}
+
+// 辅助函数：比较两个快照的数据是否完全一致 (忽略顺序)
+function isSnapshotDataIdentical(snapshotA: RoutingSnapshot, snapshotB: RoutingSnapshot): boolean {
+	if (snapshotA.lines.length !== snapshotB.lines.length)
+		return false;
+	if (snapshotA.arcs.length !== snapshotB.arcs.length)
+		return false;
+
+	// Sort by ID for stable comparison
+	const sortById = (a: any, b: any) => (a.id > b.id ? 1 : -1);
+
+	const linesA = [...snapshotA.lines].sort(sortById);
+	const linesB = [...snapshotB.lines].sort(sortById);
+
+	for (let i = 0; i < linesA.length; i++) {
+		if (!isLineEqual(linesA[i], linesB[i]))
+			return false;
+	}
+
+	const arcsA = [...snapshotA.arcs].sort(sortById);
+	const arcsB = [...snapshotB.arcs].sort(sortById);
+
+	for (let i = 0; i < arcsA.length; i++) {
+		if (!isArcEqual(arcsA[i], arcsB[i]))
+			return false;
+	}
+
 	return true;
 }
 
@@ -313,11 +346,7 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 		// Check duplicate against the latest one in the target list
 		if (targetList.length > 0) {
 			const latest = targetList[0];
-			const isIdentical
-				= latest.lines.length === snapshot.lines.length
-					&& latest.arcs.length === snapshot.arcs.length
-					&& latest.lines.every((l, i) => isLineEqual(l, snapshot.lines[i]))
-					&& latest.arcs.every((a, i) => isArcEqual(a, snapshot.arcs[i]));
+			const isIdentical = isSnapshotDataIdentical(latest, snapshot);
 
 			if (isIdentical) {
 				debugLog('Snapshot skipped: Identical to the latest one.', 'Snapshot');
@@ -598,15 +627,16 @@ export async function undoLastOperation() {
 				startIndex = idx + 1; // 找更旧的一个
 			}
 		}
-
-		// 过滤掉 "After" 类型的快照，因为撤销是要回到 "Before"
-		for (let i = startIndex; i < autoSnapshots.length; i++) {
-			const s = autoSnapshots[i];
-			if (s.name && /\sAfter$/.test(s.name)) {
-				continue;
+		else {
+			// 如果是第一次撤销，且最新的快照是 "After" 类型的（通常代表当前状态），
+			// 则跳过它，直接撤销到它的前一个状态。
+			if (autoSnapshots.length > 0 && autoSnapshots[0].name && /\sAfter$/.test(autoSnapshots[0].name)) {
+				startIndex = 1;
 			}
-			targetSnapshot = s;
-			break;
+		}
+
+		if (startIndex < autoSnapshots.length) {
+			targetSnapshot = autoSnapshots[startIndex];
 		}
 
 		if (targetSnapshot) {
