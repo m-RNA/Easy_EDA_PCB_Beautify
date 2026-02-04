@@ -1,9 +1,9 @@
 {
 	"name": "eext-pcb-beautify",
 	"uuid": "3911cc55444d4833b5762da1521fe616",
-	"displayName": "熔化-美化PCB-融化",
-	"description": "一键拐角圆弧优化 线宽突变处贝塞尔优化 多步撤销 快照 合并短线段 强制圆弧生成等高级优化功能",
-	"version": "1.0.3",
+	"displayName": "熔化/优化/美化PCB (融化)",
+	"description": "一键：拐角圆弧优化 线宽突变处贝塞尔优化 多步撤销 快照管理 合并短线段 强制圆弧生成等高级优化功能",
+	"version": "1.0.4",
 	"publisher": "m-RNA",
 	"engines": {
 		"eda": "^3.0.0"
