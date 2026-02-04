@@ -7,6 +7,8 @@ export interface BeautifySettings {
 	unit: 'mm' | 'mil'; // 单位设置
 	debug: boolean; // 调试模式
 	forceArc: boolean; // 强制生成圆弧 (即使线段太短导致被截断)
+	enableDRC: boolean; // 启用 DRC 检查
+	drcClearance: number; // DRC 安全间距 (mil)
 }
 
 const DEFAULT_SETTINGS: BeautifySettings = {
@@ -18,6 +20,8 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	unit: 'mil',
 	debug: false,
 	forceArc: true,
+	enableDRC: false,
+	drcClearance: 6,
 };
 
 const SETTINGS_CACHE_KEY = '_jlc_beautify_settings_cache';

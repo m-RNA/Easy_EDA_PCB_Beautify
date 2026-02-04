@@ -411,6 +411,42 @@
         </div>
     </div>
 
+    <!-- DRC Settings -->
+    <div class="card">
+        <div class="card-title" data-i18n="设计规则检查 (DRC)">设计规则检查 (DRC)</div>
+        
+        <!-- Enable DRC -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="启用安全检查">启用安全检查</div>
+                <div class="setting-desc" data-i18n="生成圆弧时检查是否违反间距规则">生成圆弧时检查是否违反间距规则 (与周围Pad/Track)</div>
+            </div>
+            <div class="setting-control">
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="enableDRC">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="switch-label" id="enableDRCLabel" data-i18n="启用">启用</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Clearance -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="安全间距">安全间距</div>
+                <div class="setting-desc" data-i18n="圆弧与周围物体的最小距离">圆弧与周围物体的最小距离 (建议设为 6mil 以上)</div>
+            </div>
+            <div class="setting-control">
+                <div class="input-group">
+                    <input type="text" id="drcClearance" data-min="0" data-step="1" value="6">
+                    <span class="addon">mil</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Advanced -->
     <div class="card">
         <div class="card-title" data-i18n="高级设置">高级设置</div>
@@ -605,12 +641,15 @@
         const elDebug = document.getElementById('debug');
         const elForceArc = document.getElementById('forceArc');
         const elMergeShortSegments = document.getElementById('mergeShortSegments');
+        const elEnableDRC = document.getElementById('enableDRC');
+        const elDrcClearance = document.getElementById('drcClearance');
 
         // I18n labels update
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
         const elDebugLabel = document.getElementById('debugLabel');
         const elMergeShortSegmentsLabel = document.getElementById('mergeShortSegmentsLabel');
         const elForceArcLabel = document.getElementById('forceArcLabel');
+        const elEnableDRCLabel = document.getElementById('enableDRCLabel');
 
         // 默认配置 (将在 init 中从 API 获取)
         let DEFAULT_CONFIG = {};
@@ -626,12 +665,14 @@
             elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
             elMergeShortSegmentsLabel.textContent = elMergeShortSegments.checked ? enabledText : disabledText;
             elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
+            elEnableDRCLabel.textContent = elEnableDRC.checked ? enabledText : disabledText;
 
             // Visual feedback color for label
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elMergeShortSegmentsLabel.style.color = elMergeShortSegments.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elEnableDRCLabel.style.color = elEnableDRC.checked ? 'var(--primary)' : 'var(--text-secondary)';
         }
 
         // Load
@@ -652,7 +693,7 @@
             }
 
             try {
-                const settings = await api.sys_Storage.getExtensionAllUserConfigs();
+                const settings = await api.sys_Storage.getExtensionAllUserConfigs() || {};
                 const config = {
                     ...DEFAULT_CONFIG,
                     ...settings,
@@ -690,6 +731,11 @@
                 elDebug.checked = config.debug;
                 elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
 
+                // DRC
+                elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
+                elDrcClearance.value = config.drcClearance !== undefined ? config.drcClearance : 6;
+                elDrcClearance.setAttribute('data-last-valid', elDrcClearance.value);
+
                 updateSwitchLabels();
             }
             catch (e) {
@@ -716,6 +762,10 @@
             if (Number.isNaN(ratio))
                 ratio = DEFAULT_CONFIG.widthTransitionRatio;
 
+            let clearance = Number.parseFloat(elDrcClearance.value);
+            if (Number.isNaN(clearance))
+                clearance = 6;
+
             const settings = {
                 cornerRadius: radius,
                 unit: elUnitSelect.value,
@@ -725,6 +775,8 @@
                 widthTransitionRatio: ratio,
                 debug: elDebug.checked,
                 forceArc: elForceArc.checked,
+                enableDRC: elEnableDRC.checked,
+                drcClearance: clearance
             };
 
             try {
@@ -905,8 +957,9 @@
         bindSmartInput(elCornerRadius, false);
         bindSmartInput(elSegments, true);
         bindSmartInput(elRatio, false);
+        bindSmartInput(elDrcClearance, false);
 
-        [elSyncWidth, elDebug, elMergeShortSegments, elForceArc].forEach((el) => {
+        [elSyncWidth, elDebug, elMergeShortSegments, elForceArc, elEnableDRC].forEach((el) => {
             el.addEventListener('change', () => saveSettings());
         });
 

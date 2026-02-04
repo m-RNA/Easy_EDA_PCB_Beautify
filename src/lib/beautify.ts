@@ -1,4 +1,5 @@
 import type { Point } from './math';
+import { runDrcCheckAndParse } from './drc';
 import { getSafeSelectedTracks } from './eda_utils';
 import { debugLog, debugWarn, logError } from './logger';
 import { dist, getAngleBetween, getLineIntersection, lerp } from './math';
@@ -36,6 +37,7 @@ export function makeArcWidthKey(pcbId: string, arcId: string): string {
  * @param scope 'selected' 只处理选中的导线, 'all' 处理所有导线
  */
 export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
+	// await prepareDrcRules(); // Removed
 	const settings = await getSettings();
 	let tracks: any[] = [];
 
@@ -185,8 +187,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		let createdArcs = 0;
 		let clampedCorners = 0;
 
-		const allCreatedIds: string[] = [];
-		const allDeletedPrimitives: any[] = [];
+		const pathTransactions: { createdIds: string[]; backupPrimitives: any[] }[] = [];
 
 		for (const [key, group] of groups) {
 			const [net, layer] = key.split('#@#');
@@ -307,6 +308,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 			// 处理每条路径
 			for (const path of paths) {
+				const currentPathCreatedIds: string[] = [];
 				const { points, orderedSegs } = path;
 
 				// 检查数据完整性
@@ -561,10 +563,14 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 								}
 							}
 
+							const finalActualD = actualD;
+
+							// DRC logic removed (moved to post-check)
+
 							// 只有当计算出的切线距离有效且足够大时，才生成圆弧
-							if (actualD > 0.05 && !isSkippedDueToClamp) {
-								const pStart = lerp(pCorner, pPrev, actualD / mag1);
-								const pEnd = lerp(pCorner, pNext, actualD / mag2);
+							if (finalActualD > 0.05 && !isSkippedDueToClamp) {
+								const pStart = lerp(pCorner, pPrev, finalActualD / mag1);
+								const pEnd = lerp(pCorner, pNext, finalActualD / mag2);
 
 								// 添加 [当前起点 -> 切点1] 的直线，使用前一段的线宽
 								newPath.push({
@@ -605,7 +611,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 								currentStart = pCorner;
 
 								// Log failure
-								if (!isSkippedDueToClamp) {
+								if (!isSkippedDueToClamp && actualD > 0.05 && finalActualD > 0.05) {
 									debugLog(`Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) skipped. Angle or Radius invalid. net=${net || 'No Net'} actualD=${actualD.toFixed(3)}`);
 								}
 							}
@@ -724,7 +730,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 									newId = (res as any).getState_PrimitiveId();
 
 								if (newId) {
-									allCreatedIds.push(newId);
+									currentPathCreatedIds.push(newId);
 								}
 							}
 						}
@@ -753,7 +759,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 								newId = (res as any).getState_PrimitiveId();
 
 							if (newId) {
-								allCreatedIds.push(newId);
+								currentPathCreatedIds.push(newId);
 								// 保存圆弧的正确线宽到全局 Map（带 PCB ID 区分）
 								let pcbId = 'unknown';
 								try {
@@ -771,9 +777,67 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 						}
 					}
 
-					// 收集删除的对象到全局列表
-					if (backupPrimitives.length > 0) {
-						allDeletedPrimitives.push(...backupPrimitives);
+					// 记录事务以便回滚
+					if (currentPathCreatedIds.length > 0 && backupPrimitives.length > 0) {
+						pathTransactions.push({
+							createdIds: currentPathCreatedIds,
+							backupPrimitives: [...backupPrimitives],
+						});
+					}
+				}
+			}
+		}
+
+		// Post-Beautify DRC Check & Revert
+		if (settings.enableDRC && pathTransactions.length > 0) {
+			if (eda.sys_Message && typeof eda.sys_Message.showToastMessage === 'function') {
+				eda.sys_Message.showToastMessage('正在进行 DRC 检查...');
+			}
+
+			const violatedIds = await runDrcCheckAndParse();
+
+			if (violatedIds.size > 0) {
+				debugLog(`[DRC] Checking ${pathTransactions.length} transactions against ${violatedIds.size} violations.`);
+				let revertedCount = 0;
+				for (const trans of pathTransactions) {
+					// 检查该事务生成的 ID 是否有违规
+					const violatingId = trans.createdIds.find(id => violatedIds.has(id));
+
+					if (violatingId) {
+						debugLog(`[DRC] Reverting transaction. Violation found on ID: ${violatingId}`);
+						try {
+							// 尝试删除生成对象
+							await eda.pcb_PrimitiveLine.delete(trans.createdIds);
+							await eda.pcb_PrimitiveArc.delete(trans.createdIds);
+
+							// 恢复原始对象
+							for (const bp of trans.backupPrimitives) {
+								if (bp.type === 'Line') {
+									await eda.pcb_PrimitiveLine.create(
+										bp.net,
+										bp.layer,
+										bp.startX,
+										bp.startY,
+										bp.endX,
+										bp.endY,
+										bp.lineWidth,
+									);
+								}
+							}
+							revertedCount++;
+							// 更新统计显示
+							// 这里的 createdArcs 只是用于 toast 显示，简单减少即可
+						}
+						catch (e: any) {
+							console.warn('Revert failed for transaction', e);
+						}
+					}
+				}
+
+				if (revertedCount > 0) {
+					debugWarn(`DRC: Reverted ${revertedCount} path modifications due to violations.`);
+					if (eda.sys_Message && typeof eda.sys_Message.showToastMessage === 'function') {
+						eda.sys_Message.showToastMessage(`DRC检查: 发现并撤销了 ${revertedCount} 处导致违规的修改`);
 					}
 				}
 			}
