@@ -252,11 +252,8 @@ export async function getCurrentPcbInfoSafe() {
  */
 export async function createSnapshot(name: string = 'Auto Save', isManual: boolean = false): Promise<RoutingSnapshot | null> {
 	try {
-		// 任何新的操作都应该重置撤销指针，因为历史分支改变了
-		const lastId = getLastRestoredId();
-		if (lastId !== null) {
-			setLastRestoredId(null);
-		}
+		// 暂存撤销ID，不在此时立即重置，而是在后续逻辑中用于分支截断
+		const lastRestoredId = getLastRestoredId();
 
 		if (eda.sys_LoadingAndProgressBar) {
 			// 如果已经是手动触发的(有进度条)，就不再显示进度提示，避免闪烁
@@ -297,6 +294,18 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 			data[pcbId] = { manual: [], auto: [] };
 		}
 		const pcbStore = data[pcbId];
+
+		// 历史分支管理：如果当前处于撤销状态，新操作将截断“未来”
+		if (lastRestoredId !== null) {
+			const idx = pcbStore.auto.findIndex(s => s.id === lastRestoredId);
+			if (idx > 0) {
+				// 删除比当前恢复点更新的所有自动快照
+				pcbStore.auto.splice(0, idx);
+				debugLog(`Snapshot history truncated: removed ${idx} newer items`, 'Snapshot');
+			}
+			// 重置指针
+			setLastRestoredId(null);
+		}
 
 		// 决定存入哪个列表
 		const targetList = isManual ? pcbStore.manual : pcbStore.auto;
