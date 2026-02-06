@@ -29,109 +29,309 @@ export function makeArcWidthKey(pcbId: string, arcId: string): string {
 	return `${pcbId}_${arcId}`;
 }
 
+// 定义几何操作指令接口
+interface PathOp {
+	type: 'line' | 'arc';
+	start: Point;
+	end: Point;
+	width: number;
+	angle?: number;
+	cornerIndex: number; // 关联的拐角索引，用于回滚定位
+}
+
 /**
- * 圆滑布线核心逻辑 (基于圆弧)
+ * 核心几何计算函数：根据路径点生成绘图指令
+ * @param path 设置线段信息
+ * @param path.points 线段点集合
+ * @param path.orderedSegs 线段集合
+ * @param settings 设置
+ * @param badCorners 需要强制跳过（保持直角）的拐角索引集合
  */
+function generatePathOps(
+	path: { points: Point[]; orderedSegs: any[] },
+	settings: any,
+	badCorners: Set<number> = new Set(),
+): PathOp[] {
+	const { points, orderedSegs } = path;
+	const ops: PathOp[] = [];
+
+	if (points.length < 3)
+		return ops;
+
+	let radius = settings.cornerRadius;
+	if (settings.unit === 'mm') {
+		radius = eda.sys_Unit.mmToMil(radius);
+	}
+
+	let currentStart = points[0];
+
+	// 遍历每一个拐角 (点 1 到 点 N-2)
+	for (let i = 1; i < points.length - 1; i++) {
+		const pPrev = points[i - 1];
+		const pCorner = points[i];
+		const pNext = points[i + 1];
+
+		// 获取线宽
+		const prevSegWidth = orderedSegs[i - 1]?.width ?? orderedSegs[0].width;
+		const nextSegWidth = orderedSegs[i]?.width ?? prevSegWidth;
+
+		// 如果该拐角被标记为“坏拐角”（DRC违规），强制跳过优化
+		if (badCorners.has(i)) {
+			ops.push({
+				type: 'line',
+				start: currentStart,
+				end: pCorner,
+				width: prevSegWidth,
+				cornerIndex: i,
+			});
+			currentStart = pCorner;
+			continue;
+		}
+
+		let isMerged = false;
+
+		// --- 尝试合并短线段 (U型弯优化) ---
+		try {
+			// 如果当前索引未被禁用，且开启了合并
+			if (settings.mergeShortSegments && i < points.length - 2) {
+				// 如果下一个拐角也在黑名单里，则不进行合并操作，以免逻辑混乱
+				if (!badCorners.has(i + 1)) {
+					const pAfter = points[i + 2];
+					if (pAfter) {
+						const segLen = dist(pCorner, pNext);
+						if (segLen < radius * 1.5) {
+							// ... (原有合并计算逻辑) ...
+							const vIn = { x: pPrev.x - pCorner.x, y: pPrev.y - pCorner.y };
+							const vMid = { x: pNext.x - pCorner.x, y: pNext.y - pCorner.y };
+							const vOut = { x: pAfter.x - pNext.x, y: pAfter.y - pNext.y };
+
+							const angle1 = getAngleBetween({ x: -vIn.x, y: -vIn.y }, { x: vMid.x, y: vMid.y });
+							const angle2 = getAngleBetween({ x: vMid.x, y: vMid.y }, { x: vOut.x, y: vOut.y });
+
+							if (angle1 * angle2 > 0 && Math.abs(angle1) > 1 && Math.abs(angle2) > 1) {
+								const intersection = getLineIntersection(pPrev, pCorner, pNext, pAfter);
+								if (intersection) {
+									const dInt1 = dist(intersection, pCorner);
+									const dInt2 = dist(intersection, pNext);
+
+									if (dInt1 < segLen * 10 && dInt2 < segLen * 10) {
+										const t_v1 = { x: pPrev.x - intersection.x, y: pPrev.y - intersection.y };
+										const t_v2 = { x: pAfter.x - intersection.x, y: pAfter.y - intersection.y };
+										const t_mag1 = Math.sqrt(t_v1.x ** 2 + t_v1.y ** 2);
+										const t_mag2 = Math.sqrt(t_v2.x ** 2 + t_v2.y ** 2);
+
+										const t_dot = (t_v1.x * t_v2.x + t_v1.y * t_v2.y) / (t_mag1 * t_mag2);
+										const t_safeDot = Math.max(-1, Math.min(1, t_dot));
+										const t_angleRad = Math.acos(t_safeDot);
+										const t_tanVal = Math.tan(t_angleRad / 2);
+
+										let t_d = 0;
+										if (Math.abs(t_tanVal) > 0.0001) {
+											t_d = radius / t_tanVal;
+										}
+
+										const t_maxAllowedRadius = Math.min(t_mag1 * 0.95, t_mag2 * 0.95);
+										const t_actualD = Math.min(t_d, t_maxAllowedRadius);
+
+										const t_effectiveRadius = t_actualD * Math.abs(t_tanVal);
+										const t_maxLineWidth = Math.max(prevSegWidth, nextSegWidth);
+
+										if (t_actualD > 0.05 && t_effectiveRadius >= (t_maxLineWidth / 2) - 0.05) {
+											const pStart = lerp(intersection, pPrev, t_actualD / t_mag1);
+											const pEnd = lerp(intersection, pAfter, t_actualD / t_mag2);
+
+											// 1. 直线: current -> pStart
+											if (dist(currentStart, pStart) > 0.001) {
+												ops.push({
+													type: 'line',
+													start: currentStart,
+													end: pStart,
+													width: prevSegWidth,
+													cornerIndex: i, // 归属当前拐角
+												});
+											}
+
+											const t_sweptAngle = getAngleBetween(
+												{ x: -t_v1.x, y: -t_v1.y },
+												{ x: t_v2.x, y: t_v2.y },
+											);
+
+											const afterSegWidth = orderedSegs[i + 1]?.width ?? nextSegWidth;
+
+											// 2. 合并大圆弧
+											ops.push({
+												type: 'arc',
+												start: pStart,
+												end: pEnd,
+												width: afterSegWidth,
+												angle: t_sweptAngle,
+												cornerIndex: i, // 归属当前拐角(虽然跨越了i+1)
+											});
+
+											currentStart = pEnd;
+											i++; // 跳过下一个点
+											isMerged = true;
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		catch {
+			// ignore
+		}
+
+		// --- 普通圆角逻辑 ---
+		if (!isMerged) {
+			const v1 = { x: pPrev.x - pCorner.x, y: pPrev.y - pCorner.y };
+			const v2 = { x: pNext.x - pCorner.x, y: pNext.y - pCorner.y };
+			const mag1 = Math.sqrt(v1.x ** 2 + v1.y ** 2);
+			const mag2 = Math.sqrt(v2.x ** 2 + v2.y ** 2);
+			const dot = (v1.x * v2.x + v1.y * v2.y) / (mag1 * mag2);
+			const safeDot = Math.max(-1, Math.min(1, dot));
+			const angleRad = Math.acos(safeDot);
+			const tanVal = Math.tan(angleRad / 2);
+
+			let d = 0;
+			if (Math.abs(tanVal) > 0.0001) {
+				d = radius / tanVal;
+			}
+
+			const maxAllowedRadius = Math.min(mag1 * 0.45, mag2 * 0.45);
+			const actualD = Math.min(d, maxAllowedRadius);
+			let isSkipped = false;
+
+			// 检查缩放
+			if (d > 0.001 && actualD < d * 0.95 && !settings.forceArc) {
+				isSkipped = true;
+			}
+			// 检查线宽
+			if (!isSkipped) {
+				const effectiveRadius = actualD * Math.abs(tanVal);
+				const maxLineWidth = Math.max(prevSegWidth, nextSegWidth);
+				if (effectiveRadius < (maxLineWidth / 2) - 0.05) {
+					isSkipped = true;
+				}
+			}
+
+			if (actualD > 0.05 && !isSkipped) {
+				const pStart = lerp(pCorner, pPrev, actualD / mag1);
+				const pEnd = lerp(pCorner, pNext, actualD / mag2);
+
+				// 1. 直线: current -> 切点1
+				ops.push({
+					type: 'line',
+					start: currentStart,
+					end: pStart,
+					width: prevSegWidth,
+					cornerIndex: i,
+				});
+
+				const sweptAngle = getAngleBetween(
+					{ x: -v1.x, y: -v1.y },
+					{ x: v2.x, y: v2.y },
+				);
+
+				// 2. 圆弧: 切点1 -> 切点2
+				ops.push({
+					type: 'arc',
+					start: pStart,
+					end: pEnd,
+					width: nextSegWidth,
+					angle: sweptAngle,
+					cornerIndex: i,
+				});
+
+				currentStart = pEnd;
+			}
+			else {
+				// 无法圆滑，保持原样：直线到拐点
+				ops.push({
+					type: 'line',
+					start: currentStart,
+					end: pCorner,
+					width: prevSegWidth,
+					cornerIndex: i,
+				});
+				currentStart = pCorner;
+			}
+		}
+	}
+
+	// 最后一段直线
+	const lastSegWidth = orderedSegs[orderedSegs.length - 1]?.width ?? orderedSegs[0].width;
+	ops.push({
+		type: 'line',
+		start: currentStart,
+		end: points[points.length - 1],
+		width: lastSegWidth,
+		cornerIndex: points.length - 1, // 关联到终点或最后一个有效索引
+	});
+
+	return ops;
+}
+
 /**
- * 平滑布线
+ * 圆滑布线
  * @param scope 'selected' 只处理选中的导线, 'all' 处理所有导线
  */
 export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
-	// await prepareDrcRules(); // Removed
 	const settings = await getSettings();
 	let tracks: any[] = [];
 
-	// 提前显示进度条
-	if (
-		eda.sys_LoadingAndProgressBar
-		&& typeof eda.sys_LoadingAndProgressBar.showLoading === 'function'
-	) {
+	if (eda.sys_LoadingAndProgressBar?.showLoading) {
 		eda.sys_LoadingAndProgressBar.showLoading();
 	}
 
 	try {
 		if (scope === 'all') {
-			// 处理所有导线
 			debugLog('处理所有导线');
 			tracks = await eda.pcb_PrimitiveLine.getAll();
 		}
 		else {
-			// 处理选中的导线
 			const selectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
-			debugLog('获取选中对象 ID:', selectedIds?.length || 0);
-
-			if (!selectedIds || !Array.isArray(selectedIds) || selectedIds.length === 0) {
-				// 未选中任何对象，提示用户
-				eda.sys_Message?.showToastMessage(
-					eda.sys_I18n ? eda.sys_I18n.text('请先选择要处理的导线') : '请先选择要处理的导线',
-				);
-				return; // 注意：这里不应该销毁进度条，因为finally会处理
+			if (!selectedIds || selectedIds.length === 0) {
+				eda.sys_Message?.showToastMessage(eda.sys_I18n.text('请先选择要处理的导线'));
+				return;
 			}
-
-			// 通过 ID 列表获取导线对象
 			const primitives = await getSafeSelectedTracks(selectedIds);
-			debugLog(`获取到 ${primitives.length} 个原始对象`);
 
-			// 过滤支持的类型：Track, Line, Polyline 以及其他可能的线条类型
-			// 同时包括没有网络的线条
+			// 过滤和 Polyline 处理
 			const supportedTypes = ['Line', 'Track', 'Polyline', 'Wire'];
-			const filtered = primitives.filter(
-				(p: any) => {
-					if (!p)
-						return false;
-					let type = '';
-					if (typeof p.getState_PrimitiveType === 'function') {
-						type = p.getState_PrimitiveType();
-					}
-					else if (p.primitiveType) {
-						type = p.primitiveType;
-					}
-
-					// 检查是否有线的基本属性 (StartX, EndX 等)
-					const hasLineProps = (p.getState_StartX || p.startX !== undefined)
-						&& (p.getState_EndX || p.endX !== undefined);
-
-					return supportedTypes.includes(type) || hasLineProps;
-				},
-			);
-
-			debugLog(`过滤后得到 ${filtered.length} 个导线对象`);
+			const filtered = primitives.filter((p: any) => {
+				if (!p)
+					return false;
+				const type = p.getState_PrimitiveType?.() || p.primitiveType || '';
+				// 检查是否有线的基本属性 (StartX, EndX 等)
+				const hasLineProps = (p.getState_StartX || p.startX !== undefined) && (p.getState_EndX || p.endX !== undefined);
+				return supportedTypes.includes(type) || hasLineProps;
+			});
 
 			// 将Polyline转换为Line段
 			for (const obj of filtered) {
-				let type = '';
-				if (typeof obj.getState_PrimitiveType === 'function') {
-					type = obj.getState_PrimitiveType();
-				}
-				else if (obj.primitiveType) {
-					type = obj.primitiveType;
-				}
-
+				const type = obj.getState_PrimitiveType?.() || obj.primitiveType || '';
 				if (type === 'Polyline') {
-					// Polyline需要特殊处理：提取多边形点并转换为线段
+					// Polyline 展开逻辑 (保持原样)
 					const polygon = obj.getState_Polygon ? obj.getState_Polygon() : (obj.polygon || null);
 					if (polygon && polygon.polygon && Array.isArray(polygon.polygon)) {
 						const coords = polygon.polygon.filter((v: any) => typeof v === 'number');
-						const net = obj.getState_Net ? obj.getState_Net() : (obj.net || '');
-						const layer = obj.getState_Layer ? obj.getState_Layer() : (obj.layer || 1);
-						const lineWidth = obj.getState_LineWidth ? obj.getState_LineWidth() : (obj.lineWidth || 10);
-						const primId = obj.getState_PrimitiveId ? obj.getState_PrimitiveId() : (obj.primitiveId || 'unknown');
-
+						const net = obj.getState_Net?.() || obj.net || '';
+						const layer = obj.getState_Layer?.() || obj.layer || 1;
+						const lineWidth = obj.getState_LineWidth?.() || obj.lineWidth || 10;
+						const primId = obj.getState_PrimitiveId?.() || obj.primitiveId || 'unknown';
 						// 将Polyline的点转换为虚拟Track对象
 						for (let i = 0; i < coords.length - 2; i += 2) {
-							const x1 = coords[i];
-							const y1 = coords[i + 1];
-							const x2 = coords[i + 2];
-							const y2 = coords[i + 3];
-
 							tracks.push({
 								getState_PrimitiveType: () => 'Line',
 								getState_Net: () => net,
 								getState_Layer: () => layer,
-								getState_StartX: () => x1,
-								getState_StartY: () => y1,
-								getState_EndX: () => x2,
-								getState_EndY: () => y2,
+								getState_StartX: () => coords[i],
+								getState_StartY: () => coords[i + 1],
+								getState_EndX: () => coords[i + 2],
+								getState_EndY: () => coords[i + 3],
 								getState_LineWidth: () => lineWidth,
 								getState_PrimitiveId: () => `${primId}_seg${i / 2}`,
 								_isPolylineSegment: true,
@@ -141,32 +341,17 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 					}
 				}
 				else {
-					// Track 或 Line 直接添加
 					tracks.push(obj);
 				}
 			}
 		}
 
 		if (tracks.length < 1) {
-			if (
-				eda.sys_Message
-				&& typeof eda.sys_Message.showToastMessage === 'function'
-			) {
-				eda.sys_Message.showToastMessage(
-					eda.sys_I18n.text('未找到可处理的导线'),
-				);
-			}
+			eda.sys_Message?.showToastMessage(eda.sys_I18n.text('未找到可处理的导线'));
 			return;
 		}
 
-		if (
-			eda.sys_LoadingAndProgressBar
-			&& typeof eda.sys_LoadingAndProgressBar.showLoading === 'function'
-		) {
-			eda.sys_LoadingAndProgressBar.showLoading();
-		}
-
-		// 创建快照 (Undo 支持)
+		// 创建快照
 		try {
 			const name = scope === 'all' ? 'Beautify (All) Before' : 'Beautify (Selected) Before';
 			await createSnapshot(name);
@@ -175,737 +360,365 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			logError(`Failed to create snapshot: ${e.message || e}`);
 		}
 
-		try {
-			// 按网络和层分组
-			const groups = new Map<string, any[]>();
-			for (const track of tracks) {
-				const net = track.getState_Net();
-				const layer = track.getState_Layer();
-				const key = `${net}#@#${layer}`;
-				if (!groups.has(key))
-					groups.set(key, []);
-				groups.get(key)?.push(track);
+		// --- 路径提取逻辑 ---
+		const groups = new Map<string, any[]>();
+		for (const track of tracks) {
+			const net = track.getState_Net();
+			const layer = track.getState_Layer();
+			const key = `${net}#@#${layer}`;
+			if (!groups.has(key))
+				groups.set(key, []);
+			groups.get(key)?.push(track);
+		}
+
+		// 定义处理上下文接口
+		interface PathContext {
+			pathId: number; // 唯一标识
+			points: Point[];
+			orderedSegs: any[];
+			net: string;
+			layer: number;
+			backupPrimitives: any[]; // 原始数据备份
+			createdIds: string[]; // 当前生成的ID
+			idToCornerMap: Map<string, number>; // ID -> 拐角索引映射
+			badCorners: Set<number>; // 已知的坏拐角
+		}
+
+		const activePaths: PathContext[] = [];
+		let pathIdCounter = 0;
+
+		// 1. 提取所有路径
+		for (const [key, group] of groups) {
+			const [net, layerStr] = key.split('#@#');
+			const layer = Number(layerStr);
+
+			const segs = group.map(t => ({
+				p1: { x: t.getState_StartX(), y: t.getState_StartY() },
+				p2: { x: t.getState_EndX(), y: t.getState_EndY() },
+				width: t.getState_LineWidth(),
+				id: t.getState_PrimitiveId(),
+				track: t,
+			}));
+
+			// 辅助函数：生成坐标键
+			// 使用 3 位小数精度，与 widthTransition 保持一致，避免浮点数误差导致断连
+			const pointKey = (p: { x: number; y: number }) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
+			const connections = new Map<string, typeof segs[0][]>();
+			for (const seg of segs) {
+				const k1 = pointKey(seg.p1);
+				const k2 = pointKey(seg.p2);
+				if (!connections.has(k1))
+					connections.set(k1, []);
+				if (!connections.has(k2))
+					connections.set(k2, []);
+				connections.get(k1)?.push(seg);
+				connections.get(k2)?.push(seg);
 			}
 
-			let processedPaths = 0;
-			let createdArcs = 0;
-			let clampedCorners = 0;
+			// 提取所有连续路径
+			const used = new Set<string>();
 
-			const pathTransactions: { createdIds: string[]; backupPrimitives: any[] }[] = [];
+			for (const startSeg of segs) {
+				if (used.has(startSeg.id))
+					continue;
 
-			for (const [key, group] of groups) {
-				const [net, layer] = key.split('#@#');
+				const points: Point[] = [startSeg.p1, startSeg.p2];
+				const orderedSegs: typeof segs[0][] = [startSeg];
+				used.add(startSeg.id);
 
-				// 改进的路径提取逻辑：找到所有连续路径
-				const segs = group.map(t => ({
-					p1: { x: t.getState_StartX(), y: t.getState_StartY() },
-					p2: { x: t.getState_EndX(), y: t.getState_EndY() },
-					width: t.getState_LineWidth(),
-					id: t.getState_PrimitiveId(),
-					track: t,
-				}));
+				// 双向扩展路径 (逻辑保持原样)
+				let extended = true;
+				while (extended) {
+					extended = false;
+					// 尝试从末端扩展
+					const lastKey = pointKey(points[points.length - 1]);
+					const lastConns = connections.get(lastKey) || [];
 
-				// 辅助函数：生成坐标键
-				// 使用 3 位小数精度，与 widthTransition 保持一致，避免浮点数误差导致断连
-				const pointKey = (p: { x: number; y: number }): string => `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
+					// 遇到分叉点（连接数 > 2）停止扩展
+					if (lastConns.length <= 2) {
+						for (const seg of lastConns) {
+							if (used.has(seg.id))
+								continue;
+							const nextKey1 = pointKey(seg.p1);
+							const nextKey2 = pointKey(seg.p2);
+							if (nextKey1 === lastKey) {
+								points.push(seg.p2);
+								orderedSegs.push(seg);
+								used.add(seg.id);
+								extended = true;
+								break;
+							}
+							else if (nextKey2 === lastKey) {
+								points.push(seg.p1);
+								orderedSegs.push(seg);
+								used.add(seg.id);
+								extended = true;
+								break;
+							}
+						}
+					}
 
-				// 构建邻接表
-				const connections = new Map<string, typeof segs[0][]>();
-				for (const seg of segs) {
-					const key1 = pointKey(seg.p1);
-					const key2 = pointKey(seg.p2);
-					if (!connections.has(key1))
-						connections.set(key1, []);
-					if (!connections.has(key2))
-						connections.set(key2, []);
-					connections.get(key1)?.push(seg);
-					connections.get(key2)?.push(seg);
-				}
-
-				// 提取所有连续路径
-				const used = new Set<string>();
-				interface PathData {
-					points: Point[];
-					orderedSegs: typeof segs[0][];
-				}
-				const paths: PathData[] = [];
-
-				for (const startSeg of segs) {
-					if (used.has(startSeg.id))
-						continue;
-
-					const points: Point[] = [startSeg.p1, startSeg.p2];
-					const orderedSegs: typeof segs[0][] = [startSeg];
-					used.add(startSeg.id);
-
-					// 向两端扩展路径
-					let extended = true;
-					while (extended) {
-						extended = false;
-
-						// 尝试从末端扩展
-						const lastKey = pointKey(points[points.length - 1]);
-						const lastConns = connections.get(lastKey) || [];
+					// 尝试从起点扩展
+					if (!extended) {
+						const firstKey = pointKey(points[0]);
+						const firstConns = connections.get(firstKey) || [];
 
 						// 遇到分叉点（连接数 > 2）停止扩展
-						if (lastConns.length <= 2) {
-							for (const seg of lastConns) {
+						if (firstConns.length <= 2) {
+							for (const seg of firstConns) {
 								if (used.has(seg.id))
 									continue;
 								const nextKey1 = pointKey(seg.p1);
 								const nextKey2 = pointKey(seg.p2);
-								if (nextKey1 === lastKey) {
-									points.push(seg.p2);
-									orderedSegs.push(seg);
+								if (nextKey1 === firstKey) {
+									points.unshift(seg.p2);
+									orderedSegs.unshift(seg);
 									used.add(seg.id);
 									extended = true;
 									break;
 								}
-								else if (nextKey2 === lastKey) {
-									points.push(seg.p1);
-									orderedSegs.push(seg);
+								else if (nextKey2 === firstKey) {
+									points.unshift(seg.p1);
+									orderedSegs.unshift(seg);
 									used.add(seg.id);
 									extended = true;
 									break;
 								}
 							}
 						}
-
-						// 尝试从起点扩展
-						if (!extended) {
-							const firstKey = pointKey(points[0]);
-							const firstConns = connections.get(firstKey) || [];
-
-							// 遇到分叉点（连接数 > 2）停止扩展
-							if (firstConns.length <= 2) {
-								for (const seg of firstConns) {
-									if (used.has(seg.id))
-										continue;
-									const nextKey1 = pointKey(seg.p1);
-									const nextKey2 = pointKey(seg.p2);
-									if (nextKey1 === firstKey) {
-										points.unshift(seg.p2);
-										orderedSegs.unshift(seg);
-										used.add(seg.id);
-										extended = true;
-										break;
-									}
-									else if (nextKey2 === firstKey) {
-										points.unshift(seg.p1);
-										orderedSegs.unshift(seg);
-										used.add(seg.id);
-										extended = true;
-										break;
-									}
-								}
-							}
-						}
-					}
-
-					if (points.length >= 3) {
-						paths.push({
-							points,
-							orderedSegs,
-						});
 					}
 				}
 
-				// 处理每条路径
-				for (const path of paths) {
-					const currentPathCreatedIds: string[] = [];
-					const { points, orderedSegs } = path;
+				if (points.length >= 3) {
+					// 准备备份数据
+					const backupPrimitives: any[] = [];
+					// 准备工作：计算所有需要删除的ID
+					const polylineIdsToDelete = new Set<string>();
+					const lineIdsToDelete = new Set<string>();
 
-					// 检查数据完整性
-					if (!points || points.some(p => !p || typeof p.x !== 'number' || typeof p.y !== 'number')) {
-						logError('Path contains invalid points, skipping');
-						continue;
+					for (const seg of orderedSegs) {
+						backupPrimitives.push({
+							type: 'Line',
+							net,
+							layer,
+							startX: seg.p1.x,
+							startY: seg.p1.y,
+							endX: seg.p2.x,
+							endY: seg.p2.y,
+							lineWidth: seg.width,
+						});
+						if (seg.track._isPolylineSegment) {
+							const orig = seg.track._originalPolyline;
+							const origId = orig.getState_PrimitiveId?.() || orig.primitiveId;
+							if (origId)
+								polylineIdsToDelete.add(origId);
+						}
+						else {
+							// 是普通 Line / Track
+							lineIdsToDelete.add(seg.id);
+						}
 					}
 
-					if (points.length >= 3) {
-						processedPaths++;
-						let radius = settings.cornerRadius;
-
-						// JLC EDA API 的系统单位固定为 mil (SYS_Unit.getSystemDataUnit() -> MIL)
-						// 因此所有坐标计算都必须基于 mil
-						if (settings.unit === 'mm') {
-							radius = eda.sys_Unit.mmToMil(radius); // mm -> mil
-						}
-
-						// 生成新的几何结构 - 每个元素包含自己的线宽
-						const newPath: {
-							type: 'line' | 'arc';
-							start: Point;
-							end: Point;
-							angle?: number;
-							width: number;
-						}[] = [];
-						let currentStart = points[0];
-
-						for (let i = 1; i < points.length - 1; i++) {
-							const pPrev = points[i - 1];
-							const pCorner = points[i];
-							const pNext = points[i + 1];
-
-							// 获取前一线段和后一线段的线宽
-							// orderedSegs[i-1] 是 点i-1 到 点i 的线段
-							// orderedSegs[i] 是 点i 到 点i+1 的线段
-							const prevSegWidth = orderedSegs[i - 1]?.width ?? orderedSegs[0].width;
-							const nextSegWidth = orderedSegs[i]?.width ?? prevSegWidth;
-
-							let isMerged = false;
-
-							try {
-								// 尝试合并短线段逻辑 (解决 U 型弯中间线段过短无法圆滑的问题)
-								if (settings.mergeShortSegments && i < points.length - 2) {
-									const pAfter = points[i + 2];
-									// 额外检查 pAfter 是否存在
-									if (pAfter) {
-										const segLen = dist(pCorner, pNext);
-
-										// 当中间线段长度小于圆角半径的 1.5 倍时尝试合并 (放宽条件，之前是 < radius)
-										// 或者如果计算出的切线需求 distance 大于线段的一半，说明可能需要合并
-										if (segLen < radius * 1.5) {
-											const vIn = { x: pPrev.x - pCorner.x, y: pPrev.y - pCorner.y };
-											const vMid = { x: pNext.x - pCorner.x, y: pNext.y - pCorner.y };
-											const vOut = { x: pAfter.x - pNext.x, y: pAfter.y - pNext.y }; // 注意向量方向
-
-											// 计算拐角方向
-											// getAngleBetween 返回 v1 到 v2 的角度
-											const angle1 = getAngleBetween({ x: -vIn.x, y: -vIn.y }, { x: vMid.x, y: vMid.y });
-											// 修复：Angle2 也应该使用 "Forward Incoming" (vMid) 和 "Forward Outgoing" (vOut)
-											const angle2 = getAngleBetween({ x: vMid.x, y: vMid.y }, { x: vOut.x, y: vOut.y });
-
-											// 如果两个拐角同向 (乘积 > 0)，且角度不是极小
-											// 放宽检测：允许轻微的S型如果角度很小？
-											// 还是严格同向。
-											if (angle1 * angle2 > 0 && Math.abs(angle1) > 1 && Math.abs(angle2) > 1) {
-												// 计算两条长边的交点 (pPrev->pCorner 和 pNext->pAfter 的延长线交点)
-												// 由于我们要用 pPrev 和 pAfter 作为远端点，这里传入延长线上的点即可
-												const intersection = getLineIntersection(pPrev, pCorner, pNext, pAfter);
-
-												if (intersection) {
-													// 检查交点是否在合理范围内
-													// 如果交点离 pCorner 或 pNext 极远，说明两线几乎平行，可能不适合硬合并
-													const dInt1 = dist(intersection, pCorner);
-													const dInt2 = dist(intersection, pNext);
-
-													// 限制条件：交点距离不应超过线段长度的 10 倍，防止平行线产生的远交点
-													if (dInt1 < segLen * 10 && dInt2 < segLen * 10) {
-														// 找到了交点，尝试以交点为中心构建大圆弧
-														const t_v1 = { x: pPrev.x - intersection.x, y: pPrev.y - intersection.y };
-														const t_v2 = { x: pAfter.x - intersection.x, y: pAfter.y - intersection.y };
-														const t_mag1 = Math.sqrt(t_v1.x ** 2 + t_v1.y ** 2);
-														const t_mag2 = Math.sqrt(t_v2.x ** 2 + t_v2.y ** 2);
-
-														// 计算夹角
-														const t_dot = (t_v1.x * t_v2.x + t_v1.y * t_v2.y) / (t_mag1 * t_mag2);
-														const t_safeDot = Math.max(-1, Math.min(1, t_dot));
-														const t_angleRad = Math.acos(t_safeDot);
-
-														// 计算几何限制半径 (防突起)
-														// 我们只在半径非常大的情况下进行限制，
-														// 并且限制条件不能太严格，否则会阻止切除短线段。
-														// 策略：只有当 calculated radius 导致的 tangent distance
-														// 使得圆弧过于 "远离" 桥接线段时才限制。
-														// 实际上，t_maxAllowedRadius (限制在 leg length 95%) 已经是对 Bulge 最好的限制。
-														// 之前的 t_limitRadius 基于 "distIM" (桥接线段深度) 是错误的，因为在合并时我们正是要消除这个深度。
-														// 所以移除该限制。
-
-														const t_tanVal = Math.tan(t_angleRad / 2);
-														let t_d = 0;
-														if (Math.abs(t_tanVal) > 0.0001) {
-															t_d = radius / t_tanVal;
-														}
-
-														// 限制半径，防止吞噬掉太多的线段
-														// t_mag1 和 t_mag2 是 交点到 pPrev/pAfter 的距离。
-														// 如果圆弧太大，切点会超出 segs 的范围。
-														const t_maxAllowedRadius = Math.min(t_mag1 * 0.95, t_mag2 * 0.95);
-														const t_actualD = Math.min(t_d, t_maxAllowedRadius);
-
-														let t_limitByWidth = false;
-
-														// 用户要求：带线宽的检查
-														// 如果合并后的圆弧有效半径小于线宽的一半，则不生成（防止自交/尖角）
-														// t_actualD 是切线长度。Effective Radius = actualD * tan(theta/2)
-														const t_effectiveRadius = t_actualD * Math.abs(t_tanVal);
-														const t_maxLineWidth = Math.max(prevSegWidth, nextSegWidth); // 取较大线宽作为保守估计
-
-														if (t_effectiveRadius < (t_maxLineWidth / 2) - 0.05) {
-															t_limitByWidth = true;
-															debugLog(`Merge skipped on ${net}: Radius too small for width (Radius=${t_effectiveRadius.toFixed(2)}, Width=${t_maxLineWidth})`);
-														}
-
-														if (t_actualD > 0.05 && !t_limitByWidth) {
-															const pStart = lerp(intersection, pPrev, t_actualD / t_mag1);
-															const pEnd = lerp(intersection, pAfter, t_actualD / t_mag2);
-
-															// 添加直线
-															if (dist(currentStart, pStart) > 0.001) {
-																newPath.push({
-																	type: 'line',
-																	start: currentStart,
-																	end: pStart,
-																	width: prevSegWidth,
-																});
-															}
-
-															// 计算 Arc 角度
-															const t_sweptAngle = getAngleBetween(
-																{ x: -t_v1.x, y: -t_v1.y },
-																{ x: t_v2.x, y: t_v2.y },
-															);
-
-															// 使用合并后的下一段线宽
-															const afterSegWidth = orderedSegs[i + 1]?.width ?? nextSegWidth;
-
-															newPath.push({
-																type: 'arc',
-																start: pStart,
-																end: pEnd,
-																angle: t_sweptAngle,
-																width: afterSegWidth,
-															});
-
-															createdArcs++;
-															currentStart = pEnd;
-
-															// 成功合并，跳过下一个点
-															i++;
-															isMerged = true;
-
-															// Log
-															debugLog(`Merged short segment on ${net} at index ${i - 1}, segLen: ${segLen.toFixed(2)}, new radius usage: ${t_actualD.toFixed(2)}`);
-														}
-														else {
-															debugLog(`Merge calc failed on ${net}. actualD too small (${t_actualD})`);
-														}
-													}
-													else {
-														debugLog(`Merge skipped on ${net}: Intersection too far (dInt1=${dInt1.toFixed(2)}, dInt2=${dInt2.toFixed(2)}, limit=${(segLen * 10).toFixed(2)})`);
-													}
-												}
-												else {
-													debugLog(`Merge skipped on ${net}: Lines Parallel or No Intersection`);
-												}
-											}
-											else {
-												debugLog(`Merge skipped on ${net}: Angles not suitable for U-turn (angle1=${angle1.toFixed(1)}, angle2=${angle2.toFixed(1)})`);
-											}
-										}
-									}
-								}
-							}
-							catch (err: any) {
-								logError(`Merge logic failed at index ${i} on ${net}: ${err.message}`);
-								// fall through to normal logic
-							}
-
-							if (!isMerged) {
-								// 计算导线之间的角度
-								const v1 = {
-									x: pPrev.x - pCorner.x,
-									y: pPrev.y - pCorner.y,
-								};
-								const v2 = {
-									x: pNext.x - pCorner.x,
-									y: pNext.y - pCorner.y,
-								};
-
-								const mag1 = Math.sqrt(v1.x ** 2 + v1.y ** 2);
-								const mag2 = Math.sqrt(v2.x ** 2 + v2.y ** 2);
-
-								// 夹角计算
-								const dot = (v1.x * v2.x + v1.y * v2.y) / (mag1 * mag2);
-								// 限制 dot 范围防止数值误差
-								const safeDot = Math.max(-1, Math.min(1, dot));
-								const angleRad = Math.acos(safeDot);
-
-								// 计算切点距离
-								// d = R / tan(angle / 2)
-								// 当角度接近 180度 (PI) 时，tan(PI/2) -> Inf, d -> 0
-								// 当角度接近 0度 (0) 时，tan(0) -> 0, d -> Inf
-								const tanVal = Math.tan(angleRad / 2);
-								let d = 0;
-								if (Math.abs(tanVal) > 0.0001) {
-									d = radius / tanVal;
-								}
-
-								// 如果线段太短，必须缩小半径以适应 (max limit 45% of seg length)
-								const maxAllowedRadius = Math.min(mag1 * 0.45, mag2 * 0.45);
-								const actualD = Math.min(d, maxAllowedRadius);
-
-								let isSkippedDueToClamp = false;
-
-								// 1. 检查线段长度限制
-								// 如果实际切线距离显著小于理论距离 (小于 95%)，说明发生了严重缩放
-								// 用户要求：若线段太短使得一侧不能相切时，不生成圆弧，只打印警告
-								// 新增 Force Arc 选项：如果开启，则强制生成（接受缩放后的半径），否则跳过
-								if (d > 0.001 && actualD < d * 0.95) {
-									if (settings.forceArc) {
-										// 强制模式：仅记录调试日志，不跳过
-										debugLog(`Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) clamped. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
-									}
-									else {
-										clampedCorners++;
-										isSkippedDueToClamp = true;
-										debugWarn(`Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Segment too short for radius. Req: ${d.toFixed(2)}, Act: ${actualD.toFixed(2)}`);
-									}
-								}
-
-								// 2. 检查线宽限制 (线宽过大导致内圆弧半径为负或不相切)
-								if (!isSkippedDueToClamp) {
-									const effectiveRadius = actualD * Math.abs(tanVal);
-									const maxLineWidth = Math.max(prevSegWidth, nextSegWidth);
-									// 内侧半径 = 中心半径 - 线宽/2
-									// 允许内侧半径为 0 (即尖角)，但不能为负
-									// 必须保证 effectiveRadius >= maxLineWidth / 2
-									// 使用一个微小的容差 (0.05) 以允许浮点数误差范围内的 "Radius == Width/2"
-									if (effectiveRadius < (maxLineWidth / 2) - 0.05) {
-										isSkippedDueToClamp = true;
-										debugWarn(`Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) [Net: ${net || 'No Net'}] skipped. Radius too small for line width. Radius: ${effectiveRadius.toFixed(2)}, Width: ${maxLineWidth}`);
-									}
-								}
-
-								const finalActualD = actualD;
-
-								// DRC logic removed (moved to post-check)
-
-								// 只有当计算出的切线距离有效且足够大时，才生成圆弧
-								if (finalActualD > 0.05 && !isSkippedDueToClamp) {
-									const pStart = lerp(pCorner, pPrev, finalActualD / mag1);
-									const pEnd = lerp(pCorner, pNext, finalActualD / mag2);
-
-									// 添加 [当前起点 -> 切点1] 的直线，使用前一段的线宽
-									newPath.push({
-										type: 'line',
-										start: currentStart,
-										end: pStart,
-										width: prevSegWidth,
-									});
-
-									// 计算 Arc 角度
-									// 使用有符号角度
-									const sweptAngle = getAngleBetween(
-										{ x: -v1.x, y: -v1.y },
-										{ x: v2.x, y: v2.y },
-									);
-
-									// 添加圆弧，使用后一段的线宽（与下一段线连接更自然）
-									const arcWidth = nextSegWidth;
-									newPath.push({
-										type: 'arc',
-										start: pStart,
-										end: pEnd,
-										angle: sweptAngle,
-										width: arcWidth,
-									});
-
-									createdArcs++;
-									currentStart = pEnd;
-								}
-								else {
-									// 无法圆滑（半径太大或角度不合适），保留原拐角
-									newPath.push({
-										type: 'line',
-										start: currentStart,
-										end: pCorner,
-										width: prevSegWidth,
-									});
-									currentStart = pCorner;
-
-									// Log failure
-									if (!isSkippedDueToClamp && actualD > 0.05 && finalActualD > 0.05) {
-										debugLog(`Corner at (${pCorner.x.toFixed(2)}, ${pCorner.y.toFixed(2)}) skipped. Angle or Radius invalid. net=${net || 'No Net'} actualD=${actualD.toFixed(3)}`);
-									}
-								}
-							}
-						}
-
-						// 最后一段直线，使用最后一个线段的线宽
-						const lastSegWidth = orderedSegs[orderedSegs.length - 1]?.width ?? orderedSegs[0].width;
-						newPath.push({
-							type: 'line',
-							start: currentStart,
-							end: points[points.length - 1],
-							width: lastSegWidth,
-						});
-
-						// 准备工作：计算所有需要删除的ID
-						const polylineIdsToDelete = new Set<string>();
-						const lineIdsToDelete = new Set<string>();
-						const backupPrimitives: any[] = [];
-
-						// 始终执行替换逻辑 (用户期望剪短原线)
-						for (const seg of orderedSegs) {
-							// 备份数据
-							backupPrimitives.push({
-								type: 'Line',
-								net,
-								layer,
-								startX: seg.p1.x,
-								startY: seg.p1.y,
-								endX: seg.p2.x,
-								endY: seg.p2.y,
-								lineWidth: seg.width,
-							});
-
-							if (seg.track._isPolylineSegment) {
-								let originalId = '';
-								if (typeof seg.track._originalPolyline.getState_PrimitiveId === 'function') {
-									originalId = seg.track._originalPolyline.getState_PrimitiveId();
-								}
-								else if (seg.track._originalPolyline.primitiveId) {
-									originalId = seg.track._originalPolyline.primitiveId;
-								}
-								if (originalId) {
-									polylineIdsToDelete.add(originalId);
-								}
+					// 删除旧线
+					if (polylineIdsToDelete.size > 0) {
+						const pIds = Array.from(polylineIdsToDelete);
+						try {
+							const pcbApi = eda as any;
+							if (pcbApi.pcb_PrimitivePolyline?.delete) {
+								// 尝试逐个删除
+								for (const pid of pIds) await pcbApi.pcb_PrimitivePolyline.delete([pid]);
 							}
 							else {
-								// 是普通 Line / Track
-								lineIdsToDelete.add(seg.id);
+								await eda.pcb_PrimitiveLine.delete(pIds);
 							}
 						}
-
-						// 第一步：先删除旧对象
-						// 删除 Polyline
-						if (polylineIdsToDelete.size > 0) {
-							const pIds = Array.from(polylineIdsToDelete);
-							try {
-								const pcbApi = eda as any;
-								if (pcbApi.pcb_PrimitivePolyline && typeof pcbApi.pcb_PrimitivePolyline.delete === 'function') {
-									// 尝试逐个删除
-									for (const pid of pIds) {
-										await pcbApi.pcb_PrimitivePolyline.delete([pid]);
-									}
-								}
-								else {
-									for (const pid of pIds) {
-										await eda.pcb_PrimitiveLine.delete([pid]);
-									}
-								}
-							}
-							catch (e: any) {
-								debugLog(`删除 Polyline 失败: ${e.message}`);
-							}
-						}
-
-						// 删除 Line (逐个删除以确保成功)
-						if (lineIdsToDelete.size > 0) {
-							const lIds = Array.from(lineIdsToDelete);
-							for (const lid of lIds) {
-								try {
-									// 尝试传递数组包含单个ID
-									await eda.pcb_PrimitiveLine.delete([lid]);
-								}
-								catch (e: any) {
-									debugLog(`删除 Line ${lid} 失败: ${e.message}`);
-								}
-							}
-						}
-
-						// 第二步：创建新对象 并记录ID
-						// const createdIds: string[] = []; // Modified for batch undo
-
-						for (const item of newPath) {
-							if (item.type === 'line') {
-								// 只有长度 > 0 才创建
-								if (dist(item.start, item.end) > 0.001) {
-									const res = await eda.pcb_PrimitiveLine.create(
-										net,
-										layer as any,
-										item.start.x,
-										item.start.y,
-										item.end.x,
-										item.end.y,
-										item.width,
-									);
-
-									// 尝试获取ID
-									let newId: string | null = null;
-									if (typeof res === 'string')
-										newId = res;
-									else if (res && typeof (res as any).id === 'string')
-										newId = (res as any).id;
-									else if (res && typeof (res as any).primitiveId === 'string')
-										newId = (res as any).primitiveId;
-									else if (res && typeof (res as any).getState_PrimitiveId === 'function')
-										newId = (res as any).getState_PrimitiveId();
-
-									if (newId) {
-										currentPathCreatedIds.push(newId);
-									}
-								}
-							}
-							else {
-								// Arc
-								const res = await eda.pcb_PrimitiveArc.create(
-									net,
-									layer as any,
-									item.start.x,
-									item.start.y,
-									item.end.x,
-									item.end.y,
-									item.angle!,
-									item.width,
-								);
-
-								// 尝试获取ID
-								let newId: string | null = null;
-								if (typeof res === 'string')
-									newId = res;
-								else if (res && typeof (res as any).id === 'string')
-									newId = (res as any).id;
-								else if (res && typeof (res as any).primitiveId === 'string')
-									newId = (res as any).primitiveId;
-								else if (res && typeof (res as any).getState_PrimitiveId === 'function')
-									newId = (res as any).getState_PrimitiveId();
-
-								if (newId) {
-									currentPathCreatedIds.push(newId);
-									// 保存圆弧的正确线宽到全局 Map（带 PCB ID 区分）
-									let pcbId = 'unknown';
-									try {
-										const boardInfo = await eda.dmt_Board.getCurrentBoardInfo();
-										if (boardInfo && boardInfo.pcb && boardInfo.pcb.uuid) {
-											pcbId = boardInfo.pcb.uuid;
-										}
-									}
-									catch {
-										// ignore
-									}
-									const mapKey = makeArcWidthKey(pcbId, newId);
-									getArcLineWidthMap().set(mapKey, item.width);
-								}
-							}
-						}
-
-						// 记录事务以便回滚
-						if (currentPathCreatedIds.length > 0 && backupPrimitives.length > 0) {
-							pathTransactions.push({
-								createdIds: currentPathCreatedIds,
-								backupPrimitives: [...backupPrimitives],
-							});
+						catch {
+							// ignore
 						}
 					}
+					// 删除 Line (逐个删除以确保成功)
+					if (lineIdsToDelete.size > 0) {
+						const lIds = Array.from(lineIdsToDelete);
+						for (const lid of lIds) {
+							try {
+								// 尝试传递数组包含单个ID
+								await eda.pcb_PrimitiveLine.delete([lid]);
+							}
+							catch {
+								// ignore
+							}
+						}
+					}
+
+					// 第二步：创建新对象 并记录ID
+					activePaths.push({
+						pathId: pathIdCounter++,
+						points,
+						orderedSegs,
+						net,
+						layer,
+						backupPrimitives,
+						createdIds: [],
+						idToCornerMap: new Map(),
+						badCorners: new Set<number>(),
+					});
 				}
 			}
+		}
 
-			// Post-Beautify DRC Check & Revert
-			if (settings.enableDRC && pathTransactions.length > 0) {
-				if (eda.sys_Message && typeof eda.sys_Message.showToastMessage === 'function') {
-					eda.sys_Message.showToastMessage('正在进行 DRC 检查...');
-				}
+		// 辅助函数：根据指令创建图元
+		const commitOps = async (ops: PathOp[], ctx: PathContext) => {
+			let createdArcsCount = 0;
+			const pcbId = (await eda.dmt_Board.getCurrentBoardInfo())?.pcb?.uuid || 'unknown';
 
-				const violatedIds = await runDrcCheckAndParse();
+			for (const item of ops) {
+				if (dist(item.start, item.end) < 0.001)
+					continue;
 
-				if (violatedIds.size > 0) {
-					debugLog(`[DRC] Checking ${pathTransactions.length} transactions against ${violatedIds.size} violations.`);
-					let revertedCount = 0;
-					for (const trans of pathTransactions) {
-						// 检查该事务生成的 ID 是否有违规
-						const violatingId = trans.createdIds.find(id => violatedIds.has(id));
-
-						if (violatingId) {
-							debugLog(`[DRC] Reverting transaction. Violation found on ID: ${violatingId}`);
-							try {
-								// 尝试删除生成对象
-								await eda.pcb_PrimitiveLine.delete(trans.createdIds);
-								await eda.pcb_PrimitiveArc.delete(trans.createdIds);
-
-								// 恢复原始对象
-								for (const bp of trans.backupPrimitives) {
-									if (bp.type === 'Line') {
-										await eda.pcb_PrimitiveLine.create(
-											bp.net,
-											bp.layer,
-											bp.startX,
-											bp.startY,
-											bp.endX,
-											bp.endY,
-											bp.lineWidth,
-										);
-									}
-								}
-								revertedCount++;
-								// 更新统计显示
-								// 这里的 createdArcs 只是用于 toast 显示，简单减少即可
-							}
-							catch (e: any) {
-								console.warn('Revert failed for transaction', e);
-							}
-						}
-					}
-
-					if (revertedCount > 0) {
-						debugWarn(`DRC: Reverted ${revertedCount} path modifications due to violations.`);
-						if (eda.sys_Message && typeof eda.sys_Message.showToastMessage === 'function') {
-							eda.sys_Message.showToastMessage(`DRC检查: 发现并撤销了 ${revertedCount} 处导致违规的修改`);
-						}
-					}
-				}
-			}
-
-			if (
-				eda.sys_Message
-				&& typeof eda.sys_Message.showToastMessage === 'function'
-			) {
-				if (createdArcs > 0) {
-					eda.sys_Message.showToastMessage(
-						`${eda.sys_I18n.text('圆弧美化完成')}: ${eda.sys_I18n.text('处理了')} ${processedPaths} ${eda.sys_I18n.text('条路径')}, ${eda.sys_I18n.text('创建了')} ${createdArcs} ${eda.sys_I18n.text('个圆弧')}`,
+				let newId: string | null = null;
+				if (item.type === 'line') {
+					const res = await eda.pcb_PrimitiveLine.create(
+						ctx.net,
+						ctx.layer as any,
+						item.start.x,
+						item.start.y,
+						item.end.x,
+						item.end.y,
+						item.width,
 					);
-
-					if (clampedCorners > 0) {
-						setTimeout(() => {
-							if (eda.sys_Message) {
-								eda.sys_Message.showToastMessage(
-									`注意: 有 ${clampedCorners} 个拐角的半径因导线过短被自动缩小`,
-								);
-							}
-						}, 2000); // 稍微延迟显示警告
-					}
+					// 兼容不同的返回值结构
+					if (typeof res === 'string')
+						newId = res;
+					else if (res && (res as any).id)
+						newId = (res as any).id;
+					else if (res && (res as any).primitiveId)
+						newId = (res as any).primitiveId;
+					else if (res && (res as any).getState_PrimitiveId)
+						newId = (res as any).getState_PrimitiveId();
 				}
 				else {
-					eda.sys_Message.showToastMessage(
-						eda.sys_I18n.text('未找到可以圆滑的拐角（需要至少2条连续导线形成拐角）'),
+					// Arc
+					const res = await eda.pcb_PrimitiveArc.create(
+						ctx.net,
+						ctx.layer as any,
+						item.start.x,
+						item.start.y,
+						item.end.x,
+						item.end.y,
+						item.angle!,
+						item.width,
 					);
+					if (typeof res === 'string')
+						newId = res;
+					else if (res && (res as any).id)
+						newId = (res as any).id;
+					else if (res && (res as any).primitiveId)
+						newId = (res as any).primitiveId;
+					else if (res && (res as any).getState_PrimitiveId)
+						newId = (res as any).getState_PrimitiveId();
+
+					if (newId) {
+						const mapKey = makeArcWidthKey(pcbId, newId);
+						getArcLineWidthMap().set(mapKey, item.width);
+						createdArcsCount++;
+					}
+				}
+
+				if (newId) {
+					ctx.createdIds.push(newId);
+					ctx.idToCornerMap.set(newId, item.cornerIndex);
 				}
 			}
+			return createdArcsCount;
+		};
 
-			if (settings.syncWidthTransition) {
-				// 在 Beautify 流程中调用，不需要额外快照（Beautify 已创建）
-				await addWidthTransitionsAll(false);
-			}
+		// 2. 第一次执行：生成所有路径 (Optimistic Pass)
+		for (const ctx of activePaths) {
+			const ops = generatePathOps({ points: ctx.points, orderedSegs: ctx.orderedSegs }, settings, ctx.badCorners);
+			await commitOps(ops, ctx);
+		}
 
-			// 操作完成后再次创建快照 (保存结果)
-			try {
-				const name = scope === 'all' ? 'Beautify (All) After' : 'Beautify (Selected) After';
-				await createSnapshot(name);
+		// 3. DRC 检查与局部回滚
+		if (settings.enableDRC && activePaths.length > 0) {
+			eda.sys_Message?.showToastMessage('正在进行 DRC 检查...');
+
+			// 运行全局检查
+			const violatedIds = await runDrcCheckAndParse();
+
+			if (violatedIds.size > 0) {
+				debugLog(`[DRC] 发现 ${violatedIds.size} 个违规对象，开始分析...`);
+
+				// 找出需要修复的路径
+				const pathsToRepair = new Set<PathContext>();
+				let repairedPathsCount = 0;
+				let repairedCornersCount = 0;
+
+				for (const ctx of activePaths) {
+					let hasViolation = false;
+					for (const id of ctx.createdIds) {
+						if (violatedIds.has(id)) {
+							const cornerIdx = ctx.idToCornerMap.get(id);
+							if (cornerIdx !== undefined) {
+								ctx.badCorners.add(cornerIdx);
+								hasViolation = true;
+								repairedCornersCount++;
+								debugLog(`[DRC] Path ${ctx.net} Violation at corner ${cornerIdx} (ID: ${id})`);
+							}
+						}
+					}
+					if (hasViolation) {
+						pathsToRepair.add(ctx);
+					}
+				}
+
+				// 对有问题的路径进行“局部降级”重绘
+				for (const ctx of pathsToRepair) {
+					// 1. 删除这整条路径的所有新生成的图元 (清除画布)
+					if (ctx.createdIds.length > 0) {
+						await eda.pcb_PrimitiveLine.delete(ctx.createdIds);
+						await eda.pcb_PrimitiveArc.delete(ctx.createdIds); // 虽然ID是一样的，但为了保险
+						ctx.createdIds = []; // 清空记录
+						ctx.idToCornerMap.clear();
+					}
+
+					// 2. 重新生成 (generatePathOps 会自动读取 ctx.badCorners 并跳过这些拐角)
+					const ops = generatePathOps({ points: ctx.points, orderedSegs: ctx.orderedSegs }, settings, ctx.badCorners);
+
+					// 3. 重新绘制
+					await commitOps(ops, ctx);
+					repairedPathsCount++;
+				}
+
+				if (repairedPathsCount > 0) {
+					const msg = `DRC: 已自动修复 ${repairedPathsCount} 条路径中的 ${repairedCornersCount} 个违规拐角 (回滚为直角)`;
+					debugWarn(msg);
+					eda.sys_Message?.showToastMessage(msg);
+				}
 			}
-			catch (e: any) {
-				logError(`Failed to create result snapshot: ${e.message || e}`);
-			}
+		}
+
+		// 结束
+		eda.sys_Message?.showToastMessage(`美化完成: 处理了 ${activePaths.length} 条路径`);
+
+		if (settings.syncWidthTransition) {
+			// 在 Beautify 流程中调用，不需要额外快照（Beautify 已创建）
+			await addWidthTransitionsAll(false);
+		}
+
+		try {
+			const name = scope === 'all' ? 'Beautify (All) After' : 'Beautify (Selected) After';
+			await createSnapshot(name);
 		}
 		catch (e: any) {
-			if (eda.sys_Log && typeof eda.sys_Log.add === 'function') {
-				eda.sys_Log.add(e.message);
-			}
-			if (
-				eda.sys_Dialog
-				&& typeof eda.sys_Dialog.showInformationMessage === 'function'
-			) {
-				eda.sys_Dialog.showInformationMessage(e.message, 'Beautify Error');
-			}
-		}
-		finally {
-			if (
-				eda.sys_LoadingAndProgressBar
-				&& typeof eda.sys_LoadingAndProgressBar.destroyLoading === 'function'
-			) {
-				eda.sys_LoadingAndProgressBar.destroyLoading();
-			}
+			logError(`Failed to create result snapshot: ${e.message || e}`);
 		}
 	}
-	catch {}
+	catch (e: any) {
+		if (eda.sys_Log?.add)
+			eda.sys_Log.add(e.message);
+		eda.sys_Dialog?.showInformationMessage(e.message, 'Beautify Error');
+	}
+	finally {
+		eda.sys_LoadingAndProgressBar?.destroyLoading?.();
+	}
 }

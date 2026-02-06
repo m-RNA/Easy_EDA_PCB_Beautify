@@ -8,7 +8,6 @@ export interface BeautifySettings {
 	debug: boolean; // 调试模式
 	forceArc: boolean; // 强制生成圆弧 (即使线段太短导致被截断)
 	enableDRC: boolean; // 启用 DRC 检查
-	drcClearance: number; // DRC 安全间距 (mil)
 }
 
 const DEFAULT_SETTINGS: BeautifySettings = {
@@ -20,8 +19,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	unit: 'mil',
 	debug: false,
 	forceArc: true,
-	enableDRC: false,
-	drcClearance: 6,
+	enableDRC: true,
 };
 
 const SETTINGS_CACHE_KEY = '_jlc_beautify_settings_cache';
@@ -44,21 +42,13 @@ export async function getSettings(): Promise<BeautifySettings> {
 		return newSettings;
 	}
 	catch {
-		return getCachedSettings();
+		return { ...DEFAULT_SETTINGS };
 	}
 }
 
 /**
- * 同步获取缓存的设置 (不需要 await)
+ * 获取缓存的设置 (同步，仅供非异步场景使用)
  */
 export function getCachedSettings(): BeautifySettings {
 	return (eda as any)[SETTINGS_CACHE_KEY] || { ...DEFAULT_SETTINGS };
-}
-
-/**
- * 保存设置并更新缓存
- */
-export async function saveSettings(settings: BeautifySettings): Promise<void> {
-	await eda.sys_Storage.setExtensionAllUserConfigs(settings as any);
-	(eda as any)[SETTINGS_CACHE_KEY] = { ...settings };
 }

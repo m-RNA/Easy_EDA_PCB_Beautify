@@ -344,7 +344,7 @@
 
     <!-- General Settings -->
     <div class="card">
-        <div class="card-title" data-i18n="通用设置">通用设置</div>
+        <div class="card-title" data-i18n="过渡设置">过渡设置</div>
 
         <!-- Radius -->
         <div class="setting-item">
@@ -418,7 +418,10 @@
         <!-- Enable DRC -->
         <div class="setting-item">
             <div class="setting-info">
-                <div class="setting-label" data-i18n="启用安全检查">启用安全检查</div>
+				<div class="setting-label">
+                    <span data-i18n="启用安全检查">启用安全检查</span>
+                    <span style="background:#fff3e0;color:#ef6c00;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
+                </div>
                 <div class="setting-desc" data-i18n="生成圆弧时检查是否违反间距规则">生成圆弧时检查是否违反间距规则 (与周围Pad/Track)</div>
             </div>
             <div class="setting-control">
@@ -428,20 +431,6 @@
                         <span class="slider"></span>
                     </label>
                     <span class="switch-label" id="enableDRCLabel" data-i18n="启用">启用</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Clearance -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label" data-i18n="安全间距">安全间距</div>
-                <div class="setting-desc" data-i18n="圆弧与周围物体的最小距离">圆弧与周围物体的最小距离 (建议设为 6mil 以上)</div>
-            </div>
-            <div class="setting-control">
-                <div class="input-group">
-                    <input type="text" id="drcClearance" data-min="0" data-step="1" value="6">
-                    <span class="addon">mil</span>
                 </div>
             </div>
         </div>
@@ -642,7 +631,6 @@
         const elForceArc = document.getElementById('forceArc');
         const elMergeShortSegments = document.getElementById('mergeShortSegments');
         const elEnableDRC = document.getElementById('enableDRC');
-        const elDrcClearance = document.getElementById('drcClearance');
 
         // I18n labels update
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
@@ -733,8 +721,6 @@
 
                 // DRC
                 elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
-                elDrcClearance.value = config.drcClearance !== undefined ? config.drcClearance : 6;
-                elDrcClearance.setAttribute('data-last-valid', elDrcClearance.value);
 
                 updateSwitchLabels();
             }
@@ -762,10 +748,6 @@
             if (Number.isNaN(ratio))
                 ratio = DEFAULT_CONFIG.widthTransitionRatio;
 
-            let clearance = Number.parseFloat(elDrcClearance.value);
-            if (Number.isNaN(clearance))
-                clearance = 6;
-
             const settings = {
                 cornerRadius: radius,
                 unit: elUnitSelect.value,
@@ -776,7 +758,6 @@
                 debug: elDebug.checked,
                 forceArc: elForceArc.checked,
                 enableDRC: elEnableDRC.checked,
-                drcClearance: clearance
             };
 
             try {
@@ -957,7 +938,6 @@
         bindSmartInput(elCornerRadius, false);
         bindSmartInput(elSegments, true);
         bindSmartInput(elRatio, false);
-        bindSmartInput(elDrcClearance, false);
 
         [elSyncWidth, elDebug, elMergeShortSegments, elForceArc, elEnableDRC].forEach((el) => {
             el.addEventListener('change', () => saveSettings());
