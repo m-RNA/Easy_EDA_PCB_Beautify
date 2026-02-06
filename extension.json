@@ -3,7 +3,7 @@
 	"uuid": "3911cc55444d4833b5762da1521fe616",
 	"displayName": "熔化/优化/美化PCB",
 	"description": "一键：拐角圆弧优化 线宽突变处贝塞尔优化 DRC检查 多步撤销 快照管理 合并短线段 强制圆弧生成等高级优化功能",
-	"version": "1.0.5-rc1",
+	"version": "1.0.5",
 	"publisher": "m-RNA",
 	"engines": {
 		"eda": "^3.0.0"
