@@ -1,25 +1,25 @@
 export interface BeautifySettings {
 	syncWidthTransition: boolean; // 平滑时同步处理线宽过渡
-	widthTransitionRatio: number; // 线宽过渡长度系数
+	widthTransitionRatio: number; // 线宽过渡长度系数 (长度 = 线宽差值 * 比率)
 	widthTransitionSegments: number; // 线宽过渡分段数
-	cornerRadius: number; // 圆角半径
+	cornerRadiusRatio: number; // 圆角半径与线宽的比率 (半径 = 线宽 * 比率)
 	mergeTransitionSegments: boolean; // 是否合并过渡线段
-	unit: 'mm' | 'mil'; // 单位设置
 	debug: boolean; // 调试模式
 	forceArc: boolean; // 强制生成圆弧 (即使线段太短导致被截断)
 	enableDRC: boolean; // 启用 DRC 检查
+	drcRetryCount: number; // DRC 失败最大重试次数 (控制二分法的深度)
 }
 
 const DEFAULT_SETTINGS: BeautifySettings = {
 	syncWidthTransition: false,
-	widthTransitionRatio: 3, // 过渡长度 = 线宽差 * 3
+	widthTransitionRatio: 3.0, // 过渡长度 = 线宽差 * 3
 	widthTransitionSegments: 25,
-	cornerRadius: 20, // 默认 20mil
+	cornerRadiusRatio: 3.0, // 默认半径是线宽的3倍
 	mergeTransitionSegments: false,
-	unit: 'mil',
 	debug: false,
 	forceArc: true,
 	enableDRC: true,
+	drcRetryCount: 4, // 4次二分法 (100% -> 50% -> 25% -> 12.5% -> 直角)
 };
 
 const SETTINGS_CACHE_KEY = '_jlc_beautify_settings_cache';

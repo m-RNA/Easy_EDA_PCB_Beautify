@@ -349,27 +349,23 @@
         <!-- Radius -->
         <div class="setting-item">
             <div class="setting-info">
-                <div class="setting-label" data-i18n="最大圆角半径">最大圆角半径</div>
-                <div class="setting-desc" data-i18n="控制圆弧过渡的最大半径大小">控制圆弧过渡的最大半径大小</div>
+                <div class="setting-label" data-i18n="圆角半径比率">圆角半径比率</div>
+                <div class="setting-desc" data-i18n="半径 = 线宽 x 比率">半径 = 线宽 × 比率</div>
             </div>
             <div class="setting-control">
                 <div class="input-group">
-                    <input type="text" id="cornerRadius" data-min="0.1" data-step="1" value="500">
-                    <select id="unitSelect">
-                        <option value="mil" selected>mil</option>
-                        <option value="mm">mm</option>
-                    </select>
+                    <input type="text" id="cornerRadiusRatio" data-min="1" data-max="20" data-step="0.5" value="3.0">
+                    <span class="addon">X</span>
                 </div>
             </div>
         </div>
-
 
 
         <!-- Sync Width -->
         <div class="setting-item">
             <div class="setting-info">
                 <div class="setting-label" data-i18n="自动线宽过渡">自动线宽过渡</div>
-                <div class="setting-desc" data-i18n="圆滑时处理不同线宽">圆滑布线时是否自动处理不同线宽的过渡</div>
+                <div class="setting-desc" data-i18n="圆滑后处理线宽突变处">圆滑后处理线宽突变处</div>
             </div>
             <div class="setting-control">
                 <div class="switch-container">
@@ -382,29 +378,15 @@
             </div>
         </div>
 
-        <!-- Segments -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label" data-i18n="最大过渡段数">最大过渡段数</div>
-                <div class="setting-desc" data-i18n="防止段数过多导致卡顿">线宽过渡的最大分段数，防止段数过多导致卡顿</div>
-            </div>
-            <div class="setting-control">
-                <div class="input-group">
-                    <input type="text" id="widthTransitionSegments" data-min="5" data-max="100" data-step="1" value="25">
-                    <span class="addon" data-i18n="段">段</span>
-                </div>
-            </div>
-        </div>
-
         <!-- Ratio -->
         <div class="setting-item">
             <div class="setting-info">
-                <div class="setting-label" data-i18n="过渡长度最大比例">过渡长度最大比例</div>
-                <div class="setting-desc" data-i18n="过渡区长度比率">过渡区长度与线宽差值的最大比率，实际长度不超过窄端线长</div>
+                <div class="setting-label" data-i18n="过渡长度比率">过渡长度比率</div>
+                <div class="setting-desc" data-i18n="过渡区长度比率说明">线宽过度区长度 = 线宽差 × 比率 (推荐 2.0)</div>
             </div>
             <div class="setting-control">
                 <div class="input-group">
-                    <input type="text" id="widthTransitionRatio" data-min="0.5" data-max="10" data-step="0.1" value="2.5">
+                    <input type="text" id="widthTransitionRatio" data-min="1.0" data-max="5.0" data-step="0.1" value="2.0">
                     <span class="addon">X</span>
                 </div>
             </div>
@@ -419,15 +401,15 @@
         <div class="setting-item">
             <div class="setting-info">
 				<div class="setting-label">
-                    <span data-i18n="启用安全检查">启用安全检查</span>
+                    <span data-i18n="自动避让/回滚">自动避让/回滚</span>
                     <span style="background:#fff3e0;color:#ef6c00;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
                 </div>
-                <div class="setting-desc" data-i18n="生成圆弧时检查是否违反间距规则">生成圆弧时检查是否违反间距规则 (与周围Pad/Track)</div>
+                <div class="setting-desc" data-i18n="若圆角导致间距报错，自动尝试缩小半径">若圆角导致间距报错，自动尝试缩小半径</div>
             </div>
             <div class="setting-control">
                 <div class="switch-container">
                     <label class="switch">
-                        <input type="checkbox" id="enableDRC">
+                        <input type="checkbox" id="enableDRC" checked>
                         <span class="slider"></span>
                     </label>
                     <span class="switch-label" id="enableDRCLabel" data-i18n="启用">启用</span>
@@ -476,6 +458,20 @@
                         <span class="slider"></span>
                     </label>
                     <span class="switch-label" id="forceArcLabel" data-i18n="启用">启用</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Segments -->
+        <div class="setting-item">
+            <div class="setting-info">
+                <div class="setting-label" data-i18n="最大过渡段数">最大过渡段数</div>
+                <div class="setting-desc" data-i18n="防止段数过多导致卡顿">线宽过渡的最大段数，防止段数过多导致卡顿</div>
+            </div>
+            <div class="setting-control">
+                <div class="input-group">
+                    <input type="text" id="widthTransitionSegments" data-min="5" data-max="100" data-step="1" value="25">
+                    <span class="addon" data-i18n="段">段</span>
                 </div>
             </div>
         </div>
@@ -614,16 +610,22 @@
                             if (el.children.length === 0) {
                                 el.textContent = text;
                             }
+                            // 特殊处理某些元素的属性
+                            else if (el.hasAttribute('title')) {
+                                el.setAttribute('title', text);
+                            }
                         }
                     }
+                    // 如果翻译失败，保持原文本不变
                 }
             });
+            
+            // 翻译页面标题
             document.title = api.sys_I18n.text('设置');
         }
 
         // Elements
-        const elCornerRadius = document.getElementById('cornerRadius');
-        const elUnitSelect = document.getElementById('unitSelect');
+        const elCornerRadiusRatio = document.getElementById('cornerRadiusRatio');
         const elSyncWidth = document.getElementById('syncWidthTransition');
         const elSegments = document.getElementById('widthTransitionSegments');
         const elRatio = document.getElementById('widthTransitionRatio');
@@ -687,25 +689,8 @@
                     ...settings,
                 };
 
-                // Ensure default unit is mil if not set (fixing default startup state)
-                if (!config.unit)
-                    config.unit = 'mil';
-
-                elCornerRadius.value = config.cornerRadius;
-                elCornerRadius.setAttribute('data-last-valid', config.cornerRadius);
-
-                elUnitSelect.value = config.unit;
-                currentUnitState = config.unit;
-
-                // Initialize step based on unit for keyboard/custom stepper
-                if (currentUnitState === 'mm') {
-                    // 0.1 mm
-                    elCornerRadius.setAttribute('data-step', '0.1');
-                }
-                else {
-                    // 1 mil (User requested 1 mil step, not 0.1)
-                    elCornerRadius.setAttribute('data-step', '1');
-                }
+                elCornerRadiusRatio.value = config.cornerRadiusRatio;
+                elCornerRadiusRatio.setAttribute('data-last-valid', config.cornerRadiusRatio);
 
                 elMergeTransitionSegments.checked = config.mergeTransitionSegments !== undefined ? config.mergeTransitionSegments : true;
                 elSyncWidth.checked = config.syncWidthTransition;
@@ -729,16 +714,16 @@
             }
         }
 
-        // Save
+        // 改进的保存函数，添加错误处理和用户反馈
         async function saveSettings(silent = false) {
             const api = API || getEda();
             if (!api)
-                return;
+                return false;
 
             // Validate numbers
-            let radius = Number.parseFloat(elCornerRadius.value);
-            if (Number.isNaN(radius))
-                radius = DEFAULT_CONFIG.cornerRadius;
+            let radiusRatio = Number.parseFloat(elCornerRadiusRatio.value);
+            if (Number.isNaN(radiusRatio))
+                radiusRatio = DEFAULT_CONFIG.cornerRadiusRatio;
 
             let segments = Number.parseInt(elSegments.value);
             if (Number.isNaN(segments) || segments < 1)
@@ -749,8 +734,7 @@
                 ratio = DEFAULT_CONFIG.widthTransitionRatio;
 
             const settings = {
-                cornerRadius: radius,
-                unit: elUnitSelect.value,
+                cornerRadiusRatio: radiusRatio,
                 mergeTransitionSegments: elMergeTransitionSegments.checked,
                 syncWidthTransition: elSyncWidth.checked,
                 widthTransitionSegments: segments,
@@ -773,9 +757,16 @@
                     const msg = api.sys_I18n ? api.sys_I18n.text('已保存') : 'Saved';
                     showToast(msg);
                 }
+                
+                return true;
             }
             catch (e) {
                 console.error('Save failed:', e);
+                if (!silent && api && api.sys_Dialog) {
+                    const errorMsg = api.sys_I18n ? api.sys_I18n.text('保存失败') : 'Save failed';
+                    api.sys_Dialog.showInformationMessage(`${errorMsg}: ${e.message || e}`);
+                }
+                return false;
             }
         }
 
@@ -904,7 +895,7 @@
                     clearTimeout(el.saveTimer);
                 el.saveTimer = setTimeout(() => {
                     saveSettings();
-                }, 300);
+                }, 500);
             }
 
             // Handle Keyboard stepping (Up/Down) since type="text" doesn't have it natively
@@ -935,7 +926,7 @@
             el.addEventListener('wheel', handleWheel, { passive: false });
         }
 
-        bindSmartInput(elCornerRadius, false);
+        bindSmartInput(elCornerRadiusRatio, false);
         bindSmartInput(elSegments, true);
         bindSmartInput(elRatio, false);
 
@@ -944,33 +935,6 @@
         });
 
         document.getElementById('closeBtn').addEventListener('click', tryClose);
-
-        // Unit Conversion Logic
-        elUnitSelect.addEventListener('change', (e) => {
-            const newUnit = e.target.value;
-            const val = Number.parseFloat(elCornerRadius.value);
-            let newVal = val;
-
-            // Adjust step and calculate new value
-            if (newUnit === 'mm') {
-                if (currentUnitState === 'mil')
-                    newVal = val / 39.3701;
-                elCornerRadius.setAttribute('data-step', '0.1');
-            }
-            else { // mil
-                if (currentUnitState === 'mm')
-                    newVal = val * 39.3701;
-                elCornerRadius.setAttribute('data-step', '1');
-            }
-
-            // Format to reasonable precision (keep 2 decimal places for conversion stability, but inputs accept 3)
-            // Using 3 here to align with the new input capability
-            elCornerRadius.value = Number.parseFloat(newVal.toFixed(3));
-            elCornerRadius.setAttribute('data-last-valid', elCornerRadius.value);
-
-            currentUnitState = newUnit;
-            saveSettings();
-        });
 
         // Snapshots
         const snapshotList = document.getElementById('snapshotList');
@@ -1260,8 +1224,9 @@
         // Global for polling
         let lastSnapshotCount = -1;
 
-        function init() {
-            loadSettings().then(() => {
+        async function init() {
+            try {
+                await loadSettings();
                 translatePage();
                 refreshSnapshots();
 
@@ -1302,8 +1267,17 @@
 
                 // 启动轮询 (2秒一次)
                 setInterval(poller, 2000);
-            });
+                
+            } catch (error) {
+                console.error('Settings initialization failed:', error);
+                const api = API || getEda();
+                if (api && api.sys_Dialog) {
+                    const errorMsg = api.sys_I18n ? api.sys_I18n.text('初始化失败') : 'Initialization failed';
+                    api.sys_Dialog.showInformationMessage(`${errorMsg}: ${error.message || error}`);
+                }
+            }
         }
+
 	</script>
 </body>
 </html>
