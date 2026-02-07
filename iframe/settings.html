@@ -6,6 +6,7 @@
     <title>设置 - 美化PCB</title>
     <style>
         :root {
+            /* Light Theme Defaults */
             --primary: #4285f4;
             --primary-hover: #3367d6;
             --danger: #dc3545;
@@ -16,6 +17,26 @@
             --bg: #f5f7fa;
             --card-bg: #fff;
             --input-bg: #f9f9f9;
+            --switch-bg: #ccc;
+            --hover-bg: #f0f7ff;
+            --scrollbar-thumb: #ccc;
+        }
+
+        /* Dark Theme Overrides */
+        [data-theme="dark"] {
+            --primary: #6ea1fc;
+            --primary-hover: #8ab4f8;
+            --danger: #e06060;
+            --text: #e8eaed;
+            --text-secondary: #9aa0a6;
+            --text-hint: #5f6368;
+            --border: #3c4043;
+            --bg: #202124;
+            --card-bg: #2d2e31;
+            --input-bg: #171717;
+            --switch-bg: #5f6368;
+            --hover-bg: #3c4043;
+            --scrollbar-thumb: #5f6368;
         }
 
         body {
@@ -26,25 +47,100 @@
             margin: 0;
             padding: 16px;
             overflow-x: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 4px;
         }
 
         .card {
             background: var(--card-bg);
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 20px;
             margin-bottom: 16px;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            overflow: hidden; /* For collapse animation */
+            transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+                        border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Animation state to prevent rapid clicking */
+        .card.animating {
+            pointer-events: none;
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+            transition: transform 0.1s ease;
+        }
+
+        .card-header:hover {
+            background-color: rgba(0,0,0,0.02);
+        }
+        [data-theme="dark"] .card-header:hover {
+            background-color: rgba(255,255,255,0.02);
         }
 
         .card-title {
             font-weight: 600;
             font-size: 14px;
-            margin-bottom: 20px;
             padding-left: 8px;
             border-left: 3px solid var(--primary);
             line-height: 1;
-            color: #202124;
+            color: var(--text);
+        }
+
+        /* Collapsible Icon */
+        .card-header::after {
+            content: '';
+            width: 0; 
+            height: 0; 
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid var(--text-secondary);
+            transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        /* Collapsed State */
+        .card.collapsed .card-header::after {
+            transform: rotate(-90deg);
+        }
+
+        /* 统一的动画效果：快速开始，缓慢结束 */
+        .card-content {
+            padding: 0 20px 20px 20px;
+            max-height: 1000px;
+            opacity: 1;
+            /* 展开时：快速开始，缓慢结束 */
+            transition: max-height 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0s,
+                        opacity 0.1s cubic-bezier(0.4, 0, 1, 1) 0.15s,
+                        padding 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0s;
+        }
+
+        /* 收起时：同样快速开始，缓慢结束 */
+        .card.collapsed .card-content {
+            max-height: 0;
+            padding-bottom: 0;
+            overflow: hidden;
+            /* 收起时：快速开始，缓慢结束（相同缓动函数）*/
+            transition: max-height 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0s,
+                        opacity 0.1s cubic-bezier(0.4, 0, 1, 1) 0s,
+                        padding 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0s;
         }
 
         .setting-item {
@@ -98,7 +194,6 @@
         
         .input-group:focus-within {
             border-color: var(--primary);
-            background: #fff;
         }
 
         .input-group input {
@@ -112,8 +207,8 @@
             text-align: right;
         }
 
-        .input-group .addon, .input-group select {
-            background: #eee;
+        .input-group .addon {
+            background: rgba(0,0,0,0.05);
             border: none;
             border-left: 1px solid var(--border);
             padding: 0 10px;
@@ -127,11 +222,6 @@
             font-weight: 500;
         }
         
-        .input-group select {
-            cursor: pointer;
-            padding-right: 4px;
-        }
-
         /* Toggle Switch */
         .switch-container {
             display: flex;
@@ -164,7 +254,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: #ccc;
+            background-color: var(--switch-bg);
             transition: .3s;
             border-radius: 24px;
         }
@@ -203,14 +293,14 @@
         }
 
         .btn-white {
-            background: #fff;
+            background: var(--card-bg);
             border-color: var(--border);
             color: var(--text);
         }
 
         .btn-white:hover {
-            background: #f8f8f8;
-            border-color: #ccc;
+            background: var(--bg);
+            border-color: var(--text-secondary);
         }
 
         .btn-primary {
@@ -223,14 +313,15 @@
         }
 
         .btn-danger {
-            background: #fff;
+            background: var(--card-bg);
             color: var(--danger);
-            border-color: #ffdce0;
+            border-color: var(--danger);
+            opacity: 0.8;
         }
 
         .btn-danger:hover {
-            background: #fff5f5;
-            border-color: var(--danger);
+            opacity: 1;
+            background: rgba(220, 53, 69, 0.1);
         }
 
         .btn-ghost {
@@ -239,18 +330,48 @@
         }
         
         .btn-ghost:hover {
-            background: rgba(0,0,0,0.05);
+            background: var(--hover-bg);
             color: var(--text);
         }
 
         /* Snapshot specific */
+        .filter-bar {
+            display: flex;
+            gap: 4px;
+            background: var(--bg);
+            padding: 4px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        .filter-btn {
+            padding: 4px 10px;
+            font-size: 12px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-btn.active {
+            background: var(--card-bg);
+            color: var(--primary);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            font-weight: 500;
+        }
+
+        .filter-btn.inactive {
+            background: transparent;
+            color: var(--text-secondary);
+        }
+
         .snapshot-container {
             border: 1px solid var(--border);
             border-radius: 6px;
             min-height: 100px;
             max-height: 180px;
             overflow-y: auto;
-            background: #fafafa;
+            background: var(--bg);
             margin-top: 12px;
         }
 
@@ -268,13 +389,13 @@
             justify-content: space-between;
             align-items: center;
             padding: 10px 12px;
-            border-bottom: 1px solid #eee;
-            background: #fff;
+            border-bottom: 1px solid var(--border);
+            background: var(--card-bg);
             transition: background 0.2s;
         }
         
         .snapshot-item:hover {
-            background: #f0f7ff;
+            background: var(--hover-bg);
         }
         
         .snapshot-item:last-child {
@@ -342,52 +463,55 @@
 </head>
 <body>
 
-    <!-- General Settings -->
     <div class="card">
-        <div class="card-title" data-i18n="过渡设置">过渡设置</div>
+        <div class="card-header">
+            <div class="card-title" data-i18n="过渡设置">过渡设置</div>
+        </div>
+        <div class="card-content">
 
-        <!-- Radius -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label" data-i18n="圆角半径比率">圆角半径比率</div>
-                <div class="setting-desc" data-i18n="半径 = 线宽 x 比率">半径 = 线宽 × 比率</div>
-            </div>
-            <div class="setting-control">
-                <div class="input-group">
-                    <input type="text" id="cornerRadiusRatio" data-min="1" data-max="20" data-step="0.5" value="3.0">
-                    <span class="addon">X</span>
+            <!-- Radius -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="圆角半径比率">圆角半径比率</div>
+                    <div class="setting-desc" data-i18n="半径 = 线宽 x 比率">半径 = 线宽 × 比率</div>
+                </div>
+                <div class="setting-control">
+                    <div class="input-group">
+                        <input type="text" id="cornerRadiusRatio" data-min="1" data-max="20" data-step="0.5" value="3.0">
+                        <span class="addon">X</span>
+                    </div>
                 </div>
             </div>
-        </div>
 
 
-        <!-- Sync Width -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label" data-i18n="自动线宽过渡">自动线宽过渡</div>
-                <div class="setting-desc" data-i18n="圆滑后处理线宽突变处">圆滑后处理线宽突变处</div>
-            </div>
-            <div class="setting-control">
-                <div class="switch-container">
-                    <label class="switch">
-                        <input type="checkbox" id="syncWidthTransition">
-                        <span class="slider"></span>
-                    </label>
-                    <span class="switch-label" id="syncWidthLabel" data-i18n="启用">启用</span>
+            <!-- Sync Width -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="自动线宽过渡">自动线宽过渡</div>
+                    <div class="setting-desc" data-i18n="圆滑后处理线宽突变处">圆滑后处理线宽突变处</div>
+                </div>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="syncWidthTransition">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="syncWidthLabel" data-i18n="启用">启用</span>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Ratio -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label" data-i18n="过渡长度比率">过渡长度比率</div>
-                <div class="setting-desc" data-i18n="过渡区长度比率说明">线宽过度区长度 = 线宽差 × 比率 (推荐 2.0)</div>
-            </div>
-            <div class="setting-control">
-                <div class="input-group">
-                    <input type="text" id="widthTransitionRatio" data-min="1.0" data-max="5.0" data-step="0.1" value="2.0">
-                    <span class="addon">X</span>
+            <!-- Ratio -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="过渡长度比率">过渡长度比率</div>
+                    <div class="setting-desc" data-i18n="过渡区长度比率说明">线宽过度区长度 = 线宽差 × 比率 (推荐 2.0)</div>
+                </div>
+                <div class="setting-control">
+                    <div class="input-group">
+                        <input type="text" id="widthTransitionRatio" data-min="1.0" data-max="5.0" data-step="0.1" value="2.0">
+                        <span class="addon">X</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -395,131 +519,137 @@
 
     <!-- DRC Settings -->
     <div class="card">
-        <div class="card-title" data-i18n="设计规则检查 (DRC)">设计规则检查 (DRC)</div>
-        
+        <div class="card-header">
+            <div class="card-title" data-i18n="设计规则检查 (DRC)">设计规则检查 (DRC)</div>
+        </div>
         <!-- Enable DRC -->
-        <div class="setting-item">
-            <div class="setting-info">
-				<div class="setting-label">
-                    <span data-i18n="自动避让/回滚">自动避让/回滚</span>
-                    <span style="background:#fff3e0;color:#ef6c00;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
+        <div class="card-content">
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label">
+                        <span data-i18n="自动避让/回滚">自动避让/回滚</span>
+                        <span style="background:var(--bg);color:var(--primary);border:1px solid var(--primary);padding:1px 5px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
+                    </div>
+                    <div class="setting-desc" data-i18n="若圆角导致间距报错，自动尝试缩小半径">若圆角导致间距报错，自动尝试缩小半径</div>
                 </div>
-                <div class="setting-desc" data-i18n="若圆角导致间距报错，自动尝试缩小半径">若圆角导致间距报错，自动尝试缩小半径</div>
-            </div>
-            <div class="setting-control">
-                <div class="switch-container">
-                    <label class="switch">
-                        <input type="checkbox" id="enableDRC" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span class="switch-label" id="enableDRCLabel" data-i18n="启用">启用</span>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="enableDRC" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="enableDRCLabel" data-i18n="启用">启用</span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Advanced -->
-    <div class="card">
-        <div class="card-title" data-i18n="高级设置">高级设置</div>
+    <div class="card collapsed"> <div class="card-header">
+            <div class="card-title" data-i18n="高级设置">高级设置</div>
+        </div>
 
         <!-- Merge Short Segments -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label">
-                    <span data-i18n="合并过渡线段">合并过渡线段</span>
-                    <span style="background:#fff3e0;color:#ef6c00;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
+        <div class="card-content">
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label">
+                        <span data-i18n="合并过渡线段">合并过渡线段</span>
+                        <span style="background:var(--bg);color:var(--primary);border:1px solid var(--primary);padding:1px 5px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
+                    </div>
+                    <div class="setting-desc" data-i18n="自动合并中间的过渡线段以生成圆弧">自动合并中间的过渡线段以生成圆弧</div>
                 </div>
-                <div class="setting-desc" data-i18n="自动合并中间的过渡线段以生成圆弧">自动合并中间的过渡线段以生成圆弧</div>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="mergeTransitionSegments" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="mergeTransitionSegmentsLabel" data-i18n="启用">启用</span>
+                    </div>
+                </div>
             </div>
-            <div class="setting-control">
-                <div class="switch-container">
-                    <label class="switch">
-                        <input type="checkbox" id="mergeTransitionSegments" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span class="switch-label" id="mergeTransitionSegmentsLabel" data-i18n="启用">启用</span>
+
+            <!-- Force Arc -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label">
+                        <span data-i18n="强制生成圆弧">强制生成圆弧</span>
+                        <span style="background:var(--bg);color:var(--primary);border:1px solid var(--primary);padding:1px 5px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
+                    </div>
+                    <div class="setting-desc" data-i18n="短线段导致圆弧不相切也生成（半径减小）">短线段导致圆弧不相切也生成（半径减小）</div>
+                </div>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="forceArc" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="forceArcLabel" data-i18n="启用">启用</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Segments -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="最大过渡段数">最大过渡段数</div>
+                    <div class="setting-desc" data-i18n="防止段数过多导致卡顿">线宽过渡的最大段数，防止段数过多导致卡顿</div>
+                </div>
+                <div class="setting-control">
+                    <div class="input-group">
+                        <input type="text" id="widthTransitionSegments" data-min="5" data-max="100" data-step="1" value="25">
+                        <span class="addon" data-i18n="段">段</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Debug -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="调试模式">调试模式</div>
+                    <div class="setting-desc" data-i18n="启用调试日志">在日志栏打印</div>
+                </div>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="debug">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="debugLabel" data-i18n="启用">启用</span>
+                    </div>
                 </div>
             </div>
         </div>
-
-        <!-- Force Arc -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label">
-                    <span data-i18n="强制生成圆弧">强制生成圆弧</span>
-                    <span style="background:#fff3e0;color:#ef6c00;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
-                </div>
-                <div class="setting-desc" data-i18n="短线段导致圆弧不相切也生成（半径减小）">短线段导致圆弧不相切也生成（半径减小）</div>
-            </div>
-            <div class="setting-control">
-                <div class="switch-container">
-                    <label class="switch">
-                        <input type="checkbox" id="forceArc" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span class="switch-label" id="forceArcLabel" data-i18n="启用">启用</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Segments -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label" data-i18n="最大过渡段数">最大过渡段数</div>
-                <div class="setting-desc" data-i18n="防止段数过多导致卡顿">线宽过渡的最大段数，防止段数过多导致卡顿</div>
-            </div>
-            <div class="setting-control">
-                <div class="input-group">
-                    <input type="text" id="widthTransitionSegments" data-min="5" data-max="100" data-step="1" value="25">
-                    <span class="addon" data-i18n="段">段</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Debug -->
-        <div class="setting-item">
-            <div class="setting-info">
-                <div class="setting-label" data-i18n="调试模式">调试模式</div>
-                <div class="setting-desc" data-i18n="启用调试日志">在日志栏打印</div>
-            </div>
-            <div class="setting-control">
-                <div class="switch-container">
-                    <label class="switch">
-                        <input type="checkbox" id="debug">
-                        <span class="slider"></span>
-                    </label>
-                    <span class="switch-label" id="debugLabel" data-i18n="启用">启用</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Snapshot -->
     </div>
 
+	<!-- Snapshot -->
     <div class="card">
-        <div class="card-title">
-            <span data-i18n="布线状态管理">布线状态管理</span>
-            <span id="snapshotCount" style="font-weight: normal; color: var(--text-hint); font-size: 12px; margin-left: 4px;"></span>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <!-- View Toggle -->
-            <div class="filter-bar" style="display: flex; gap: 4px; background: #eee; padding: 4px; border-radius: 6px;">
-                <button id="btnShowManual" class="btn btn-ghost" style="padding: 4px 10px; font-size: 12px; border-radius: 4px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.1); color: var(--primary);" data-i18n="手动快照">手动快照</button>
-                <button id="btnShowAuto" class="btn btn-ghost" style="padding: 4px 10px; font-size: 12px; border-radius: 4px; color: var(--text-secondary);" data-i18n="自动快照">自动快照</button>
-                <div style="width: 1px; background: #ddd; margin: 2px 0;"></div>
-                <button type="button" class="btn btn-ghost" id="refreshSnapshotBtn" style="padding: 4px 10px; font-size: 16px; line-height: 1; border-radius: 4px;" title="刷新列表"><span class="refresh-icon" style="display:inline-block">↻</span></button>
-            </div>
-
-            <!-- Actions -->
-            <div style="display: flex; gap: 8px;">
-                <button type="button" class="btn btn-primary" id="createSnapshotBtn" style="padding: 4px 12px; font-size: 12px;" data-i18n="新增快照">新增快照</button>
-                <button type="button" class="btn btn-danger" id="clearSnapshotsBtn" style="padding: 4px 12px; font-size: 12px;" data-i18n="清除手动">清除手动</button>
+        <div class="card-header">
+            <div class="card-title">
+                <span data-i18n="布线状态管理">布线状态管理</span>
+                <span id="snapshotCount" style="font-weight: normal; color: var(--text-hint); font-size: 12px; margin-left: 4px;"></span>
             </div>
         </div>
+        <div class="card-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div class="filter-bar">
+                    <button id="btnShowManual" class="filter-btn active" data-i18n="手动快照">手动快照</button>
+                    <button id="btnShowAuto" class="filter-btn inactive" data-i18n="自动快照">自动快照</button>
+                    <div style="width: 1px; background: var(--border); margin: 2px 2px;"></div>
+                    <button type="button" class="btn btn-ghost" id="refreshSnapshotBtn" style="padding: 4px 8px; font-size: 16px; line-height: 1; border-radius: 4px;" title="刷新列表"><span class="refresh-icon" style="display:inline-block">↻</span></button>
+                </div>
 
-        <div id="snapshotList" class="snapshot-container">
-            <div class="snapshot-placeholder" data-i18n="暂无快照">暂无快照</div>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn btn-primary" id="createSnapshotBtn" style="padding: 4px 12px; font-size: 12px;" data-i18n="新增快照">新增快照</button>
+                    <button type="button" class="btn btn-danger" id="clearSnapshotsBtn" style="padding: 4px 12px; font-size: 12px;" data-i18n="清除手动">清除手动</button>
+                </div>
+            </div>
+
+            <div id="snapshotList" class="snapshot-container">
+                <div class="snapshot-placeholder" data-i18n="暂无快照">暂无快照</div>
+            </div>
         </div>
     </div>
 
@@ -530,7 +660,7 @@
         </div>
         <div style="display: flex; align-items: center; gap: 10px; color: var(--text-hint); font-size: 12px;">
             <span><span data-i18n="作者">作者</span>: <span style="font-weight: 500; color: var(--text-secondary);">m-RNA</span></span>
-            <span style="color: #ddd;">|</span>
+            <span style="color: var(--border);">|</span>
             <a href="javascript:void(0)" onclick="openUrl('https://github.com/m-RNA/Easy_EDA_PCB_Beautify')" style="color: var(--primary); text-decoration: none; border-bottom: 1px dashed var(--primary);">GitHub</a>
         </div>
         <button type="button" class="btn btn-white" id="closeBtn" onclick="tryClose()" data-i18n="关闭" style="min-width: 120px;">关闭</button>
@@ -561,6 +691,45 @@
             errDiv.style.cssText = 'position:fixed;top:0;left:0;right:0;padding:10px;background:#ffebee;color:#c62828;text-align:center;z-index:9999;border-bottom:1px solid #ef9a9a;';
             errDiv.textContent = 'Error: Cannot connect to JLC EDA API. Please try reloading the extension.';
             document.body.prepend(errDiv);
+        }
+
+        // Apply Theme logic
+        async function applyTheme() {
+            const api = API || getEda();
+            if (api && api.sys_Window && api.sys_Window.getCurrentTheme) {
+                try {
+                    const theme = await api.sys_Window.getCurrentTheme();
+                    if (theme === 'dark') {
+                        document.documentElement.setAttribute('data-theme', 'dark');
+                    } else {
+                        document.documentElement.removeAttribute('data-theme');
+                    }
+                } catch (e) {
+                    console.warn('Failed to get theme', e);
+                }
+            }
+        }
+
+        // Bind Collapsible Cards with enhanced animation
+        function bindCollapsibleCards() {
+            const headers = document.querySelectorAll('.card-header');
+            headers.forEach(header => {
+                header.addEventListener('click', () => {
+                    const card = header.closest('.card');
+                    if (card) {
+                        // Prevent multiple rapid clicks
+                        if (card.classList.contains('animating')) return;
+                        
+                        card.classList.add('animating');
+                        card.classList.toggle('collapsed');
+                        
+                        // Remove animating class after animation completes
+                        setTimeout(() => {
+                            card.classList.remove('animating');
+                        }, 250); // 匹配CSS动画时长0.25s
+                    }
+                });
+            });
         }
 
         function tryClose() {
@@ -644,8 +813,6 @@
         // 默认配置 (将在 init 中从 API 获取)
         let DEFAULT_CONFIG = {};
 
-        let currentUnitState = 'mil';
-
         function updateSwitchLabels() {
             const api = API || getEda();
             const enabledText = (api && api.sys_I18n) ? api.sys_I18n.text('启用') : '启用';
@@ -689,23 +856,27 @@
                     ...settings,
                 };
 
-                elCornerRadiusRatio.value = config.cornerRadiusRatio;
-                elCornerRadiusRatio.setAttribute('data-last-valid', config.cornerRadiusRatio);
+                if (elCornerRadiusRatio) {
+                    elCornerRadiusRatio.value = config.cornerRadiusRatio;
+                    elCornerRadiusRatio.setAttribute('data-last-valid', config.cornerRadiusRatio);
+                }
 
-                elMergeTransitionSegments.checked = config.mergeTransitionSegments !== undefined ? config.mergeTransitionSegments : true;
-                elSyncWidth.checked = config.syncWidthTransition;
+                if (elMergeTransitionSegments) elMergeTransitionSegments.checked = config.mergeTransitionSegments !== undefined ? config.mergeTransitionSegments : true;
+                if (elSyncWidth) elSyncWidth.checked = config.syncWidthTransition;
 
-                elSegments.value = config.widthTransitionSegments;
-                elSegments.setAttribute('data-last-valid', config.widthTransitionSegments);
+                if (elSegments) {
+                    elSegments.value = config.widthTransitionSegments;
+                    elSegments.setAttribute('data-last-valid', config.widthTransitionSegments);
+                }
 
-                elRatio.value = config.widthTransitionRatio;
-                elRatio.setAttribute('data-last-valid', config.widthTransitionRatio);
+                if (elRatio) {
+                    elRatio.value = config.widthTransitionRatio;
+                    elRatio.setAttribute('data-last-valid', config.widthTransitionRatio);
+                }
 
-                elDebug.checked = config.debug;
-                elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
-
-                // DRC
-                elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
+                if (elDebug) elDebug.checked = config.debug;
+                if (elForceArc) elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
+                if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
 
                 updateSwitchLabels();
             }
@@ -772,6 +943,8 @@
 
         // Bind Events
         function bindSmartInput(el, isInt = false) {
+            if (!el) return;
+
             function validateAndSave() {
                 let val = el.value.trim();
                 if (!val) {
@@ -926,17 +1099,19 @@
             el.addEventListener('wheel', handleWheel, { passive: false });
         }
 
+        // Apply bindings
         bindSmartInput(elCornerRadiusRatio, false);
         bindSmartInput(elSegments, true);
         bindSmartInput(elRatio, false);
 
         [elSyncWidth, elDebug, elMergeTransitionSegments, elForceArc, elEnableDRC].forEach((el) => {
-            el.addEventListener('change', () => saveSettings());
+            if (el) el.addEventListener('change', () => saveSettings());
         });
 
-        document.getElementById('closeBtn').addEventListener('click', tryClose);
+        const closeBtn = document.getElementById('closeBtn');
+        if (closeBtn) closeBtn.addEventListener('click', tryClose);
 
-        // Snapshots
+        // Snapshots logic
         const snapshotList = document.getElementById('snapshotList');
         let currentPcbId = null;
 
@@ -979,21 +1154,11 @@
 
         function updateToggleStyles() {
             if (currentViewType === 'manual') {
-                btnShowManual.style.background = '#fff';
-                btnShowManual.style.color = 'var(--primary)';
-                btnShowManual.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
-                
-                btnShowAuto.style.background = 'transparent';
-                btnShowAuto.style.color = 'var(--text-secondary)';
-                btnShowAuto.style.boxShadow = 'none';
+                btnShowManual.className = 'filter-btn active';
+                btnShowAuto.className = 'filter-btn inactive';
             } else {
-                btnShowAuto.style.background = '#fff';
-                btnShowAuto.style.color = 'var(--primary)';
-                btnShowAuto.style.boxShadow = '0 1px 2px rgba(0,0,0,0.1)';
-
-                btnShowManual.style.background = 'transparent';
-                btnShowManual.style.color = 'var(--text-secondary)';
-                btnShowManual.style.boxShadow = 'none';
+                btnShowAuto.className = 'filter-btn active';
+                btnShowManual.className = 'filter-btn inactive';
             }
         }
 
@@ -1029,14 +1194,13 @@
                 if (!currentPcbId) {
                      // 依然没有 PCB，可能是没打开文档
                      snapshotList.innerHTML = `<div class="snapshot-placeholder">${api.sys_I18n ? api.sys_I18n.text('请先打开PCB文档') : 'Please open a PCB'}</div>`;
-                     document.getElementById('snapshotCount').textContent = `(0/0)`;
+                     const countEl = document.getElementById('snapshotCount');
+                     if (countEl) countEl.textContent = `(0/0)`;
                      return;
                 }
 
                 // 根据当前视图模式获取快照
                 const snapshots = await api.jlc_eda_beautify_snapshot.getSnapshots(currentPcbId, currentViewType);
-
-                 console.log(`[Settings] Snapshots for PCB ${currentPcbId} (${currentViewType}): ${snapshots.length}`);
 
                 // Update Count safely
                 const countEl = document.getElementById('snapshotCount');
@@ -1058,10 +1222,7 @@
                     return;
                 }
 
-                // 列表是已经排好序的(如果后端没排，这里再排一次)
-                // const sorted = [...snapshots].sort((a, b) => b.timestamp - a.timestamp);
                 const sorted = snapshots;
-                
                 // 获取最后一次恢复的 ID
                 const lastRestoredId = api.jlc_eda_beautify_snapshot.getLastRestoredId ? api.jlc_eda_beautify_snapshot.getLastRestoredId() : null;
 
@@ -1084,14 +1245,13 @@
                     const isLastRestored = lastRestoredId !== null && String(snap.id) === String(lastRestoredId);
                     if (isLastRestored) {
                         const undoText = api.sys_I18n ? api.sys_I18n.text('上次撤销至此') : 'Last Undo Point';
-                        badgeHtml += `<span style="background:#e3f2fd;color:#1976d2;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">${undoText}</span>`;
-                        console.log('[Settings] Badge shown for snapshot:', snap.id);
+                        badgeHtml += `<span style="background:var(--bg);color:var(--primary);border:1px solid var(--primary);padding:1px 5px;border-radius:4px;font-size:10px;margin-left:6px;">${undoText}</span>`;
                     }
 
                     // 如果是最新的快照
                     if (index === 0) {
                         const latestText = api.sys_I18n ? api.sys_I18n.text('最新') : 'Latest';
-                        badgeHtml += `<span style="background:#e8f5e9;color:#2e7d32;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">${latestText}</span>`;
+                        badgeHtml += `<span style="background:var(--bg);color:#2e7d32;border:1px solid #2e7d32;padding:1px 5px;border-radius:4px;font-size:10px;margin-left:6px;">${latestText}</span>`;
                     }
 
                     const recoverText = api.sys_I18n ? api.sys_I18n.text('恢复') : 'Recover';
@@ -1107,7 +1267,7 @@
                         </div>
                         <div style="display:flex;gap:4px;">
                             <button type="button" class="btn btn-white btn-recover" style="padding:4px 10px;font-size:12px;">${recoverText}</button>
-                            <button type="button" class="btn btn-ghost btn-delete" style="padding:4px 8px;font-size:12px;color:#d32f2f;" title="${deleteText}">✕</button>
+                            <button type="button" class="btn btn-ghost btn-delete" style="padding:4px 8px;font-size:12px;color:var(--danger);" title="${deleteText}">✕</button>
                         </div>
                     `;
 
@@ -1121,7 +1281,6 @@
                                 const restoredText = api.sys_I18n ? api.sys_I18n.text('已恢复') : 'Restored';
                                 showToast(restoredText);
                             }
-                            // 此时不显示 "Restore returned false" 这种技术错误，因为可能是用户在对话框点了取消
                         }
                         catch (err) {
                             api.sys_Dialog.showInformationMessage(`Restore failed: ${err}`);
@@ -1150,68 +1309,63 @@
             }
         }
 
-        document.getElementById('refreshSnapshotBtn').onclick = async function() {
-            const btn = this;
-            const icon = btn.querySelector('.refresh-icon'); 
-            if (icon) icon.classList.add('rotating');
-            
-            try {
-                // 强制检查一次 PCB ID 变化
-                await checkPcbChange();
-                await refreshSnapshots();
-            }
-            finally {
-                // 至少转 600ms (正好一圈)
-                setTimeout(() => {
-                    if (icon) icon.classList.remove('rotating');
-                }, 600);
-            }
-        };
+        const btnRefresh = document.getElementById('refreshSnapshotBtn');
+        if (btnRefresh) {
+            btnRefresh.onclick = async function() {
+                const btn = this;
+                const icon = btn.querySelector('.refresh-icon'); 
+                if (icon) icon.classList.add('rotating');
+                
+                try {
+                    // 强制检查一次 PCB ID 变化
+                    await checkPcbChange();
+                    await refreshSnapshots();
+                }
+                finally {
+                    // 至少转 600ms (正好一圈)
+                    setTimeout(() => {
+                        if (icon) icon.classList.remove('rotating');
+                    }, 600);
+                }
+            };
+        }
 
-        document.getElementById('createSnapshotBtn').onclick = async () => {
-            const api = API || getEda();
-            if (!api || !api.jlc_eda_beautify_snapshot) {
-                if (api && api.sys_Dialog) {
-                    api.sys_Dialog.showInformationMessage('API not ready (jlc_eda_beautify_snapshot missing)');
+        const btnCreate = document.getElementById('createSnapshotBtn');
+        if (btnCreate) {
+            btnCreate.onclick = async () => {
+                const api = API || getEda();
+                if (!api || !api.jlc_eda_beautify_snapshot) return;
+                try {
+                    const name = api.sys_I18n ? api.sys_I18n.text('手动快照') : 'Manual Snapshot';
+                    await api.jlc_eda_beautify_snapshot.createSnapshot(name, true);
+                    await refreshSnapshots();
+                    showToast(api.sys_I18n ? api.sys_I18n.text('快照已创建') : 'Snapshot Created');
                 }
-                else {
-                    console.error('API not ready (jlc_eda_beautify_snapshot missing)');
+                catch (e) {
+                    console.error('Create Snapshot Error:', e);
                 }
-                return;
-            }
-            try {
-                const name = api.sys_I18n ? api.sys_I18n.text('手动快照') : 'Manual Snapshot';
-                await api.jlc_eda_beautify_snapshot.createSnapshot(name, true);
-                await refreshSnapshots();
-                showToast(api.sys_I18n ? api.sys_I18n.text('快照已创建') : 'Snapshot Created');
-            }
-            catch (e) {
-                console.error('Create Snapshot Error:', e);
+            };
+        }
+
+        const btnClear = document.getElementById('clearSnapshotsBtn');
+        if (btnClear) {
+            btnClear.onclick = () => {
+                const api = API || getEda();
+                if (!api || !api.jlc_eda_beautify_snapshot)
+				    return;
+                const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要清除所有手动快照吗？') : 'Clear all manual snapshots?';
+
                 if (api.sys_Dialog) {
-                    api.sys_Dialog.showInformationMessage(`Create Snapshot Error: ${e}`);
+                    api.sys_Dialog.showConfirmationMessage(confirmText, api.sys_I18n ? api.sys_I18n.text('清除手动快照') : 'Clear Manual Snapshots', undefined, undefined, async (ok) => {
+                        if (ok) {
+                            await api.jlc_eda_beautify_snapshot.clearSnapshots();
+                            await refreshSnapshots();
+                            showToast(api.sys_I18n ? api.sys_I18n.text('已清除') : 'Cleared');
+                        }
+                    });
                 }
-                else {
-                    console.error(`Create Snapshot Error: ${e}`);
-                }
-            }
-        };
-
-        document.getElementById('clearSnapshotsBtn').onclick = () => {
-            const api = API || getEda();
-            if (!api || !api.jlc_eda_beautify_snapshot)
-                return;
-            const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要清除所有手动快照吗？') : 'Clear all manual snapshots?';
-
-            if (api.sys_Dialog) {
-                api.sys_Dialog.showConfirmationMessage(confirmText, api.sys_I18n ? api.sys_I18n.text('清除手动快照') : 'Clear Manual Snapshots', undefined, undefined, async (ok) => {
-                    if (ok) {
-                        await api.jlc_eda_beautify_snapshot.clearSnapshots();
-                        await refreshSnapshots();
-                        showToast(api.sys_I18n ? api.sys_I18n.text('已清除') : 'Cleared');
-                    }
-                });
-            }
-        };
+            };
+        }
 
         // Init
         if (document.readyState === 'loading') {
@@ -1226,8 +1380,15 @@
 
         async function init() {
             try {
+                // Load Settings first
                 await loadSettings();
+                
+                // Initialize UI components
+                bindCollapsibleCards();
+                applyTheme();
                 translatePage();
+                
+                // Load Snapshots
                 refreshSnapshots();
 
                 // 注册快照变化回调，当主代码创建/删除快照时自动刷新列表
@@ -1239,7 +1400,6 @@
                             console.error('[Settings] Snapshot refresh failed:', err);
                         });
                     });
-                    console.log('[Settings] Snapshot callback registered');
                 }
 
                 // 额外保险：定时轮询检查快照数量变化
@@ -1260,9 +1420,7 @@
                         }
                         lastSnapshotCount = snapshots.length;
                     }
-                    catch {
-                        // ignore polling errors
-                    }
+                    catch { }
                 };
 
                 // 启动轮询 (2秒一次)
