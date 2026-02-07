@@ -6,6 +6,8 @@
 
 One-click optimization of PCB corners into arcs, ensuring impedance continuity; Bezier optimization at trace width transitions (better teardrops); Supports DRC checks, multi-step undo, snapshot management, transitional segment merging, forced arc generation, and other advanced optimization features
 
+> Inspiration source: [[Melt your circuit boards]](https://www.youtube.com/watch?v=euJgtLcWWyo)
+
 1. Corner beautification to arcs (radius can be edited afterward)
 
 ![preview](./images/preview1.gif)
