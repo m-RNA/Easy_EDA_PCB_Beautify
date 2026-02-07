@@ -1,12 +1,10 @@
 # Melt/Optimize/Beautify PCB Routing
 
-[简体中文](./README.md) | [English](./README.en.md)
-
-> When translation has deviations, the Chinese version shall prevail.
+[简体中文](./README.md) | [English](./README.en.md) | When translation has deviations, the Chinese version shall prevail.
 
 One-click optimization of PCB corners into arcs, ensuring impedance continuity; Bezier optimization at trace width transitions (better teardrops); Supports DRC checks, multi-step undo, snapshot management, transitional segment merging, forced arc generation, and other advanced optimization features
 
-> Inspiration source: [[Melt your circuit boards]](https://www.youtube.com/watch?v=euJgtLcWWyo)
+> Inspiration: [[Melt your circuit boards]](https://www.youtube.com/watch?v=euJgtLcWWyo)
 
 1. Corner beautification to arcs (radius can be edited afterward)
 
