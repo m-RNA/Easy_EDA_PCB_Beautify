@@ -179,7 +179,9 @@ export async function widthTransitionAll() {
 export async function openSettings() {
 	// 使用内联框架打开设置窗口
 	// 窗口尺寸：宽度 540px，高度 600px
-	eda.sys_IFrame.openIFrame('/iframe/settings.html', 540, 600, 'settings');
+	eda.sys_IFrame.openIFrame('/iframe/settings.html', 540, 600, 'settings', {
+		minimizeButton: true, // 显示最小化按钮
+	});
 }
 
 export function about(): void {
