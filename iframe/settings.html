@@ -444,18 +444,18 @@
         <div class="setting-item">
             <div class="setting-info">
                 <div class="setting-label">
-                    <span data-i18n="合并短线段">合并短线段</span>
+                    <span data-i18n="合并过渡线段">合并过渡线段</span>
                     <span style="background:#fff3e0;color:#ef6c00;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
                 </div>
-                <div class="setting-desc" data-i18n="自动合并过短的中间线段以生成圆弧">自动合并过短的中间线段以生成圆弧</div>
+                <div class="setting-desc" data-i18n="自动合并中间的过渡线段以生成圆弧">自动合并中间的过渡线段以生成圆弧</div>
             </div>
             <div class="setting-control">
                 <div class="switch-container">
                     <label class="switch">
-                        <input type="checkbox" id="mergeShortSegments" checked>
+                        <input type="checkbox" id="mergeTransitionSegments" checked>
                         <span class="slider"></span>
                     </label>
-                    <span class="switch-label" id="mergeShortSegmentsLabel" data-i18n="启用">启用</span>
+                    <span class="switch-label" id="mergeTransitionSegmentsLabel" data-i18n="启用">启用</span>
                 </div>
             </div>
         </div>
@@ -629,13 +629,13 @@
         const elRatio = document.getElementById('widthTransitionRatio');
         const elDebug = document.getElementById('debug');
         const elForceArc = document.getElementById('forceArc');
-        const elMergeShortSegments = document.getElementById('mergeShortSegments');
+        const elMergeTransitionSegments = document.getElementById('mergeTransitionSegments');
         const elEnableDRC = document.getElementById('enableDRC');
 
         // I18n labels update
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
         const elDebugLabel = document.getElementById('debugLabel');
-        const elMergeShortSegmentsLabel = document.getElementById('mergeShortSegmentsLabel');
+        const elMergeTransitionSegmentsLabel = document.getElementById('mergeTransitionSegmentsLabel');
         const elForceArcLabel = document.getElementById('forceArcLabel');
         const elEnableDRCLabel = document.getElementById('enableDRCLabel');
 
@@ -651,14 +651,14 @@
 
             elSyncWidthLabel.textContent = elSyncWidth.checked ? enabledText : disabledText;
             elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
-            elMergeShortSegmentsLabel.textContent = elMergeShortSegments.checked ? enabledText : disabledText;
+            elMergeTransitionSegmentsLabel.textContent = elMergeTransitionSegments.checked ? enabledText : disabledText;
             elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
             elEnableDRCLabel.textContent = elEnableDRC.checked ? enabledText : disabledText;
 
             // Visual feedback color for label
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
-            elMergeShortSegmentsLabel.style.color = elMergeShortSegments.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elMergeTransitionSegmentsLabel.style.color = elMergeTransitionSegments.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elEnableDRCLabel.style.color = elEnableDRC.checked ? 'var(--primary)' : 'var(--text-secondary)';
         }
@@ -707,7 +707,7 @@
                     elCornerRadius.setAttribute('data-step', '1');
                 }
 
-                elMergeShortSegments.checked = config.mergeShortSegments !== undefined ? config.mergeShortSegments : true;
+                elMergeTransitionSegments.checked = config.mergeTransitionSegments !== undefined ? config.mergeTransitionSegments : true;
                 elSyncWidth.checked = config.syncWidthTransition;
 
                 elSegments.value = config.widthTransitionSegments;
@@ -751,7 +751,7 @@
             const settings = {
                 cornerRadius: radius,
                 unit: elUnitSelect.value,
-                mergeShortSegments: elMergeShortSegments.checked,
+                mergeTransitionSegments: elMergeTransitionSegments.checked,
                 syncWidthTransition: elSyncWidth.checked,
                 widthTransitionSegments: segments,
                 widthTransitionRatio: ratio,
@@ -939,7 +939,7 @@
         bindSmartInput(elSegments, true);
         bindSmartInput(elRatio, false);
 
-        [elSyncWidth, elDebug, elMergeShortSegments, elForceArc, elEnableDRC].forEach((el) => {
+        [elSyncWidth, elDebug, elMergeTransitionSegments, elForceArc, elEnableDRC].forEach((el) => {
             el.addEventListener('change', () => saveSettings());
         });
 

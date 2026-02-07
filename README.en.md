@@ -4,21 +4,21 @@
 
 > When translation has deviations, the Chinese version shall prevail.
 
-One-click optimization of PCB corners into arcs, ensuring impedance continuity; Bezier optimization at trace width transitions (better teardrops); Supports DRC checks, multi-step undo, snapshot management, short segment merging, forced arc generation, and other advanced optimization features
+One-click optimization of PCB corners into arcs, ensuring impedance continuity; Bezier optimization at trace width transitions (better teardrops); Supports DRC checks, multi-step undo, snapshot management, transitional segment merging, forced arc generation, and other advanced optimization features
 
 1. Corner beautification to arcs (radius can be edited afterward)
 
 ![preview](./images/preview1.gif)
 
-1. Smooth beautification at sudden width changes (based on Bezier curves)
+2. Smooth beautification at sudden width changes (based on Bezier curves)
 
 ![preview](./images/preview2.gif)
 
-1. Snapshot management & undo support
+3. Snapshot management & undo support
 
 ![preview](./images/preview3.gif)
 
-1. DRC Rule Check
+4. DRC Rule Check
 
 ![preview](./images/preview4.png)
 

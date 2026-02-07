@@ -90,10 +90,10 @@ function generatePathOps(
 
 		let isMerged = false;
 
-		// --- 尝试合并短线段 (U型弯优化) ---
+		// --- 尝试合并过渡线段 (U型弯优化) ---
 		try {
 			// 如果当前索引未被禁用，且开启了合并
-			if (settings.mergeShortSegments && i < points.length - 2) {
+			if (settings.mergeTransitionSegments && i < points.length - 2) {
 				// 如果下一个拐角也在黑名单里，则不进行合并操作，以免逻辑混乱
 				if (!badCorners.has(i + 1)) {
 					const pAfter = points[i + 2];

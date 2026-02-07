@@ -3,7 +3,7 @@ export interface BeautifySettings {
 	widthTransitionRatio: number; // 线宽过渡长度系数
 	widthTransitionSegments: number; // 线宽过渡分段数
 	cornerRadius: number; // 圆角半径
-	mergeShortSegments: boolean; // 是否合并短线段
+	mergeTransitionSegments: boolean; // 是否合并过渡线段
 	unit: 'mm' | 'mil'; // 单位设置
 	debug: boolean; // 调试模式
 	forceArc: boolean; // 强制生成圆弧 (即使线段太短导致被截断)
@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	widthTransitionRatio: 3, // 过渡长度 = 线宽差 * 3
 	widthTransitionSegments: 25,
 	cornerRadius: 20, // 默认 20mil
-	mergeShortSegments: false,
+	mergeTransitionSegments: false,
 	unit: 'mil',
 	debug: false,
 	forceArc: true,
