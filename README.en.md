@@ -29,10 +29,10 @@ One-click optimization of PCB corners into arcs, ensuring impedance continuity; 
 Menu location: Advanced → Beautify PCB
 
 - Smooth Routing (Selected/All) – Process trace corners (arc-based beautification)
-- Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves)
+- Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment)
 - DRC Rule Check – Apply optimistic routing first, then perform design rule checks and automatically revert non-compliant sections
 - Undo / Snapshot – Multi-step undo functionality; switch between auto/manual snapshots for safe state recovery at any time
-- Advanced Settings – Configure radius limits, transition parameters, snapshot history management, and other optimization options
+- Advanced Settings – Configure radius limits, transition parameters, snapshot history management, card reordering, and other optimization options
 
 You can enable display in the top menu via: Advanced → Extension Manager → Installed Extensions → Beautify PCB → Configure (check the option to show in top menu for convenient use)
 
