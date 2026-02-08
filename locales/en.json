@@ -2,7 +2,7 @@
 	"过渡设置": "Transition Settings",
 	"圆角半径比率": "Corner Radius Ratio",
 	"半径 = 线宽 x 比率": "Radius = Line Width × Ratio",
-	"自动线宽过渡": "Auto Width Transition",
+	"同步线宽过渡": "Sync Width Transition",
 	"圆滑后处理线宽突变处": "Process width transitions after smoothing",
 	"启用": "Enabled",
 	"禁用": "Disabled",
