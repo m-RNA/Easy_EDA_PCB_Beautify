@@ -219,7 +219,24 @@ async function processWidthTransitions(
 		const isNoNet = groupKey.startsWith('__NO_NET__');
 		const actualNet = isNoNet ? '' : groupKey.replace(/^net_/, '').replace(/_layer_\d+$/, '');
 
-		// 查找端点相连但线宽不同的导线对
+		// 待处理操作列表
+		const pendingShortens = new Map<string, { start?: number; end?: number; original: any }>();
+		const pendingTransitions: Array<{
+			point: { x: number; y: number }; // 连接点 (junction)
+			wideDir: { x: number; y: number }; // 指向宽线内部方向 (背离连接点)
+			narrowDir: { x: number; y: number }; // 指向窄线内部方向 (背离连接点)
+			w1: number;
+			w2: number;
+			layer: number;
+			net: string;
+			widePortion: number; // 向宽线侧延伸的长度 (需要缩短宽线)
+			narrowPortion: number; // 向窄线侧延伸的长度 (覆盖在窄线上)
+			totalLength: number; // 总过渡长度
+			shortenTrackId?: string; // 如果 widePortion > 0，指定被缩短的线段 ID
+			shortenEndpoint?: 'start' | 'end';
+		}> = [];
+
+		// 第1步：分析连接关系
 		for (let i = 0; i < groupTracks.length; i++) {
 			for (let j = i + 1; j < groupTracks.length; j++) {
 				const t1 = groupTracks[i];
@@ -238,132 +255,276 @@ async function processWidthTransitions(
 				const t2Start = { x: t2.getState_StartX(), y: t2.getState_StartY() };
 				const t2End = { x: t2.getState_EndX(), y: t2.getState_EndY() };
 
-				// 检查所有可能的端点连接
 				const tolerance = 0.1;
-				const connections: Array<{
-					point: { x: number; y: number };
-					t1Dir: { x: number; y: number };
-					t2Dir: { x: number; y: number };
-				}> = [];
+				// 查找连接点
+				let connPoint: { x: number; y: number } | null = null;
+				let t1IsStart = false; // 是否在 t1 的起点连接
+				let t2IsStart = false; // 是否在 t2 的起点连接
 
 				if (dist(t1End, t2Start) < tolerance) {
-					connections.push({
-						point: t1End,
-						t1Dir: { x: t1End.x - t1Start.x, y: t1End.y - t1Start.y },
-						t2Dir: { x: t2End.x - t2Start.x, y: t2End.y - t2Start.y },
-					});
+					connPoint = t1End;
+					t1IsStart = false;
+					t2IsStart = true;
 				}
-				if (dist(t1End, t2End) < tolerance) {
-					connections.push({
-						point: t1End,
-						t1Dir: { x: t1End.x - t1Start.x, y: t1End.y - t1Start.y },
-						t2Dir: { x: t2Start.x - t2End.x, y: t2Start.y - t2End.y },
-					});
+				else if (dist(t1End, t2End) < tolerance) {
+					connPoint = t1End;
+					t1IsStart = false;
+					t2IsStart = false;
 				}
-				if (dist(t1Start, t2Start) < tolerance) {
-					connections.push({
-						point: t1Start,
-						t1Dir: { x: t1Start.x - t1End.x, y: t1Start.y - t1End.y },
-						t2Dir: { x: t2End.x - t2Start.x, y: t2End.y - t2Start.y },
-					});
+				else if (dist(t1Start, t2Start) < tolerance) {
+					connPoint = t1Start;
+					t1IsStart = true;
+					t2IsStart = true;
 				}
-				if (dist(t1Start, t2End) < tolerance) {
-					connections.push({
-						point: t1Start,
-						t1Dir: { x: t1Start.x - t1End.x, y: t1Start.y - t1End.y },
-						t2Dir: { x: t2Start.x - t2End.x, y: t2Start.y - t2End.y },
-					});
+				else if (dist(t1Start, t2End) < tolerance) {
+					connPoint = t1Start;
+					t1IsStart = true;
+					t2IsStart = false;
 				}
 
-				// 处理连接点
-				for (const conn of connections) {
-					const key = pointKey(conn.point);
+				if (!connPoint)
+					continue;
 
-					// 防止本次运行重复处理同一个点
-					if (processedPointsInCurrentRun.has(key)) {
-						continue;
-					}
+				const key = pointKey(connPoint);
+				if (processedPointsInCurrentRun.has(key))
+					continue;
 
-					// 检查是否有旧的过渡数据，如果有则清理
-					if (recordsMap.has(key)) {
-						const oldRecord = recordsMap.get(key)!;
-						if (oldRecord.ids && oldRecord.ids.length > 0) {
-							try {
-								await eda.pcb_PrimitiveLine.delete(oldRecord.ids);
-							}
-							catch (e: any) {
-								logError(`删除旧过渡失败: ${e.message || e}`);
-							}
+				// 检查共线
+				const t1DirVec = t1IsStart ? { x: t1Start.x - t1End.x, y: t1Start.y - t1End.y } : { x: t1End.x - t1Start.x, y: t1End.y - t1Start.y };
+				const t2DirVec = t2IsStart ? { x: t2Start.x - t2End.x, y: t2Start.y - t2End.y } : { x: t2End.x - t2Start.x, y: t2End.y - t2Start.y };
+
+				const len1 = Math.sqrt(t1DirVec.x ** 2 + t1DirVec.y ** 2);
+				const len2 = Math.sqrt(t2DirVec.x ** 2 + t2DirVec.y ** 2);
+				if (len1 < 0.001 || len2 < 0.001)
+					continue;
+
+				const dot = (t1DirVec.x * t2DirVec.x + t1DirVec.y * t2DirVec.y) / (len1 * len2);
+				if (Math.abs(Math.abs(dot) - 1) > 0.13) {
+					if (settings.debug)
+						debugLog(`跳过非共线连接点: dot=${dot.toFixed(3)}`, 'Transitions');
+					continue;
+				}
+
+				// 检查旧数据
+				if (recordsMap.has(key)) {
+					const oldRecord = recordsMap.get(key)!;
+					if (oldRecord.ids && oldRecord.ids.length > 0) {
+						try {
+							await eda.pcb_PrimitiveLine.delete(oldRecord.ids);
 						}
-						recordsMap.delete(key);
+						catch { }
 					}
+					recordsMap.delete(key);
+				}
 
-					// 检查共线
-					const len1 = Math.sqrt(conn.t1Dir.x ** 2 + conn.t1Dir.y ** 2);
-					const len2 = Math.sqrt(conn.t2Dir.x ** 2 + conn.t2Dir.y ** 2);
-					if (len1 < 0.001 || len2 < 0.001)
-						continue;
+				processedPointsInCurrentRun.add(key);
 
-					const dot = (conn.t1Dir.x * conn.t2Dir.x + conn.t1Dir.y * conn.t2Dir.y) / (len1 * len2);
+				// 确定方向和策略
+				const t1Width = w1;
+				const t2Width = w2;
+				const isT1Wide = t1Width > t2Width;
+				const wideTrack = isT1Wide ? t1 : t2;
+				const wideIsStart = isT1Wide ? t1IsStart : t2IsStart; // 连接点是否位于宽导线的起点?
 
-					// 角度差小于 30 度
-					if (Math.abs(Math.abs(dot) - 1) > 0.13) {
-						if (settings.debug) {
-							debugLog(`跳过非共线连接点: dot=${dot.toFixed(3)}`, 'Transitions');
-						}
-						continue;
+				// 计算理想过渡长度
+				const widthDiff = Math.abs(w1 - w2);
+				// 默认 3 倍线宽差
+				const idealLength = widthDiff * (settings.widthTransitionRatio || 3.0);
+
+				// === 平衡模式: 0% = 全部向窄线, 100% = 全部向宽线 ===
+				const balance = Math.max(0, Math.min(100, Number(settings.widthTransitionBalance) || 50));
+
+				const wideLen = isT1Wide ? len1 : len2;
+				const narrowLen = isT1Wide ? len2 : len1;
+
+				// 按平衡比例分配过渡长度到宽/窄两侧
+				let widePortion = idealLength * (balance / 100);
+				let narrowPortion = idealLength * (1 - balance / 100);
+
+				// 约束: 宽线侧不能超过宽线长度的90%
+				if (widePortion > wideLen * 0.9) {
+					widePortion = wideLen * 0.9;
+				}
+				// 约束: 窄线侧不能超过窄线长度的90%
+				if (narrowPortion > narrowLen * 0.9) {
+					narrowPortion = narrowLen * 0.9;
+				}
+
+				const totalLength = widePortion + narrowPortion;
+				if (totalLength < 1)
+					continue;
+
+				// 方向向量: tXDirVec 指向连接点，取反后背离连接点
+				const wideDirVec = isT1Wide ? t1DirVec : t2DirVec;
+				const narrowDirVec = isT1Wide ? t2DirVec : t1DirVec;
+				const wideAwayDir = { x: -wideDirVec.x, y: -wideDirVec.y }; // 深入宽线
+				const narrowAwayDir = { x: -narrowDirVec.x, y: -narrowDirVec.y }; // 深入窄线
+
+				// 如果需要向宽线侧延伸，注册缩短请求
+				if (widePortion >= 1) {
+					const wideId = wideTrack.getState_PrimitiveId();
+					if (!pendingShortens.has(wideId)) {
+						pendingShortens.set(wideId, { original: wideTrack });
 					}
-
-					debugLog(`找到线宽过渡点: w1=${w1.toFixed(2)}, w2=${w2.toFixed(2)}, point=${key}`, 'Transitions');
-
-					// 标记为已处理
-					processedPointsInCurrentRun.add(key);
-
-					// 确定方向和窄端线长
-					let transitionDir: { x: number; y: number };
-					let narrowTrackLength: number;
-
-					// 计算两条线的实际长度
-					const t1Length = dist(t1Start, t1End);
-					const t2Length = dist(t2Start, t2End);
-
-					if (w1 < w2) {
-						// t1 是窄线
-						transitionDir = { x: -conn.t1Dir.x, y: -conn.t1Dir.y };
-						narrowTrackLength = t1Length;
+					const rec = pendingShortens.get(wideId)!;
+					if (wideIsStart) {
+						rec.start = Math.max(rec.start || 0, widePortion);
 					}
 					else {
-						// t2 是窄线
-						transitionDir = { x: conn.t2Dir.x, y: conn.t2Dir.y };
-						narrowTrackLength = t2Length;
+						rec.end = Math.max(rec.end || 0, widePortion);
 					}
 
-					// 创建过渡线段
-					const ids = await createWidthTransition(
-						conn.point,
-						transitionDir,
+					pendingTransitions.push({
+						point: connPoint,
+						wideDir: wideAwayDir,
+						narrowDir: narrowAwayDir,
 						w1,
 						w2,
-						t1.getState_Layer(),
-						actualNet,
-						narrowTrackLength,
-						settings,
-					);
+						layer: t1.getState_Layer(),
+						net: actualNet,
+						widePortion,
+						narrowPortion,
+						totalLength,
+						shortenTrackId: wideId,
+						shortenEndpoint: wideIsStart ? 'start' : 'end',
+					});
+				}
+				else {
+					// 纯窄线侧模式 (balance=0)
+					pendingTransitions.push({
+						point: connPoint,
+						wideDir: wideAwayDir,
+						narrowDir: narrowAwayDir,
+						w1,
+						w2,
+						layer: t1.getState_Layer(),
+						net: actualNet,
+						widePortion: 0,
+						narrowPortion,
+						totalLength: narrowPortion,
+					});
+				}
+			}
+		}
 
-					if (ids.length > 0) {
-						// 记录新创建的过渡
-						recordsMap.set(key, {
-							point: key,
-							ids,
-						});
-						transitionCount++;
+		// 步骤 2: 执行导线缩短
+		const shortenedTrackEndpoints = new Map<string, { start: { x: number; y: number }; end: { x: number; y: number } }>();
+
+		for (const [id, req] of pendingShortens) {
+			const t = req.original;
+			const pStart = { x: t.getState_StartX(), y: t.getState_StartY() };
+			const pEnd = { x: t.getState_EndX(), y: t.getState_EndY() };
+			const w = t.getState_LineWidth();
+			const net = t.getState_Net();
+			const layer = t.getState_Layer();
+
+			const vec = { x: pEnd.x - pStart.x, y: pEnd.y - pStart.y };
+			const len = Math.sqrt(vec.x ** 2 + vec.y ** 2);
+			if (len < 0.001)
+				continue;
+			const ux = vec.x / len;
+			const uy = vec.y / len;
+
+			const sStart = req.start || 0;
+			const sEnd = req.end || 0;
+
+			if (sStart + sEnd >= len - 0.1) {
+				// 太短了，无法缩短 (避免完全删除导线导致断路)
+				continue;
+			}
+
+			// 计算新坐标
+			const newStart = { x: pStart.x + ux * sStart, y: pStart.y + uy * sStart };
+			const newEnd = { x: pEnd.x - ux * sEnd, y: pEnd.y - uy * sEnd };
+
+			// 替换导线
+			try {
+				await eda.pcb_PrimitiveLine.delete([id]);
+				await eda.pcb_PrimitiveLine.create(net, layer, newStart.x, newStart.y, newEnd.x, newEnd.y, w, false);
+
+				// 存储新端点用于过渡生成
+				// 起点处的过渡 (req.start) 需要使用 newStart
+				// 终点处的过渡 (req.end) 需要使用 newEnd
+				shortenedTrackEndpoints.set(id, { start: newStart, end: newEnd });
+			}
+			catch {
+				logError(`缩短导线失败`, 'Transitions');
+			}
+		}
+
+		// 步骤 3: 执行过渡生成
+		for (const trans of pendingTransitions) {
+			const key = pointKey(trans.point);
+			try {
+				// 计算过渡起点：
+				// 过渡从宽线侧的新端点开始, 经过连接点, 延伸到窄线侧结束
+				// 起点 = connPoint 向宽线方向偏移 widePortion
+				let wideStartPoint = trans.point; // 默认是连接点
+				let actualWidePortion = trans.widePortion;
+
+				// 如果有宽线侧缩短, 尝试获取精确的新端点坐标
+				if (actualWidePortion >= 1 && trans.shortenTrackId) {
+					if (shortenedTrackEndpoints.has(trans.shortenTrackId)) {
+						const newEndpoints = shortenedTrackEndpoints.get(trans.shortenTrackId)!;
+						wideStartPoint = (trans.shortenEndpoint === 'start')
+							? newEndpoints.start
+							: newEndpoints.end;
 					}
-
-					// 防止卡死
-					if (transitionCount % 5 === 0) {
-						await new Promise(r => setTimeout(r, 10));
+					else if (pendingShortens.has(trans.shortenTrackId)) {
+						// 缩短记录存在但端点未保存 (可能缩短失败), 使用向量回推
+						const dirLen = Math.sqrt(trans.wideDir.x ** 2 + trans.wideDir.y ** 2);
+						if (dirLen > 0.001) {
+							const ux = trans.wideDir.x / dirLen;
+							const uy = trans.wideDir.y / dirLen;
+							wideStartPoint = {
+								x: trans.point.x + ux * actualWidePortion,
+								y: trans.point.y + uy * actualWidePortion,
+							};
+						}
+					}
+					else {
+						// 缩短未执行, 回退: 不占宽线侧
+						actualWidePortion = 0;
 					}
 				}
+
+				// 方向: 从 wideStartPoint 指向 narrowEnd (过渡线方向)
+				// 即从宽的一端指向窄的一端, 方向 = narrowDir (背离连接点, 深入窄线)
+				const transDir = trans.narrowDir;
+
+				// 总过渡长度 = 实际宽线部分 + 窄线部分
+				const totalLen = actualWidePortion + trans.narrowPortion;
+
+				if (totalLen < 1)
+					continue;
+
+				const ids = await createWidthTransition(
+					wideStartPoint,
+					transDir,
+					trans.w1,
+					trans.w2,
+					trans.layer,
+					trans.net,
+					totalLen,
+					settings,
+					true, // 使用精确长度
+				);
+
+				// 追加 ID
+				if (recordsMap.has(key)) {
+					const r = recordsMap.get(key)!;
+					r.ids.push(...ids);
+				}
+				else {
+					recordsMap.set(key, { point: key, ids });
+				}
+				transitionCount++;
+
+				if (transitionCount % 10 === 0)
+					await new Promise(r => setTimeout(r, 5));
+			}
+			catch (e: any) {
+				logError(`过渡创建失败: ${e.message || e}`, 'Transitions');
 			}
 		}
 	}
@@ -403,6 +564,7 @@ async function createWidthTransition(
 	net: string,
 	narrowTrackLength: number,
 	settings: any,
+	forceExactLength: boolean = false,
 ): Promise<string[]> {
 	const createdIds: string[] = [];
 
@@ -421,10 +583,18 @@ async function createWidthTransition(
 	const widthDiff = wideWidth - narrowWidth;
 
 	// 过渡长度（向窄线方向延伸）
-	// 计算理想过渡长度，但不超过窄端线长的 90%（留一点余量）
 	const idealLength = widthDiff * (settings.widthTransitionRatio || 1.5);
-	const maxAllowedLength = narrowTrackLength * 0.9;
-	const transitionLength = Math.min(idealLength, maxAllowedLength);
+	let transitionLength: number;
+
+	if (forceExactLength) {
+		// 强制填满长度（用于填充缩短后的间隙）
+		transitionLength = narrowTrackLength;
+	}
+	else {
+		// 默认模式（覆盖），限制为窄线长度的90%
+		const maxAllowedLength = narrowTrackLength * 0.9;
+		transitionLength = Math.min(idealLength, maxAllowedLength);
+	}
 
 	// 如果过渡长度太短，跳过
 	if (transitionLength < 1) {

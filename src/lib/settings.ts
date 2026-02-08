@@ -2,6 +2,7 @@ export interface BeautifySettings {
 	syncWidthTransition: boolean; // 平滑时同步处理线宽过渡
 	widthTransitionRatio: number; // 线宽过渡长度系数 (长度 = 线宽差值 * 比率)
 	widthTransitionSegments: number; // 线宽过渡分段数
+	widthTransitionBalance: number; // 过渡区位置平衡 0-100%: 0=全部向窄线, 100=全部向宽线
 	cornerRadiusRatio: number; // 圆角半径与线宽的比率 (半径 = 线宽 * 比率)
 	mergeTransitionSegments: boolean; // 是否合并过渡线段
 	debug: boolean; // 调试模式
@@ -14,6 +15,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	syncWidthTransition: false,
 	widthTransitionRatio: 3.0, // 过渡长度 = 线宽差 * 3
 	widthTransitionSegments: 25,
+	widthTransitionBalance: 50, // 中间位置= 50%
 	cornerRadiusRatio: 3.0, // 默认半径是线宽的3倍
 	mergeTransitionSegments: false,
 	debug: false,

@@ -514,6 +514,20 @@
                     </div>
                 </div>
             </div>
+            
+             <!-- Balance -->
+             <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="过渡区位置">过渡区位置</div>
+                    <div class="setting-desc" data-i18n="过渡区位置说明">0% = 全部向窄线延伸，100% = 全部向宽线延伸</div>
+                </div>
+                <div class="setting-control">
+                    <div class="input-group">
+                        <input type="text" id="widthTransitionBalance" data-min="0" data-max="100" data-step="5" value="50">
+                        <span class="addon">%</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -798,6 +812,7 @@
         const elSyncWidth = document.getElementById('syncWidthTransition');
         const elSegments = document.getElementById('widthTransitionSegments');
         const elRatio = document.getElementById('widthTransitionRatio');
+        const elDirection = document.getElementById('widthTransitionBalance');
         const elDebug = document.getElementById('debug');
         const elForceArc = document.getElementById('forceArc');
         const elMergeTransitionSegments = document.getElementById('mergeTransitionSegments');
@@ -874,6 +889,11 @@
                     elRatio.setAttribute('data-last-valid', config.widthTransitionRatio);
                 }
 
+                if (elDirection) {
+                    elDirection.value = config.widthTransitionBalance !== undefined ? config.widthTransitionBalance : 50;
+                    elDirection.setAttribute('data-last-valid', elDirection.value);
+                }
+
                 if (elDebug) elDebug.checked = config.debug;
                 if (elForceArc) elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
                 if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
@@ -910,6 +930,7 @@
                 syncWidthTransition: elSyncWidth.checked,
                 widthTransitionSegments: segments,
                 widthTransitionRatio: ratio,
+                widthTransitionBalance: elDirection ? Number(elDirection.value) : 50,
                 debug: elDebug.checked,
                 forceArc: elForceArc.checked,
                 enableDRC: elEnableDRC.checked,
@@ -1103,6 +1124,7 @@
         bindSmartInput(elCornerRadiusRatio, false);
         bindSmartInput(elSegments, true);
         bindSmartInput(elRatio, false);
+        bindSmartInput(elDirection, true);
 
         [elSyncWidth, elDebug, elMergeTransitionSegments, elForceArc, elEnableDRC].forEach((el) => {
             if (el) el.addEventListener('change', () => saveSettings());

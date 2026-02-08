@@ -8,6 +8,8 @@
 	"禁用": "Disabled",
 	"过渡长度比率": "Transition Length Ratio",
 	"过渡区长度比率说明": "Length = Width Difference × Ratio",
+	"过渡区位置": "Transition Position",
+	"过渡区位置说明": "0% = Extend into narrow track, 100% = Extend into wide track",
 	"设计规则检查 (DRC)": "Design Rule Check (DRC)",
 	"自动避让/回滚": "Auto Avoidance/Rollback",
 	"若圆角导致间距报错，自动尝试缩小半径": "If rounded corners cause spacing errors, automatically try to reduce radius",
