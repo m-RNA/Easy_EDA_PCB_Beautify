@@ -459,13 +459,36 @@
         /* Animation */
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .rotating { animation: spin 0.6s cubic-bezier(0.4, 0.0, 0.2, 1) infinite; display: inline-block; pointer-events: none; }
+
+        /* Drag and Drop */
+        .card.dragging {
+            opacity: 0.4;
+            border: 2px dashed var(--primary);
+        }
+
+        .drag-handle {
+            cursor: grab;
+            color: var(--text-hint);
+            margin-right: 4px;
+            display: flex;
+            align-items: center;
+            font-size: 16px;
+            user-select: none;
+        }
+        
+        .card-header:active .drag-handle {
+            cursor: grabbing;
+        }
     </style>
 </head>
 <body>
-
-    <div class="card">
+    <div id="cardContainer">
+    <div class="card" id="card-transition" draggable="true">
         <div class="card-header">
-            <div class="card-title" data-i18n="过渡设置">过渡设置</div>
+            <div style="display: flex; align-items: center;">
+                <div class="drag-handle">⋮⋮</div>
+                <div class="card-title" data-i18n="过渡设置">过渡设置</div>
+            </div>
         </div>
         <div class="card-content">
 
@@ -514,9 +537,12 @@
     </div>
 
     <!-- DRC Settings -->
-    <div class="card">
+    <div class="card" id="card-drc" draggable="true">
         <div class="card-header">
-            <div class="card-title" data-i18n="设计规则检查 (DRC)">设计规则检查 (DRC)</div>
+            <div style="display: flex; align-items: center;">
+                <div class="drag-handle">⋮⋮</div>
+                <div class="card-title" data-i18n="设计规则检查 (DRC)">设计规则检查 (DRC)</div>
+            </div>
         </div>
         <!-- Enable DRC -->
         <div class="card-content">
@@ -542,8 +568,12 @@
     </div>
 
     <!-- Advanced -->
-    <div class="card collapsed"> <div class="card-header">
-            <div class="card-title" data-i18n="高级设置">高级设置</div>
+    <div class="card collapsed" id="card-advanced" draggable="true"> 
+        <div class="card-header">
+            <div style="display: flex; align-items: center;">
+                <div class="drag-handle">⋮⋮</div>
+                <div class="card-title" data-i18n="高级设置">高级设置</div>
+            </div>
         </div>
 
         <!-- Merge Short Segments -->
@@ -638,11 +668,14 @@
     </div>
 
 	<!-- Snapshot -->
-    <div class="card">
+    <div class="card" id="card-snapshot" draggable="true">
         <div class="card-header">
-            <div class="card-title">
-                <span data-i18n="布线状态管理">布线状态管理</span>
-                <span id="snapshotCount" style="font-weight: normal; color: var(--text-hint); font-size: 12px; margin-left: 4px;"></span>
+            <div style="display: flex; align-items: center;">
+                <div class="drag-handle">⋮⋮</div>
+                <div class="card-title">
+                    <span data-i18n="布线状态管理">布线状态管理</span>
+                    <span id="snapshotCount" style="font-weight: normal; color: var(--text-hint); font-size: 12px; margin-left: 4px;"></span>
+                </div>
             </div>
         </div>
         <div class="card-content">
@@ -664,6 +697,7 @@
                 <div class="snapshot-placeholder" data-i18n="暂无快照">暂无快照</div>
             </div>
         </div>
+    </div>
     </div>
 
     <div class="footer-status">
@@ -736,6 +770,9 @@
                         card.classList.add('animating');
                         card.classList.toggle('collapsed');
                         
+                        // 保存折叠状态
+                        saveSettings(true);
+                        
                         // Remove animating class after animation completes
                         setTimeout(() => {
                             card.classList.remove('animating');
@@ -743,6 +780,58 @@
                     }
                 });
             });
+        }
+
+        // 拖拽排序逻辑
+        function bindDragAndDrop() {
+            const container = document.getElementById('cardContainer');
+            if (!container) return;
+            
+            const cards = document.querySelectorAll('.card');
+            
+            cards.forEach(card => {
+                card.addEventListener('dragstart', (e) => {
+                    // 如果是在输入框或按钮上，禁止拖拽
+                    if (['INPUT', 'BUTTON', 'A', 'LABEL'].includes(e.target.tagName)) {
+                        e.preventDefault();
+                        return;
+                    }
+                    card.classList.add('dragging');
+                    e.dataTransfer.effectAllowed = 'move';
+                });
+                
+                card.addEventListener('dragend', () => {
+                    card.classList.remove('dragging');
+                    saveSettings(true);
+                });
+                
+                card.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const draggingCard = document.querySelector('.dragging');
+                    if (!draggingCard) return;
+                    
+                    const afterElement = getDragAfterElement(container, e.clientY);
+                    if (afterElement == null) {
+                        container.appendChild(draggingCard);
+                    } else {
+                        container.insertBefore(draggingCard, afterElement);
+                    }
+                });
+            });
+        }
+
+        function getDragAfterElement(container, y) {
+            const draggableElements = [...container.querySelectorAll('.card:not(.dragging)')];
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
         }
 
         function tryClose() {
@@ -897,6 +986,28 @@
                 if (elForceArc) elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
                 if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
 
+                // 还原卡片排序
+                if (config.cardOrder && config.cardOrder.length > 0) {
+                    const container = document.getElementById('cardContainer');
+                    config.cardOrder.forEach(id => {
+                        const card = document.getElementById(id);
+                        if (card && container) {
+                            container.appendChild(card);
+                        }
+                    });
+                }
+                
+                // 还原折叠状态
+                if (config.collapsedStates) {
+                    Object.entries(config.collapsedStates).forEach(([id, isCollapsed]) => {
+                        const card = document.getElementById(id);
+                        if (card) {
+                            if (isCollapsed) card.classList.add('collapsed');
+                            else card.classList.remove('collapsed');
+                        }
+                    });
+                }
+
                 updateSwitchLabels();
             }
             catch (e) {
@@ -923,6 +1034,17 @@
             if (Number.isNaN(ratio))
                 ratio = DEFAULT_CONFIG.widthTransitionRatio;
 
+            // 获取当前卡片顺序和折叠状态
+            const container = document.getElementById('cardContainer');
+            const cardOrder = container ? [...container.querySelectorAll('.card')].map(c => c.id) : [];
+            
+            const collapsedStates = {};
+            document.querySelectorAll('.card').forEach(card => {
+                if (card.id) {
+                    collapsedStates[card.id] = card.classList.contains('collapsed');
+                }
+            });
+
             const settings = {
                 cornerRadiusRatio: radiusRatio,
                 mergeTransitionSegments: elMergeTransitionSegments.checked,
@@ -933,6 +1055,8 @@
                 debug: elDebug.checked,
                 forceArc: elForceArc.checked,
                 enableDRC: elEnableDRC.checked,
+                cardOrder: cardOrder,
+                collapsedStates: collapsedStates,
             };
 
             try {
@@ -1406,6 +1530,7 @@
                 
                 // Initialize UI components
                 bindCollapsibleCards();
+                bindDragAndDrop(); // 绑定拖拽排序
                 applyTheme();
                 translatePage();
                 

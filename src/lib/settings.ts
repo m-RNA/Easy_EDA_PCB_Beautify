@@ -9,6 +9,8 @@ export interface BeautifySettings {
 	forceArc: boolean; // 强制生成圆弧 (即使线段太短导致被截断)
 	enableDRC: boolean; // 启用 DRC 检查
 	drcRetryCount: number; // DRC 失败最大重试次数 (控制二分法的深度)
+	cardOrder: string[]; // 设置界面的卡片排序顺序
+	collapsedStates: Record<string, boolean>; // 卡片折叠状态
 }
 
 const DEFAULT_SETTINGS: BeautifySettings = {
@@ -22,6 +24,10 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	forceArc: true,
 	enableDRC: true,
 	drcRetryCount: 4, // 4次二分法 (100% -> 50% -> 25% -> 12.5% -> 直角)
+	cardOrder: ['card-transition', 'card-drc', 'card-advanced', 'card-snapshot'],
+	collapsedStates: {
+		'card-advanced': true, // 默认收起高级设置
+	},
 };
 
 const SETTINGS_CACHE_KEY = '_jlc_beautify_settings_cache';
