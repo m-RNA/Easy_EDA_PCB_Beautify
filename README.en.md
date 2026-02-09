@@ -2,24 +2,17 @@
 
 [简体中文](./README.md) | [English](./README.en.md) | When translation has deviations, the Chinese version shall prevail.
 
-One-click optimization of PCB corners into arcs, ensuring impedance continuity; Bezier optimization at trace width transitions (better teardrops); Supports DRC checks, multi-step undo, snapshot management, transitional segment merging, forced arc generation, and other advanced optimization features
+One-click optimization of PCB corners into arcs, ensuring impedance continuity; Bezier optimization at trace width transitions (better teardrops); Supports DRC checks, automatic copper pour rebuild, multi-step undo, snapshot management, transitional segment merging, forced arc generation, and other advanced optimization features
 
 > Inspiration: [[Melt your circuit boards]](https://www.youtube.com/watch?v=euJgtLcWWyo)
 
 1. Corner beautification to arcs (radius can be edited afterward)
-
 ![preview](./images/preview1.gif)
-
-2. Smooth beautification at sudden width changes (based on Bezier curves)
-
+1. Smooth beautification at sudden width changes (based on Bezier curves)
 ![preview](./images/preview2.gif)
-
-3. Snapshot management & undo support
-
+1. Snapshot management & undo support
 ![preview](./images/preview3.gif)
-
-4. DRC Rule Check
-
+1. DRC Rule Check
 ![preview](./images/preview4.png)
 
 > ⚠️ Plugin under development. It's recommended to backup your project before operation. Feedback welcome when encountering issues.
@@ -30,7 +23,8 @@ Menu location: Advanced → Beautify PCB
 
 - Smooth Routing (Selected/All) – Process trace corners (arc-based beautification)
 - Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment)
-- DRC Rule Check – Apply optimistic routing first, then perform design rule checks and automatically revert non-compliant sections
+- DRC Rule Check – Apply optimistic routing first, then perform design rule checks and automatically revert non-compliant sections; supports ignoring copper pour rules
+- Automatic Copper Pour Rebuild – Automatically rebuild all copper pour regions after executing "All" operations
 - Undo / Snapshot – Multi-step undo functionality; switch between auto/manual snapshots for safe state recovery at any time
 - Advanced Settings – Configure radius limits, transition parameters, snapshot history management, card reordering, and other optimization options
 
@@ -82,7 +76,8 @@ src/
     ├── widthTransition.ts # Width transition
     ├── snapshot.ts    # Snapshot management
     ├── math.ts        # Math utilities
-    ├── eda_utils.ts   # EDA utilities
+    ├── drc.ts         # DRC checks & copper pour filtering
+    ├── eda_utils.ts   # EDA utilities (copper pour rebuild, etc.)
     ├── logger.ts      # Logging
     └── settings.ts    # Settings read/write
 iframe/

@@ -2,8 +2,8 @@
 	"name": "eext-pcb-beautify",
 	"uuid": "3911cc55444d4833b5762da1521fe616",
 	"displayName": "熔化/优化/美化PCB",
-	"description": "一键：拐角圆弧优化 线宽突变处贝塞尔优化 DRC检查 多步撤销 快照管理 合并过渡线段 强制圆弧生成等高级优化功能",
-	"version": "1.0.7",
+	"description": "一键：拐角圆弧优化 线宽突变处贝塞尔优化 DRC检查 自动重覆铜 多步撤销 快照管理 合并过渡线段 强制圆弧生成等高级优化功能",
+	"version": "1.0.8",
 	"publisher": "m-RNA",
 	"engines": {
 		"eda": "^3.0.0"
@@ -22,6 +22,7 @@
 		"布线",
 		"圆弧",
 		"线宽过渡",
+		"覆铜",
 		"优化",
 		"融化",
 		"PCB",
@@ -29,6 +30,7 @@
 		"Beautify",
 		"Smooth",
 		"WidthTransition",
+		"CopperPour",
 		"Routing",
 		"Curve"
 	],

@@ -7,6 +7,7 @@
 	"editor.formatOnSave": true,
 	"editor.codeActionsOnSave": {
 		"source.fixAll.eslint": "always",
+		"source.fixAll.markdownlint": "always",
 		"source.organizeImports": "never"
 	},
 	"eslint.rules.customizations": [
@@ -70,6 +71,7 @@
 		"lerp",
 		"nodebuffer",
 		"npmrc",
+		"objs",
 		"OSHW",
 		"outdir",
 		"sandboxed",
@@ -104,5 +106,14 @@
 		"**/EDA_EX_DOC/**/*.js*": true,
 		"**/EDA_EX_DOC/**/*_files/**": true
 	},
-	"search.useIgnoreFiles": false
+	"search.useIgnoreFiles": false,
+	"markdownlint.config": {
+		"MD010": false,
+		"MD012": false,
+		"MD024": false,
+		"MD030": false
+	},
+	"[markdown]": {
+		"editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
+	}
 }
