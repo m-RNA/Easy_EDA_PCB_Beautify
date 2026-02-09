@@ -1,9 +1,66 @@
 import { debugLog, debugWarn } from './logger';
 import { getSettings } from './settings';
 
-// Removed prepareDrcRules and cachedRules as per new strategy
+// ============================================================
+// DRC API 数据结构定义 (基于 eda.pcb_Drc.check(false, false, true) 的实际返回)
+// ============================================================
 
-// Removed checkArcClearance and helper getDistToPrim
+/** Level 3: 单条 DRC 违规 */
+interface DrcIssue {
+	visible: boolean;
+	errorType: string; // e.g. "Clearance Error"
+	errorObjType: string; // e.g. "SMD Pad to Track", "Copper Region(Filled) to Track"
+	ruleName: string; // e.g. "copperThickness1oz" (注意: 这是规则名，不能用来区分覆铜)
+	ruleTypeName: string; // e.g. "Safe Spacing"
+	layer: string; // e.g. "Top Layer", "Bottom Layer"
+	globalIndex: string; // e.g. "err1783"
+	parentId: string; // e.g. "DRCTab|_|Errors|_|Clearance Error|_|SMD Pad to Track"
+	objs: string[]; // 违规对象 ID 列表 (主要 ID 来源)
+	pos: { x: number; y: number };
+	obj1: { typeName: string; suffix: string };
+	obj2: { typeName: string; suffix: string };
+	explanation: {
+		str: string;
+		param: Record<string, string>;
+		errData: {
+			globalIndex: string;
+			position: { x: number; y: number };
+			name: string;
+			obj1: string; // 对象 1 ID (备用 ID 来源)
+			obj1Type: string; // e.g. "Track", "Copper Region(Filled)"
+			obj2: string; // 对象 2 ID (备用 ID 来源)
+			obj2Type: string; // e.g. "SMD Pad", "Via"
+			minDistance: number;
+			clearance: number;
+			errorType: string;
+			layerIds: number[];
+			obj1Suffix: string;
+			obj2Suffix: string;
+		};
+	};
+}
+
+/** Level 2: DRC 子类别 (按对象类型组合分组) */
+interface DrcSubCategory {
+	name: string; // e.g. "SMD Pad to Track", "Copper Region(Filled) to Track"
+	count: number;
+	title: string[]; // e.g. ["SMD Pad", "to", "Track", "(2)"]
+	visible: boolean;
+	list: DrcIssue[];
+}
+
+/** Level 1: DRC 错误类别 */
+interface DrcCategory {
+	name: string; // e.g. "Clearance Error"
+	count: number;
+	title: string[]; // e.g. ["Clearance Error", "(14)"]
+	visible: boolean;
+	list: DrcSubCategory[];
+}
+
+// ============================================================
+// 主函数
+// ============================================================
 
 /**
  * 运行 DRC 检查并解析结果
@@ -18,99 +75,41 @@ export async function runDrcCheckAndParse(): Promise<Set<string>> {
 		}
 
 		debugLog('[DRC] Starting global check...');
-		// check(strict, ui, verbose)
-		const issues = await eda.pcb_Drc.check(false, false, true);
+		const categories: DrcCategory[] = await eda.pcb_Drc.check(false, false, true);
 
-		if (!Array.isArray(issues)) {
-			console.warn('[DRC] Check returned non-array:', issues);
+		if (!Array.isArray(categories)) {
+			console.warn('[DRC] Check returned non-array:', categories);
 			return violatedIds;
 		}
 
-		debugLog(`[DRC] Found ${issues.length} issues`);
+		debugLog(`[DRC] Found ${categories.length} categories`);
 
-		if (issues.length > 0) {
-			const sampleKeys = Object.keys(issues[0]);
-			debugLog(`[DRC Debug] First issue keys: ${JSON.stringify(sampleKeys)}`);
-			try {
-				// 强制转换为字符串以确保显示
-				const issueStr = JSON.stringify(issues[0]);
-				debugLog(`[DRC Debug] First issue JSON: ${issueStr}`);
-			}
-			catch {
-				debugLog('[DRC Debug] Cannot stringify issue');
+		// 过滤覆铜相关 issue
+		let filtered = categories;
+		if (settings.drcIgnoreCopperPour) {
+			filtered = filterOutCopperPourIssues(categories);
+			const origCount = categories.reduce((n, c) => n + (c.count || 0), 0);
+			const filteredCount = filtered.reduce((n, c) => n + (c.count || 0), 0);
+			const removed = origCount - filteredCount;
+			if (removed > 0) {
+				debugLog(`[DRC] Filtered out ${removed} copper pour related issues`);
 			}
 		}
 
-		// 改进的递归 ID 提取器，针对嵌套的 DRC 结果结构优化
-		// 结构通常是: Category -> list[] -> SubCategory -> list[] -> Issue -> objs[]
-		const extractIdsRecursive = (obj: any, foundIds: Set<string>, depth: number = 0) => {
-			if (!obj || typeof obj !== 'object' || depth > 8) // 增加深度限制
-				return;
-
-			// 1. 明确的 ID 容器 (根据 log 结构)
-			if (Array.isArray(obj.objs)) {
-				for (const id of obj.objs) {
-					if (typeof id === 'string')
-						foundIds.add(id);
+		// 三层精确遍历提取违规 ID
+		for (const category of filtered) {
+			if (!Array.isArray(category.list))
+				continue;
+			for (const subCategory of category.list) {
+				if (!Array.isArray(subCategory.list))
+					continue;
+				for (const issue of subCategory.list) {
+					extractViolatedIds(issue, violatedIds);
 				}
 			}
-
-			// 2. 备用路径: explanation.errData
-			if (obj.explanation && obj.explanation.errData) {
-				const data = obj.explanation.errData;
-				if (data.obj1 && typeof data.obj1 === 'string')
-					foundIds.add(data.obj1);
-				if (data.obj2 && typeof data.obj2 === 'string')
-					foundIds.add(data.obj2);
-			}
-
-			// 3. 通用对象属性检查
-			if (obj.id && typeof obj.id === 'string')
-				foundIds.add(obj.id);
-			if (obj.uuid && typeof obj.uuid === 'string')
-				foundIds.add(obj.uuid);
-			if (obj.primitiveId && typeof obj.primitiveId === 'string')
-				foundIds.add(obj.primitiveId);
-			if (obj.gId && typeof obj.gId === 'string')
-				foundIds.add(obj.gId);
-
-			// 4. 递归遍历 list 数组和其他属性
-			if (Array.isArray(obj.list)) {
-				for (const item of obj.list) {
-					extractIdsRecursive(item, foundIds, depth + 1);
-				}
-			}
-			else if (Array.isArray(obj)) {
-				for (const item of obj) {
-					extractIdsRecursive(item, foundIds, depth + 1);
-				}
-			}
-			else {
-				// 遍历对象属性，寻找可能的嵌套结构
-				for (const key of Object.keys(obj)) {
-					// 优化：已处理过的属性不再处理
-					if (key === 'objs' || key === 'list' || key === 'explanation')
-						continue;
-					if (key === 'parent' || key === 'document' || key === 'owner')
-						continue; // 避免循环
-
-					const val = obj[key];
-					if (typeof val === 'object') {
-						extractIdsRecursive(val, foundIds, depth + 1);
-					}
-				}
-			}
-		};
-
-		for (const issue of issues) {
-			extractIdsRecursive(issue, violatedIds);
 		}
 
-		debugLog(`[DRC Debug] Extracted ${violatedIds.size} unique violated IDs.`);
-		if (violatedIds.size > 0) {
-			const sampleIds = Array.from(violatedIds).slice(0, 3);
-			debugLog(`[DRC Debug] Sample IDs: ${JSON.stringify(sampleIds)}`);
-		}
+		debugLog(`[DRC] Extracted ${violatedIds.size} unique violated IDs.`);
 
 		return violatedIds;
 	}
@@ -119,4 +118,76 @@ export async function runDrcCheckAndParse(): Promise<Set<string>> {
 		console.warn('[DRC] runDrcCheckAndParse failed', e);
 		return violatedIds;
 	}
+}
+
+// ============================================================
+// ID 提取
+// ============================================================
+
+/**
+ * 从单条 DRC issue 中提取违规对象 ID
+ * 主路径: issue.objs[]
+ * 备用:   issue.explanation.errData.obj1 / obj2
+ */
+function extractViolatedIds(issue: DrcIssue, ids: Set<string>): void {
+	// 主路径: objs 数组
+	if (Array.isArray(issue.objs)) {
+		for (const id of issue.objs) {
+			if (typeof id === 'string')
+				ids.add(id);
+		}
+	}
+
+	// 备用路径: errData 中的 obj1/obj2
+	const errData = issue.explanation?.errData;
+	if (errData) {
+		if (typeof errData.obj1 === 'string')
+			ids.add(errData.obj1);
+		if (typeof errData.obj2 === 'string')
+			ids.add(errData.obj2);
+	}
+}
+
+// ============================================================
+// 覆铜过滤
+// ============================================================
+
+/**
+ * 判断 Level 2 子类别是否与覆铜区域相关
+ * 已知 API 返回的覆铜对象类型名为 "Copper Region(Filled)"
+ */
+function isCopperPourSubCategory(sub: DrcSubCategory): boolean {
+	return sub.name?.includes('Copper Region') ?? false;
+}
+
+/**
+ * 判断 Level 3 issue 是否与覆铜区域相关
+ */
+function isCopperPourIssue(issue: DrcIssue): boolean {
+	return issue.errorObjType?.includes('Copper Region') ?? false;
+}
+
+/**
+ * 过滤掉覆铜相关的 DRC issue (三层精确结构)
+ *
+ * Level 1 (Category) → Level 2 (Sub-category) → Level 3 (Issue)
+ * 在 Level 2 层过滤: 如果 sub-category name 含覆铜关键词，整组移除
+ * 在 Level 3 层过滤: 逐条检查 errorObjType / obj typeName
+ * 空的 sub-category 和 category 自动剪枝
+ */
+function filterOutCopperPourIssues(categories: DrcCategory[]): DrcCategory[] {
+	return categories
+		.map((category) => {
+			const filteredSubs = category.list
+				.filter(sub => !isCopperPourSubCategory(sub))
+				.map((sub) => {
+					const filteredIssues = sub.list.filter(issue => !isCopperPourIssue(issue));
+					return { ...sub, list: filteredIssues, count: filteredIssues.length };
+				})
+				.filter(sub => sub.list.length > 0);
+
+			const totalCount = filteredSubs.reduce((n, s) => n + s.count, 0);
+			return { ...category, list: filteredSubs, count: totalCount };
+		})
+		.filter(category => category.list.length > 0);
 }

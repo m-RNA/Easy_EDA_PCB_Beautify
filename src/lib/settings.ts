@@ -8,6 +8,7 @@ export interface BeautifySettings {
 	debug: boolean; // 调试模式
 	forceArc: boolean; // 强制生成圆弧 (即使线段太短导致被截断)
 	enableDRC: boolean; // 启用 DRC 检查
+	drcIgnoreCopperPour: boolean; // DRC 忽略覆铜相关规则
 	drcRetryCount: number; // DRC 失败最大重试次数 (控制二分法的深度)
 	cardOrder: string[]; // 设置界面的卡片排序顺序
 	collapsedStates: Record<string, boolean>; // 卡片折叠状态
@@ -23,6 +24,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	debug: false,
 	forceArc: true,
 	enableDRC: true,
+	drcIgnoreCopperPour: true, // 默认忽略覆铜规则（覆铜重铺后通常会自动解决）
 	drcRetryCount: 4, // 4次二分法 (100% -> 50% -> 25% -> 12.5% -> 直角)
 	cardOrder: ['card-transition', 'card-drc', 'card-advanced', 'card-snapshot'],
 	collapsedStates: {

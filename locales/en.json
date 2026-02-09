@@ -13,6 +13,8 @@
 	"设计规则检查 (DRC)": "Design Rule Check (DRC)",
 	"自动避让/回滚": "Auto Avoidance/Rollback",
 	"若圆角导致间距报错，自动尝试缩小半径": "If rounded corners cause spacing errors, automatically try to reduce radius",
+	"忽略覆铜规则": "Ignore Copper Pour Rules",
+	"DRC检查时跳过覆铜相关违规（覆铜重铺后通常会自动解决）": "Skip copper pour violations during DRC (usually resolved after re-pouring)",
 	"高级设置": "Advanced Settings",
 	"合并过渡线段": "Merge Transition Segments",
 	"自动合并中间的过渡线段以生成圆弧": "Automatically merge intermediate transition segments to generate arcs",

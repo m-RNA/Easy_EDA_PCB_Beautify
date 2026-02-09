@@ -564,6 +564,25 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Ignore Copper Pour Rules -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label">
+                        <span data-i18n="忽略覆铜规则">忽略覆铜规则</span>
+                    </div>
+                    <div class="setting-desc" data-i18n="DRC检查时跳过覆铜相关违规（覆铜重铺后通常会自动解决）">DRC检查时跳过覆铜相关违规（覆铜重铺后通常会自动解决）</div>
+                </div>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="drcIgnoreCopperPour" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="drcIgnoreCopperPourLabel" data-i18n="启用">启用</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -905,6 +924,7 @@
         const elForceArc = document.getElementById('forceArc');
         const elMergeTransitionSegments = document.getElementById('mergeTransitionSegments');
         const elEnableDRC = document.getElementById('enableDRC');
+        const elDrcIgnoreCopperPour = document.getElementById('drcIgnoreCopperPour');
 
         // I18n labels update
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
@@ -912,6 +932,7 @@
         const elMergeTransitionSegmentsLabel = document.getElementById('mergeTransitionSegmentsLabel');
         const elForceArcLabel = document.getElementById('forceArcLabel');
         const elEnableDRCLabel = document.getElementById('enableDRCLabel');
+        const elDrcIgnoreCopperPourLabel = document.getElementById('drcIgnoreCopperPourLabel');
 
         // 默认配置 (将在 init 中从 API 获取)
         let DEFAULT_CONFIG = {};
@@ -926,6 +947,7 @@
             elMergeTransitionSegmentsLabel.textContent = elMergeTransitionSegments.checked ? enabledText : disabledText;
             elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
             elEnableDRCLabel.textContent = elEnableDRC.checked ? enabledText : disabledText;
+            elDrcIgnoreCopperPourLabel.textContent = elDrcIgnoreCopperPour.checked ? enabledText : disabledText;
 
             // Visual feedback color for label
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
@@ -933,6 +955,7 @@
             elMergeTransitionSegmentsLabel.style.color = elMergeTransitionSegments.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elEnableDRCLabel.style.color = elEnableDRC.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elDrcIgnoreCopperPourLabel.style.color = elDrcIgnoreCopperPour.checked ? 'var(--primary)' : 'var(--text-secondary)';
         }
 
         // Load
@@ -985,6 +1008,7 @@
                 if (elDebug) elDebug.checked = config.debug;
                 if (elForceArc) elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
                 if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
+                if (elDrcIgnoreCopperPour) elDrcIgnoreCopperPour.checked = config.drcIgnoreCopperPour !== undefined ? config.drcIgnoreCopperPour : true;
 
                 // 还原卡片排序
                 if (config.cardOrder && config.cardOrder.length > 0) {
@@ -1055,6 +1079,7 @@
                 debug: elDebug.checked,
                 forceArc: elForceArc.checked,
                 enableDRC: elEnableDRC.checked,
+                drcIgnoreCopperPour: elDrcIgnoreCopperPour.checked,
                 cardOrder: cardOrder,
                 collapsedStates: collapsedStates,
             };
@@ -1249,7 +1274,7 @@
         bindSmartInput(elRatio, false);
         bindSmartInput(elDirection, true);
 
-        [elSyncWidth, elDebug, elMergeTransitionSegments, elForceArc, elEnableDRC].forEach((el) => {
+        [elSyncWidth, elDebug, elMergeTransitionSegments, elForceArc, elEnableDRC, elDrcIgnoreCopperPour].forEach((el) => {
             if (el) el.addEventListener('change', () => saveSettings());
         });
 
