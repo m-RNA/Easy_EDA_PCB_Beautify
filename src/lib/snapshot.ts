@@ -279,7 +279,7 @@ function extractPrimitiveData(items: any[], type: 'line' | 'arc', pcbId: string)
 				eX: p.getState_EndX ? p.getState_EndX() : p.endX,
 				eY: p.getState_EndY ? p.getState_EndY() : p.endY,
 				a: arcAngle,
-				w: lineWidth ?? 0.254,
+				w: lineWidth ?? 10,
 			};
 		}
 		return base;
@@ -553,6 +553,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 
 		for (const l of linesToCreate) {
 			try {
+				const lineWidth = l.w ?? l.lineWidth ?? 10;
 				await eda.pcb_PrimitiveLine.create(
 					l.n ?? l.net,
 					l.l ?? l.layer,
@@ -560,18 +561,20 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 					l.sY ?? l.sy ?? l.startY,
 					l.eX ?? l.ex ?? l.endX,
 					l.eY ?? l.ey ?? l.endY,
-					l.w ?? l.lineWidth ?? 0.254,
+					lineWidth,
 				);
 			}
 			catch (e) { logWarn(`Line restore error: ${e}`); }
 		}
 
+		// 创建圆弧
 		for (const a of arcsToCreate) {
 			try {
 				const startX = a.sX ?? a.sx ?? a.startX;
 				const angle = a.a ?? a.arcAngle;
+				const width = a.w ?? a.lineWidth ?? 10;
 				if (startX !== undefined && angle !== undefined) {
-					await eda.pcb_PrimitiveArc.create(
+					const res = await eda.pcb_PrimitiveArc.create(
 						a.n ?? a.net,
 						a.l ?? a.layer,
 						startX,
@@ -579,8 +582,26 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 						a.eX ?? a.ex ?? a.endX,
 						a.eY ?? a.ey ?? a.endY,
 						angle,
-						a.w ?? a.lineWidth ?? 0.254,
+						width,
 					);
+
+					// 提取新 ID 并同步 arcWidthMap
+					let newId: string | undefined;
+					if (typeof res === 'string') {
+						newId = res;
+					}
+					else if (res && typeof res === 'object') {
+						if (typeof (res as any).getState_PrimitiveId === 'function')
+							newId = (res as any).getState_PrimitiveId();
+						else if ((res as any).primitiveId)
+							newId = (res as any).primitiveId;
+						else if ((res as any).id)
+							newId = (res as any).id;
+					}
+
+					if (newId) {
+						getArcLineWidthMap().set(makeArcWidthKey(currentPcbId, newId), width);
+					}
 				}
 			}
 			catch (e) { logWarn(`Arc restore error: ${e}`); }

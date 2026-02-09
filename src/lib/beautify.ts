@@ -571,7 +571,23 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		// 辅助函数：根据指令创建图元
 		const commitOps = async (ops: PathOp[], ctx: PathContext) => {
 			let createdArcsCount = 0;
-			const pcbId = (await eda.dmt_Board.getCurrentBoardInfo())?.pcb?.uuid || 'unknown';
+			// 使用与 snapshot.ts getCurrentPcbInfoSafe() 相同的 pcbId 获取逻辑
+			// 确保 arcWidthMap 的 key 与快照创建时的查找一致
+			let pcbId = 'unknown';
+			try {
+				const pcbInfo = await eda.dmt_Pcb.getCurrentPcbInfo();
+				if (pcbInfo) {
+					pcbId = pcbInfo.uuid;
+				}
+				else {
+					const boardInfo = await eda.dmt_Board.getCurrentBoardInfo();
+					if (boardInfo?.pcb)
+						pcbId = boardInfo.pcb.uuid;
+				}
+			}
+			catch {
+				pcbId = (await eda.dmt_Board.getCurrentBoardInfo())?.pcb?.uuid || 'unknown';
+			}
 			for (const item of ops) {
 				if (dist(item.start, item.end) < 0.001)
 					continue;
