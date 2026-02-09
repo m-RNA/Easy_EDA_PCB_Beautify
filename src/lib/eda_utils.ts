@@ -1,4 +1,5 @@
-import { debugLog, logError } from './logger';
+import { debugLog, debugWarn, logError } from './logger';
+import { getSettings } from './settings';
 
 /**
  * 安全地获取选中的导线对象
@@ -53,4 +54,52 @@ export async function getSafeSelectedTracks(selectedIds: string[]): Promise<any[
 	}
 
 	return selectedTracks;
+}
+
+/**
+ * 重铺所有覆铜区域
+ * 遍历 PCB 中所有 Pour 边框，逐个调用 rebuildCopperRegion()
+ * 注意: rebuildCopperRegion 是未公开 API，通过 runtime 验证可用
+ * @returns 成功重铺的数量，失败时返回 -1
+ */
+export async function rebuildAllCopperPours(): Promise<number> {
+	try {
+		const pours = await eda.pcb_PrimitivePour.getAll();
+		if (!pours || pours.length === 0) {
+			debugLog('[CopperPour] No pours found, skipping rebuild');
+			return 0;
+		}
+
+		let rebuilt = 0;
+		for (const pour of pours) {
+			try {
+				await (pour as any).rebuildCopperRegion();
+				rebuilt++;
+			}
+			catch (e: any) {
+				debugWarn(`[CopperPour] Failed to rebuild pour: ${e.message || e}`);
+			}
+		}
+
+		debugLog(`[CopperPour] Rebuilt ${rebuilt}/${pours.length} copper pours`);
+		return rebuilt;
+	}
+	catch (e: any) {
+		debugWarn(`[CopperPour] Rebuild all failed: ${e.message || e}`);
+		return -1;
+	}
+}
+
+/**
+ * 根据设置判断是否重铺覆铜，若启用则显示提示并执行重铺
+ * 统一入口，供 beautify / widthTransition 等流程复用
+ * @returns 成功重铺的数量，未启用时返回 -2，失败时返回 -1
+ */
+export async function rebuildAllCopperPoursIfEnabled(): Promise<number> {
+	const settings = await getSettings();
+	if (!settings.rebuildCopperPourAfterBeautify) {
+		return -2;
+	}
+	eda.sys_Message?.showToastMessage(eda.sys_I18n ? eda.sys_I18n.text('正在重铺覆铜...') : '正在重铺覆铜...');
+	return rebuildAllCopperPours();
 }

@@ -12,6 +12,7 @@
  */
 
 import { beautifyRouting as beautifyTask } from './lib/beautify';
+import { rebuildAllCopperPoursIfEnabled } from './lib/eda_utils';
 import { debugLog, debugWarn, logError } from './lib/logger';
 import { getDefaultSettings, getSettings } from './lib/settings';
 import { undoLastOperation as undoTask } from './lib/snapshot';
@@ -99,6 +100,9 @@ export async function beautifySelected() {
 export async function beautifyAll() {
 	try {
 		await beautifyTask('all');
+
+		// 重铺覆铜
+		await rebuildAllCopperPoursIfEnabled();
 	}
 	catch (e: any) {
 		handleError(e);
@@ -157,6 +161,10 @@ export async function widthTransitionSelected() {
 export async function widthTransitionAll() {
 	try {
 		await addWidthTransitionsAll();
+
+		// 重铺覆铜
+		await rebuildAllCopperPoursIfEnabled();
+
 		eda.sys_Message?.showToastMessage(eda.sys_I18n ? eda.sys_I18n.text('线宽过渡完成') : '线宽过渡完成');
 	}
 	catch (e: any) {

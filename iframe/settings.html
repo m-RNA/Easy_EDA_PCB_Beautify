@@ -533,6 +533,25 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Rebuild Copper Pour After Beautify All -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label">
+                        <span data-i18n="完成后重铺覆铜">完成后重铺覆铜</span>
+                    </div>
+                    <div class="setting-desc" data-i18n="执行全部操作后自动重铺所有覆铜区域">执行全部操作后自动重铺所有覆铜区域</div>
+                </div>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="rebuildCopperPour" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="rebuildCopperPourLabel" data-i18n="启用">启用</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -925,6 +944,7 @@
         const elMergeTransitionSegments = document.getElementById('mergeTransitionSegments');
         const elEnableDRC = document.getElementById('enableDRC');
         const elDrcIgnoreCopperPour = document.getElementById('drcIgnoreCopperPour');
+        const elRebuildCopperPour = document.getElementById('rebuildCopperPour');
 
         // I18n labels update
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
@@ -933,6 +953,7 @@
         const elForceArcLabel = document.getElementById('forceArcLabel');
         const elEnableDRCLabel = document.getElementById('enableDRCLabel');
         const elDrcIgnoreCopperPourLabel = document.getElementById('drcIgnoreCopperPourLabel');
+        const elRebuildCopperPourLabel = document.getElementById('rebuildCopperPourLabel');
 
         // 默认配置 (将在 init 中从 API 获取)
         let DEFAULT_CONFIG = {};
@@ -948,6 +969,7 @@
             elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
             elEnableDRCLabel.textContent = elEnableDRC.checked ? enabledText : disabledText;
             elDrcIgnoreCopperPourLabel.textContent = elDrcIgnoreCopperPour.checked ? enabledText : disabledText;
+            elRebuildCopperPourLabel.textContent = elRebuildCopperPour.checked ? enabledText : disabledText;
 
             // Visual feedback color for label
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
@@ -956,6 +978,7 @@
             elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elEnableDRCLabel.style.color = elEnableDRC.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDrcIgnoreCopperPourLabel.style.color = elDrcIgnoreCopperPour.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elRebuildCopperPourLabel.style.color = elRebuildCopperPour.checked ? 'var(--primary)' : 'var(--text-secondary)';
         }
 
         // Load
@@ -1009,6 +1032,7 @@
                 if (elForceArc) elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
                 if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
                 if (elDrcIgnoreCopperPour) elDrcIgnoreCopperPour.checked = config.drcIgnoreCopperPour !== undefined ? config.drcIgnoreCopperPour : true;
+                if (elRebuildCopperPour) elRebuildCopperPour.checked = config.rebuildCopperPourAfterBeautify !== undefined ? config.rebuildCopperPourAfterBeautify : true;
 
                 // 还原卡片排序
                 if (config.cardOrder && config.cardOrder.length > 0) {
@@ -1080,6 +1104,7 @@
                 forceArc: elForceArc.checked,
                 enableDRC: elEnableDRC.checked,
                 drcIgnoreCopperPour: elDrcIgnoreCopperPour.checked,
+                rebuildCopperPourAfterBeautify: elRebuildCopperPour.checked,
                 cardOrder: cardOrder,
                 collapsedStates: collapsedStates,
             };
@@ -1274,7 +1299,7 @@
         bindSmartInput(elRatio, false);
         bindSmartInput(elDirection, true);
 
-        [elSyncWidth, elDebug, elMergeTransitionSegments, elForceArc, elEnableDRC, elDrcIgnoreCopperPour].forEach((el) => {
+        [elSyncWidth, elDebug, elMergeTransitionSegments, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
             if (el) el.addEventListener('change', () => saveSettings());
         });
 

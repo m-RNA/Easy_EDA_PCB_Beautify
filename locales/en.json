@@ -66,5 +66,8 @@
 	"清除手动快照": "Clear Manual Snapshots",
 	"已清除": "Cleared",
 	"已保存": "Saved",
-	"请先打开PCB文档": "Please open a PCB document first"
+	"请先打开PCB文档": "Please open a PCB document first",
+	"完成后重铺覆铜": "Rebuild Copper Pour After Completion",
+	"执行全部操作后自动重铺所有覆铜区域": "Automatically rebuild all copper pours after Beautify All or Width Transition All",
+	"正在重铺覆铜...": "Rebuilding copper pours..."
 }
