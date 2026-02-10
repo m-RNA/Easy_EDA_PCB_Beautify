@@ -206,7 +206,7 @@ function isArcEqual(a: any, b: any) {
 }
 
 // 辅助函数：比较两个快照的数据是否完全一致 (忽略顺序)
-function isSnapshotDataIdentical(snapshotA: RoutingSnapshot, snapshotB: RoutingSnapshot): boolean {
+function _isSnapshotDataIdentical(snapshotA: RoutingSnapshot, snapshotB: RoutingSnapshot): boolean {
 	if (snapshotA.lines.length !== snapshotB.lines.length)
 		return false;
 	if (snapshotA.arcs.length !== snapshotB.arcs.length)
@@ -228,6 +228,47 @@ function isSnapshotDataIdentical(snapshotA: RoutingSnapshot, snapshotB: RoutingS
 
 	for (let i = 0; i < arcsA.length; i++) {
 		if (!isArcEqual(arcsA[i], arcsB[i]))
+			return false;
+	}
+
+	return true;
+}
+
+/**
+ * 几何排序键：忽略图元 ID，仅包含坐标、网络、层、线宽、角度
+ * 用于在 undo/restore 后 ID 变化时仍能检测实际相同的布线状态
+ */
+function geometrySortKey(p: any): string {
+	const net = p.n ?? p.net ?? '';
+	const layer = p.l ?? p.layer ?? 0;
+	const sx = (p.sX ?? p.sx ?? p.startX ?? 0).toFixed(3);
+	const sy = (p.sY ?? p.sy ?? p.startY ?? 0).toFixed(3);
+	const ex = (p.eX ?? p.ex ?? p.endX ?? 0).toFixed(3);
+	const ey = (p.eY ?? p.ey ?? p.endY ?? 0).toFixed(3);
+	const w = (p.w ?? p.lineWidth ?? 0).toFixed(3);
+	const a = (p.a ?? p.arcAngle ?? 0).toFixed(3);
+	return `${net}|${layer}|${sx}|${sy}|${ex}|${ey}|${w}|${a}`;
+}
+
+/**
+ * 仅比较几何数据的快照一致性检查（忽略图元 ID）
+ * 解决 undo/restore 循环后图元 ID 变化导致 isSnapshotDataIdentical 去重失败的问题
+ */
+function isSnapshotGeometryIdentical(a: RoutingSnapshot, b: RoutingSnapshot): boolean {
+	if (a.lines.length !== b.lines.length || a.arcs.length !== b.arcs.length)
+		return false;
+
+	const linesA = a.lines.map(geometrySortKey).sort();
+	const linesB = b.lines.map(geometrySortKey).sort();
+	for (let i = 0; i < linesA.length; i++) {
+		if (linesA[i] !== linesB[i])
+			return false;
+	}
+
+	const arcsA = a.arcs.map(geometrySortKey).sort();
+	const arcsB = b.arcs.map(geometrySortKey).sort();
+	for (let i = 0; i < arcsA.length; i++) {
+		if (arcsA[i] !== arcsB[i])
 			return false;
 	}
 
@@ -365,13 +406,12 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 		// 决定存入哪个列表
 		const targetList = isManual ? pcbStore.manual : pcbStore.auto;
 
-		// Check duplicate against the latest one in the target list
+		// 几何去重：扫描目标列表中所有快照，忽略图元 ID 仅比较坐标/网络/层/线宽/角度
+		// 解决 undo/restore 循环后图元 ID 变化导致去重失败产生冗余快照的问题
 		if (targetList.length > 0) {
-			const latest = targetList[0];
-			const isIdentical = isSnapshotDataIdentical(latest, snapshot);
-
-			if (isIdentical) {
-				debugLog('Snapshot skipped: Identical to the latest one.', 'Snapshot');
+			const duplicate = targetList.find(existing => isSnapshotGeometryIdentical(existing, snapshot));
+			if (duplicate) {
+				debugLog(`Snapshot skipped: Geometry identical to "${duplicate.name}" (id: ${duplicate.id})`, 'Snapshot');
 				if (isManual && eda.sys_Message) {
 					const msg = eda.sys_I18n ? eda.sys_I18n.text('当前布线状态与最新快照一致，无需重复创建') : 'Current state matches the latest snapshot.';
 					eda.sys_Message.showToastMessage(msg);
