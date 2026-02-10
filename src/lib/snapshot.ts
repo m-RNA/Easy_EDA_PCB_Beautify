@@ -1,4 +1,4 @@
-import { getArcLineWidthMap, makeArcWidthKey } from './beautify';
+import { getArcWidthByGeoMap, makeArcWidthGeoKey } from './beautify';
 import { debugLog, logError, logWarn } from './logger';
 import { isClose } from './math';
 
@@ -205,35 +205,6 @@ function isArcEqual(a: any, b: any) {
 	return true;
 }
 
-// 辅助函数：比较两个快照的数据是否完全一致 (忽略顺序)
-function _isSnapshotDataIdentical(snapshotA: RoutingSnapshot, snapshotB: RoutingSnapshot): boolean {
-	if (snapshotA.lines.length !== snapshotB.lines.length)
-		return false;
-	if (snapshotA.arcs.length !== snapshotB.arcs.length)
-		return false;
-
-	// Sort by ID for stable comparison
-	const sortById = (a: any, b: any) => ((a.i || a.id) > (b.i || b.id) ? 1 : -1);
-
-	const linesA = [...snapshotA.lines].sort(sortById);
-	const linesB = [...snapshotB.lines].sort(sortById);
-
-	for (let i = 0; i < linesA.length; i++) {
-		if (!isLineEqual(linesA[i], linesB[i]))
-			return false;
-	}
-
-	const arcsA = [...snapshotA.arcs].sort(sortById);
-	const arcsB = [...snapshotB.arcs].sort(sortById);
-
-	for (let i = 0; i < arcsA.length; i++) {
-		if (!isArcEqual(arcsA[i], arcsB[i]))
-			return false;
-	}
-
-	return true;
-}
-
 /**
  * 几何排序键：忽略图元 ID，仅包含坐标、网络、层、线宽、角度
  * 用于在 undo/restore 后 ID 变化时仍能检测实际相同的布线状态
@@ -276,55 +247,145 @@ function isSnapshotGeometryIdentical(a: RoutingSnapshot, b: RoutingSnapshot): bo
 }
 
 // 辅助函数：提取图元数据 (使用短 Key 减少存储体积)
-function extractPrimitiveData(items: any[], type: 'line' | 'arc', pcbId: string) {
-	return items.map((p) => {
-		const base = {
-			n: p.getState_Net ? p.getState_Net() : p.net,
-			l: p.getState_Layer ? p.getState_Layer() : p.layer,
-			i: p.getState_PrimitiveId ? p.getState_PrimitiveId() : p.primitiveId,
-		};
-
-		if (type === 'line') {
+function extractPrimitiveData(items: any[], type: 'line' | 'arc', _pcbId: string) {
+	// Line 类型：直接提取，getState_LineWidth 对 Line 返回正确
+	if (type === 'line') {
+		return items.map((p) => {
 			const lineWidth = p.getState_LineWidth ? p.getState_LineWidth() : p.lineWidth;
 			return {
-				...base,
+				n: p.getState_Net ? p.getState_Net() : p.net,
+				l: p.getState_Layer ? p.getState_Layer() : p.layer,
+				i: p.getState_PrimitiveId ? p.getState_PrimitiveId() : p.primitiveId,
 				sX: p.getState_StartX ? p.getState_StartX() : p.startX,
 				sY: p.getState_StartY ? p.getState_StartY() : p.startY,
 				eX: p.getState_EndX ? p.getState_EndX() : p.endX,
 				eY: p.getState_EndY ? p.getState_EndY() : p.endY,
 				w: lineWidth,
 			};
+		});
+	}
+
+	// Arc 类型：通过几何键查找正确宽度
+	// getState_LineWidth() 对圆弧可能返回错误的 10mil 默认值
+	// 查找优先级: 几何键 Map → API fallback
+	const geoWidthMap = getArcWidthByGeoMap();
+
+	return items.map((p) => {
+		const net = p.getState_Net ? p.getState_Net() : p.net;
+		const layer = p.getState_Layer ? p.getState_Layer() : p.layer;
+		const arcId = p.getState_PrimitiveId ? p.getState_PrimitiveId() : p.primitiveId;
+		const arcAngle = p.getState_ArcAngle ? p.getState_ArcAngle() : p.arcAngle;
+		const sx = p.getState_StartX ? p.getState_StartX() : p.startX;
+		const sy = p.getState_StartY ? p.getState_StartY() : p.startY;
+		const ex = p.getState_EndX ? p.getState_EndX() : p.endX;
+		const ey = p.getState_EndY ? p.getState_EndY() : p.endY;
+
+		// 1. 几何键查找（唯一可信数据源，由 beautifyRouting 写入）
+		let lineWidth: number | undefined;
+		{
+			const geoKey = makeArcWidthGeoKey(net, layer, sx, sy, ex, ey);
+			lineWidth = geoWidthMap.get(geoKey);
 		}
-		else if (type === 'arc') {
-			const arcAngle = p.getState_ArcAngle ? p.getState_ArcAngle() : p.arcAngle;
-			const arcId = base.i;
 
-			// Priority: Global Map -> API -> Property
-			const arcWidthMap = getArcLineWidthMap();
-			const mapKey = makeArcWidthKey(pcbId, arcId);
-			let lineWidth = arcWidthMap.get(mapKey);
-
-			if (lineWidth === undefined) {
-				if (p.getState_LineWidth) {
-					lineWidth = p.getState_LineWidth();
-				}
-				else if (p.lineWidth !== undefined) {
-					lineWidth = p.lineWidth;
-				}
+		// 2. 几何键未命中，回退到 API（对圆弧可能返回错误值）
+		if (lineWidth === undefined) {
+			if (p.getState_LineWidth) {
+				lineWidth = p.getState_LineWidth();
 			}
-
-			return {
-				...base,
-				sX: p.getState_StartX ? p.getState_StartX() : p.startX,
-				sY: p.getState_StartY ? p.getState_StartY() : p.startY,
-				eX: p.getState_EndX ? p.getState_EndX() : p.endX,
-				eY: p.getState_EndY ? p.getState_EndY() : p.endY,
-				a: arcAngle,
-				w: lineWidth ?? 10,
-			};
+			else if (p.lineWidth !== undefined) {
+				lineWidth = p.lineWidth;
+			}
 		}
-		return base;
+
+		return {
+			n: net,
+			l: layer,
+			i: arcId,
+			sX: sx,
+			sY: sy,
+			eX: ex,
+			eY: ey,
+			a: arcAngle,
+			w: lineWidth ?? 10,
+		};
 	});
+}
+
+/**
+ * 通过端点连接关系修复圆弧线宽
+ *
+ * 原理：PCB 布线中，圆弧（圆角/圆滑）的线宽必须与其连接的导线一致。
+ * 当 getState_LineWidth() 对圆弧返回错误的 10mil 默认值且几何键匹配失败时，
+ * 可通过查找端点相连的导线或已知线宽的圆弧来推导正确线宽。
+ * 支持多轮迭代处理 arc→arc→...→line 的链式连接。
+ */
+function resolveArcWidths(lines: any[], arcs: any[]): void {
+	// 只处理线宽为 10（可疑默认值）的圆弧
+	const suspicious = arcs.filter(a => (a.w ?? 10) === 10);
+	if (suspicious.length === 0)
+		return;
+
+	// 端点坐标键（含 net+layer，精度 0.1（保留 1 位小数）用于模糊匹配）
+	const ptKey = (x: number, y: number, net: any, layer: any) =>
+		`${net}#${layer}#${Number(x).toFixed(1)}|${Number(y).toFixed(1)}`;
+
+	// 构建端点 → 线宽映射（从导线获取可信线宽）
+	const epWidth = new Map<string, number>();
+	for (const l of lines) {
+		const w = l.w ?? l.lineWidth ?? 10;
+		const n = l.n ?? l.net;
+		const ly = l.l ?? l.layer;
+		const k1 = ptKey(l.sX ?? l.sx ?? l.startX, l.sY ?? l.sy ?? l.startY, n, ly);
+		const k2 = ptKey(l.eX ?? l.ex ?? l.endX, l.eY ?? l.ey ?? l.endY, n, ly);
+		// 非 10mil 的值优先
+		if (w !== 10 || !epWidth.has(k1))
+			epWidth.set(k1, w);
+		if (w !== 10 || !epWidth.has(k2))
+			epWidth.set(k2, w);
+	}
+
+	// 非可疑圆弧也加入端点映射（传播已知线宽）
+	for (const a of arcs) {
+		const w = a.w ?? 10;
+		if (w === 10)
+			continue;
+		const n = a.n ?? a.net;
+		const ly = a.l ?? a.layer;
+		const k1 = ptKey(a.sX ?? a.sx ?? a.startX, a.sY ?? a.sy ?? a.startY, n, ly);
+		const k2 = ptKey(a.eX ?? a.ex ?? a.endX, a.eY ?? a.ey ?? a.endY, n, ly);
+		if (!epWidth.has(k1))
+			epWidth.set(k1, w);
+		if (!epWidth.has(k2))
+			epWidth.set(k2, w);
+	}
+
+	// 多轮修复（处理 arc→arc→...→line 的链式连接）
+	let changed = true;
+	for (let pass = 0; pass < 10 && changed; pass++) {
+		changed = false;
+		for (const a of suspicious) {
+			if ((a.w ?? 10) !== 10)
+				continue; // 已修复
+			const n = a.n ?? a.net;
+			const ly = a.l ?? a.layer;
+			const k1 = ptKey(a.sX ?? a.sx ?? a.startX, a.sY ?? a.sy ?? a.startY, n, ly);
+			const k2 = ptKey(a.eX ?? a.ex ?? a.endX, a.eY ?? a.ey ?? a.endY, n, ly);
+			const w1 = epWidth.get(k1);
+			const w2 = epWidth.get(k2);
+			const resolved = (w1 !== undefined && w1 !== 10)
+				? w1
+				: (w2 !== undefined && w2 !== 10)
+						? w2
+						: undefined;
+			if (resolved !== undefined) {
+				a.w = resolved;
+				changed = true;
+				// 传播：已修复圆弧的端点也可用于下一轮
+				epWidth.set(k1, resolved);
+				epWidth.set(k2, resolved);
+			}
+		}
+	}
 }
 
 /**
@@ -387,6 +448,10 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 			lines: extractPrimitiveData(lines || [], 'line', pcbId),
 			arcs: extractPrimitiveData(arcs || [], 'arc', pcbId),
 		};
+
+		// 修复圆弧线宽：通过端点连接关系从导线推导正确线宽
+		// 解决 getState_LineWidth() 对圆弧返回 10mil 且 geo map key 不匹配的问题
+		resolveArcWidths(snapshot.lines, snapshot.arcs);
 
 		// 获取现有数据
 		const pcbStore = await getPcbStorageData(pcbId);
@@ -607,14 +672,32 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 			catch (e) { logWarn(`Line restore error: ${e}`); }
 		}
 
+		// 修复快照中圆弧线宽（通过连接关系从导线推导）
+		// arcsToCreate 引用自 snapshot.arcs 对象，修改会同步生效
+		resolveArcWidths(snapshot.lines, snapshot.arcs);
+
 		// 创建圆弧
 		for (const a of arcsToCreate) {
 			try {
 				const startX = a.sX ?? a.sx ?? a.startX;
 				const angle = a.a ?? a.arcAngle;
-				const width = a.w ?? a.lineWidth ?? 10;
+				// 优先使用 geo map 中的正确宽度（由 beautifyRouting 写入）
+				// 快照中的 w 可能因之前的 API Bug 而不正确
+				let width = a.w ?? a.lineWidth ?? 10;
+				const geoKey = makeArcWidthGeoKey(
+					a.n ?? a.net,
+					a.l ?? a.layer,
+					startX,
+					a.sY ?? a.sy ?? a.startY,
+					a.eX ?? a.ex ?? a.endX,
+					a.eY ?? a.ey ?? a.endY,
+				);
+				const geoWidth = getArcWidthByGeoMap().get(geoKey);
+				if (geoWidth !== undefined) {
+					width = geoWidth;
+				}
 				if (startX !== undefined && angle !== undefined) {
-					const res = await eda.pcb_PrimitiveArc.create(
+					await eda.pcb_PrimitiveArc.create(
 						a.n ?? a.net,
 						a.l ?? a.layer,
 						startX,
@@ -624,24 +707,6 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 						angle,
 						width,
 					);
-
-					// 提取新 ID 并同步 arcWidthMap
-					let newId: string | undefined;
-					if (typeof res === 'string') {
-						newId = res;
-					}
-					else if (res && typeof res === 'object') {
-						if (typeof (res as any).getState_PrimitiveId === 'function')
-							newId = (res as any).getState_PrimitiveId();
-						else if ((res as any).primitiveId)
-							newId = (res as any).primitiveId;
-						else if ((res as any).id)
-							newId = (res as any).id;
-					}
-
-					if (newId) {
-						getArcLineWidthMap().set(makeArcWidthKey(currentPcbId, newId), width);
-					}
 				}
 			}
 			catch (e) { logWarn(`Arc restore error: ${e}`); }

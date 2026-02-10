@@ -8,25 +8,48 @@ import { createSnapshot } from './snapshot';
 import { addWidthTransitionsAll } from './widthTransition';
 
 /**
- * 获取全局圆弧线宽 Map
- * 因为 JLC EDA API 的 getState_LineWidth() 返回的值可能不正确
- * 挂载到 eda 对象避免循环依赖问题
- * Key 格式: ${pcbId}_${arcId} 以区分不同 PCB
+ * 获取基于几何信息的圆弧线宽 Map（单一数据源）
+ * 用圆弧的几何信息（坐标+网络+层）作为唯一标识，不依赖图元 ID
+ * 解决 EDA 可能修改图元 ID 导致查找失败的问题
+ * 重要：只由 beautifyRouting(commitOps) 写入，restoreSnapshot 只读不写
  */
-export function getArcLineWidthMap(): Map<string, number> {
-	if (!(eda as any)._arcLineWidthMap) {
-		(eda as any)._arcLineWidthMap = new Map<string, number>();
+export function getArcWidthByGeoMap(): Map<string, number> {
+	if (!(eda as any)._arcWidthByGeoMap) {
+		(eda as any)._arcWidthByGeoMap = new Map<string, number>();
 	}
-	return (eda as any)._arcLineWidthMap;
+	return (eda as any)._arcWidthByGeoMap;
 }
 
 /**
- * 生成带 PCB ID 的 Map key
- * @param pcbId PCB 文档 ID
- * @param arcId 圆弧原语 ID
+ * 生成基于几何信息的 Map key
+ * 使用 net + layer + 起终点坐标唯一标识一个圆弧
+ * 不包含角度：避免 beautifyRouting 计算角度与 EDA getState_ArcAngle() 返回值的微小差异导致 key 不匹配
+ * 使用 toFixed(1) 降低精度增加容差
  */
-export function makeArcWidthKey(pcbId: string, arcId: string): string {
-	return `${pcbId}_${arcId}`;
+export function makeArcWidthGeoKey(
+	net: string | number,
+	layer: string | number,
+	sx: number,
+	sy: number,
+	ex: number,
+	ey: number,
+): string {
+	// 规范化起终点顺序：确保 (sx, sy) 在字典序上小于等于 (ex, ey)
+	// 这样相同的几何圆弧（无论起点/终点如何标记）都会生成相同的 key
+	let nsx = sx;
+	let nsy = sy;
+	let nex = ex;
+	let ney = ey;
+
+	if (nsx > nex || (nsx === nex && nsy > ney)) {
+		// 交换起终点
+		nsx = ex;
+		nsy = ey;
+		nex = sx;
+		ney = sy;
+	}
+
+	return `${net}#${layer}#${nsx.toFixed(1)}#${nsy.toFixed(1)}#${nex.toFixed(1)}#${ney.toFixed(1)}`;
 }
 
 // 定义几何操作指令接口
@@ -571,23 +594,6 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		// 辅助函数：根据指令创建图元
 		const commitOps = async (ops: PathOp[], ctx: PathContext) => {
 			let createdArcsCount = 0;
-			// 使用与 snapshot.ts getCurrentPcbInfoSafe() 相同的 pcbId 获取逻辑
-			// 确保 arcWidthMap 的 key 与快照创建时的查找一致
-			let pcbId = 'unknown';
-			try {
-				const pcbInfo = await eda.dmt_Pcb.getCurrentPcbInfo();
-				if (pcbInfo) {
-					pcbId = pcbInfo.uuid;
-				}
-				else {
-					const boardInfo = await eda.dmt_Board.getCurrentBoardInfo();
-					if (boardInfo?.pcb)
-						pcbId = boardInfo.pcb.uuid;
-				}
-			}
-			catch {
-				pcbId = (await eda.dmt_Board.getCurrentBoardInfo())?.pcb?.uuid || 'unknown';
-			}
 			for (const item of ops) {
 				if (dist(item.start, item.end) < 0.001)
 					continue;
@@ -634,11 +640,10 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 					else if (res && (res as any).getState_PrimitiveId)
 						newId = (res as any).getState_PrimitiveId();
 
-					if (newId) {
-						const mapKey = makeArcWidthKey(pcbId, newId);
-						getArcLineWidthMap().set(mapKey, item.width);
-						createdArcsCount++;
-					}
+					// 几何键存储（单一数据源，不依赖图元 ID）
+					const geoKey = makeArcWidthGeoKey(ctx.net, ctx.layer, item.start.x, item.start.y, item.end.x, item.end.y);
+					getArcWidthByGeoMap().set(geoKey, item.width);
+					createdArcsCount++;
 				}
 
 				if (newId) {
