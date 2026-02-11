@@ -273,6 +273,58 @@ Both `beautifyAll()` and `widthTransitionAll()` in `index.ts` call the high-leve
 - Each pour is rebuilt independently. For boards with many copper zones, this may take noticeable time.
 - Since this API is undocumented, it may change or be removed in future EDA versions. Monitor for breakage on EDA updates.
 
+## Copper Pour ID Spaces: Three Non-Overlapping Systems
+
+### Discovery (2026-02-12)
+
+When implementing smart copper pour rebuild (only repouring DRC-violated regions instead of all 78 pours), we spent significant debugging time trying to match DRC-reported IDs to `pcb_PrimitivePour` objects. The root cause: **the EDA runtime maintains three completely independent ID namespaces for copper-related objects**, and none of them overlap.
+
+### The Three ID Spaces
+
+| # | Object Type | API / Source | Example ID | Description |
+| --- | --- | --- | --- | --- |
+| 1 | **Pour boundary** | `eda.pcb_PrimitivePour` | `2316cffa0d9f91e4` | User-drawn copper pour outline. This is what `rebuildCopperRegion()` operates on. |
+| 2 | **Poured fill** | `eda.pcb_PrimitivePoured` | `df0d4325623cd52b` | Generated fill polygons created by the pour engine. Regenerated on every rebuild. |
+| 3 | **DRC internal** | `eda.pcb_Drc.check()` → `errData.obj1/obj2` | `296cf192d9a8e1b5` | Internal "Copper Region(Filled)" references used only within DRC error reporting. |
+
+### Diagnostic Evidence
+
+```shell
+DRC IDs (Sample):    296cf192d9a8e1b5, 7150c4091f757010, 94a2eea540594e9f
+Pour IDs (Sample):   2316cffa0d9f91e4, 6ed988d76a53f6fe, ce5d6f2a975bc84c
+Poured IDs (Sample): df0d4325623cd52b, 05f30e00070409b1, 3b54e96ec0519aaa
+```
+
+Zero intersection between any two sets across 78 pour objects and 64 DRC violations.
+
+### Additional Findings on `pcb_PrimitivePoured`
+
+- The `pourPrimitiveId` field exists on Poured objects but **points to its own `primitiveId`**, not to the parent Pour boundary. It is effectively a self-reference.
+- `parentPrimitiveId` is `undefined` at runtime.
+- `getState_Net()` and `getState_Layer()` both return `undefined` (the object has no net/layer accessors).
+- Direct property access (`.net`, `.layer`) also returns `undefined`.
+
+This means **Poured objects cannot be used as a bridge** between DRC IDs and Pour IDs — they carry no usable linkage information.
+
+### Solution: Layer-Based Filtering
+
+Since ID matching is impossible, we use **layer IDs** from the DRC error data as the matching dimension:
+
+1. `errData.layerIds: number[]` — available on every DRC issue, contains the physical layer numbers where the violation occurs.
+2. `pour.getState_Layer(): number` — returns the layer ID of each Pour boundary.
+
+**Algorithm:**
+
+```shell
+DRC issues → extract violated layer IDs → filter Pour objects by layer → rebuildCopperRegion() only on matching pours
+```
+
+This reduces rebuild scope from all pours to only those on affected layers (e.g., 30/78 instead of 78/78 on a typical multi-layer board).
+
+### Lesson
+
+When working with EDA Pro's internal object model, **never assume IDs from different API endpoints share the same namespace**. Always verify with diagnostic logging before building ID-based matching logic.
+
 ---
 Created: 2026-01-31
-Updated: 2026-02-10
+Updated: 2026-02-12

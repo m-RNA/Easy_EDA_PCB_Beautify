@@ -88,6 +88,9 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
 export async function beautifySelected() {
 	try {
 		await beautifyTask('selected');
+
+		// 重铺覆铜
+		await rebuildAllCopperPoursIfEnabled();
 	}
 	catch (e: any) {
 		handleError(e);
@@ -140,6 +143,9 @@ export async function undoOperation() {
 export async function widthTransitionSelected() {
 	try {
 		await addWidthTransitionsSelected();
+
+		// 重铺覆铜
+		await rebuildAllCopperPoursIfEnabled();
 	}
 	catch (e: any) {
 		logError(`Width Transition Error: ${e.message || e}`);
