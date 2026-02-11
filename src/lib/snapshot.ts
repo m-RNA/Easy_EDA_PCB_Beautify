@@ -247,7 +247,7 @@ function isSnapshotGeometryIdentical(a: RoutingSnapshot, b: RoutingSnapshot): bo
 }
 
 // 辅助函数：提取图元数据 (使用短 Key 减少存储体积)
-function extractPrimitiveData(items: any[], type: 'line' | 'arc', _pcbId: string) {
+function extractPrimitiveData(items: any[], type: 'line' | 'arc') {
 	// Line 类型：直接提取，getState_LineWidth 对 Line 返回正确
 	if (type === 'line') {
 		return items.map((p) => {
@@ -445,8 +445,8 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 			timestamp: Date.now(),
 			pcbId,
 			isManual,
-			lines: extractPrimitiveData(lines || [], 'line', pcbId),
-			arcs: extractPrimitiveData(arcs || [], 'arc', pcbId),
+			lines: extractPrimitiveData(lines || [], 'line'),
+			arcs: extractPrimitiveData(arcs || [], 'arc'),
 		};
 
 		// 修复圆弧线宽：通过端点连接关系从导线推导正确线宽
@@ -464,6 +464,11 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 				pcbStore.auto.splice(0, idx);
 				debugLog(`Snapshot history truncated: removed ${idx} newer items`, 'Snapshot');
 			}
+			else if (idx === -1) {
+				// 如果恢复点不在 auto 列表中（说明是从 manual 恢复的），则视为开始全新分支。
+				// 保留旧 history，但新生成的快照会自然排在最前，形成新的 undo 点。
+				debugLog('Operation follows a manual restore or missing auto point. Starting new sequence.', 'Snapshot');
+			}
 			// 重置指针
 			setLastRestoredId(null);
 		}
@@ -471,12 +476,12 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 		// 决定存入哪个列表
 		const targetList = isManual ? pcbStore.manual : pcbStore.auto;
 
-		// 几何去重：扫描目标列表中所有快照，忽略图元 ID 仅比较坐标/网络/层/线宽/角度
-		// 解决 undo/restore 循环后图元 ID 变化导致去重失败产生冗余快照的问题
+		// 几何去重：仅对比目标列表中的最新一个快照
+		// 之前版本扫描全列表会导致：(1) 恢复旧快照后因与历史匹配而无法创建新的 Before 记录 (2) 达到上限后因状态重复导致列表不再更新
 		if (targetList.length > 0) {
-			const duplicate = targetList.find(existing => isSnapshotGeometryIdentical(existing, snapshot));
-			if (duplicate) {
-				debugLog(`Snapshot skipped: Geometry identical to "${duplicate.name}" (id: ${duplicate.id})`, 'Snapshot');
+			const latest = targetList[0];
+			if (isSnapshotGeometryIdentical(latest, snapshot)) {
+				debugLog(`Snapshot skipped: Geometry identical to latest "${latest.name}" (id: ${latest.id})`, 'Snapshot');
 				if (isManual && eda.sys_Message) {
 					const msg = eda.sys_I18n ? eda.sys_I18n.text('当前布线状态与最新快照一致，无需重复创建') : 'Current state matches the latest snapshot.';
 					eda.sys_Message.showToastMessage(msg);
@@ -593,9 +598,15 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		if (!confirmed)
 			return false;
 
-		// Force backup if mismatch
-		if (isMismatch) {
-			await createSnapshot(eda.sys_I18n?.text ? eda.sys_I18n.text('强制恢复前备份') : 'Backup (Pre-Force Restore)', false);
+		// 自动备份逻辑：将手动恢复视为一个独立操作，记录 Before/After
+		const snapName = snapshot.name.replace(/^\[.*?\]\s*/, '');
+		const isSpecialRestore = snapshot.isManual || isMismatch;
+
+		if (isSpecialRestore) {
+			const beforeName = eda.sys_I18n?.text
+				? `${eda.sys_I18n.text('恢复')} [${snapName}] Before`
+				: `Restore [${snapName}] Before`;
+			await createSnapshot(beforeName, false);
 		}
 
 		if (eda.sys_LoadingAndProgressBar) {
@@ -603,8 +614,8 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		}
 
 		// 恢复逻辑 (Diff)
-		const currentLines = extractPrimitiveData(await eda.pcb_PrimitiveLine.getAll() || [], 'line', currentPcbId);
-		const currentArcs = extractPrimitiveData(await eda.pcb_PrimitiveArc.getAll() || [], 'arc', currentPcbId);
+		const currentLines = extractPrimitiveData(await eda.pcb_PrimitiveLine.getAll() || [], 'line');
+		const currentArcs = extractPrimitiveData(await eda.pcb_PrimitiveArc.getAll() || [], 'arc');
 
 		const currentLineMap = new Map(currentLines.map((l: any) => [l.i || l.id, l]));
 		const linesToDelete: string[] = [];
@@ -716,7 +727,17 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 			eda.sys_Message.showToastMessage(`恢复成功 (L:${linesToCreate.length - linesToDelete.length}, A:${arcsToCreate.length - arcsToDelete.length})`);
 		}
 
+		// 如果是特殊恢复（手动或跨PCB），创建 After 快照作为当前状态
+		if (isSpecialRestore) {
+			const afterName = eda.sys_I18n?.text
+				? `${eda.sys_I18n.text('恢复')} [${snapName}] After`
+				: `Restore [${snapName}] After`;
+			await createSnapshot(afterName, false);
+		}
+
+		// 记录恢复点：无论是手动还是自动，都记录其 ID 以便在 UI 显示“上次撤销至此”
 		setLastRestoredId(snapshot.id);
+
 		notifySnapshotChange();
 		return true;
 	}
@@ -807,9 +828,12 @@ export async function undoLastOperation() {
 				startIndex = idx + 1; // 找更旧的一个
 			}
 		}
-		else {
-			// 如果是第一次撤销，且最新的快照是 "After" 类型的（通常代表当前状态），
-			// 则跳过它，直接撤销到它的前一个状态。
+
+		// 补偿检查：
+		// 1. 如果是从 manual 恢复的 (lastRestoredId 在 auto 中不存在)
+		// 2. 或者是正常操作后第一次撤销 (lastRestoredId 为空)
+		// 只要顶部是 "After" 快照（代表当前状态），就需要跳过它去恢复 "Before"
+		if (startIndex === 0) {
 			if (autoSnapshots.length > 0 && autoSnapshots[0].name && /\sAfter$/.test(autoSnapshots[0].name)) {
 				startIndex = 1;
 			}
