@@ -1425,7 +1425,10 @@
                     const div = document.createElement('div');
                     div.className = 'snapshot-item';
 
-                    const timeStr = new Date(snap.timestamp).toLocaleTimeString();
+                    const date = new Date(snap.timestamp);
+                    const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+                    const timeStr = `${dateStr} ${date.toLocaleTimeString([], { hour12: false })}`;
+                    
                     let nameStr = snap.name;
                     if (!nameStr) {
                         nameStr = api.sys_I18n ? api.sys_I18n.text('自动快照') : 'Automatic Snapshot';
@@ -1530,6 +1533,14 @@
             btnCreate.onclick = async () => {
                 const api = API || getEda();
                 if (!api || !api.jlc_eda_beautify_snapshot) return;
+
+                // 切换到手动快照视图
+                if (currentViewType !== 'manual') {
+                    currentViewType = 'manual';
+                    updateToggleStyles();
+                    // 不必刷新，create 完会刷
+                }
+
                 try {
                     const name = api.sys_I18n ? api.sys_I18n.text('手动快照') : 'Manual Snapshot';
                     await api.jlc_eda_beautify_snapshot.createSnapshot(name, true);
@@ -1548,6 +1559,14 @@
                 const api = API || getEda();
                 if (!api || !api.jlc_eda_beautify_snapshot)
 				    return;
+
+                // 切换到手动快照视图
+                if (currentViewType !== 'manual') {
+                    currentViewType = 'manual';
+                    updateToggleStyles();
+                    refreshSnapshots();
+                }
+
                 const confirmText = api.sys_I18n ? api.sys_I18n.text('确定要清除所有手动快照吗？') : 'Clear all manual snapshots?';
 
                 if (api.sys_Dialog) {
