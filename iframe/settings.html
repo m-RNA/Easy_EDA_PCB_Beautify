@@ -1572,6 +1572,7 @@
 
         // Global for polling
         let lastSnapshotCount = -1;
+        let lastSnapshotId = null;
 
         async function init() {
             try {
@@ -1598,7 +1599,7 @@
                     });
                 }
 
-                // 额外保险：定时轮询检查快照数量变化
+                // 额外保险：定时轮询检查快照变化
                 const poller = async () => {
                     // 如果是手动模式，不轮询
                     if (currentViewType === 'manual') return;
@@ -1609,12 +1610,15 @@
 
                     try {
                         const snapshots = await currentApi.jlc_eda_beautify_snapshot.getSnapshots(currentPcbId, 'auto');
+                        const latestId = snapshots.length > 0 ? snapshots[0].id : null;
 
-                        // 只有数量变化时才重绘列表
-                        if (snapshots.length !== lastSnapshotCount && lastSnapshotCount !== -1) {
+                        // 只有数量变化或最新的 ID 发生变化时才重绘列表
+                        // 解决快照满 20 个后由于数量不再增加导致轮询失效的问题
+                        if ((snapshots.length !== lastSnapshotCount || latestId !== lastSnapshotId) && lastSnapshotCount !== -1) {
                             refreshSnapshots();
                         }
                         lastSnapshotCount = snapshots.length;
+                        lastSnapshotId = latestId;
                     }
                     catch { }
                 };
