@@ -15,70 +15,64 @@ import { beautifyRouting as beautifyTask } from './lib/beautify';
 import { rebuildAllCopperPoursIfEnabled } from './lib/eda_utils';
 import { debugLog, debugWarn, logError } from './lib/logger';
 import { getDefaultSettings, getSettings } from './lib/settings';
+import { initShortcuts } from './lib/shortcuts';
 import { undoLastOperation as undoTask } from './lib/snapshot';
 import * as Snapshot from './lib/snapshot';
 import { addWidthTransitionsAll, addWidthTransitionsSelected } from './lib/widthTransition';
 
-export function activate(_status?: 'onStartupFinished', _arg?: string): void {
+export async function activate(_status?: 'onStartupFinished', _arg?: string): Promise<void> {
 	// 初始化设置（加载到缓存）
-	getSettings();
+	await getSettings();
+
+	const refreshShortcuts = async () => {
+		await initShortcuts({
+			beautifySelected,
+			beautifyAll,
+			widthTransitionSelected,
+			widthTransitionAll,
+			undoOperation,
+			createManualSnapshot,
+		});
+	};
 
 	// 将功能挂载到 eda 全局对象，供 settings.html 调用
 	(eda as any).jlc_eda_beautify_snapshot = Snapshot;
-	(eda as any).jlc_eda_beautify_refreshSettings = getSettings;
+	(eda as any).jlc_eda_beautify_runAction = async (action: string) => {
+		switch (action) {
+			case 'beautifySelected':
+				await beautifySelected();
+				break;
+			case 'beautifyAll':
+				await beautifyAll();
+				break;
+			case 'widthTransitionSelected':
+				await widthTransitionSelected();
+				break;
+			case 'widthTransitionAll':
+				await widthTransitionAll();
+				break;
+			case 'undoOperation':
+				await undoOperation();
+				break;
+			case 'createManualSnapshot':
+				await createManualSnapshot();
+				break;
+			default:
+				throw new Error(`Unknown action: ${action}`);
+		}
+	};
+	(eda as any).jlc_eda_beautify_refreshSettings = async () => {
+		await getSettings();
+		await refreshShortcuts(); // 刷新快捷键
+	};
 	(eda as any).jlc_eda_beautify_getDefaultSettings = getDefaultSettings;
 
-	// 动态刷新顶部菜单，确保菜单正确显示
+	// 注册快捷键
 	try {
-		if (eda.sys_HeaderMenu && typeof eda.sys_HeaderMenu.replaceHeaderMenus === 'function') {
-			eda.sys_HeaderMenu.replaceHeaderMenus({
-				pcb: [
-					{
-						id: 'BeautifyPCB',
-						title: eda.sys_I18n ? eda.sys_I18n.text('美化PCB') : '美化PCB',
-						menuItems: [
-							{
-								id: 'BeautifySelected',
-								title: eda.sys_I18n ? eda.sys_I18n.text('圆滑布线（选中）') : '圆滑布线（选中）',
-								registerFn: 'beautifySelected',
-							},
-							{
-								id: 'BeautifyAll',
-								title: eda.sys_I18n ? eda.sys_I18n.text('圆滑布线（全部）') : '圆滑布线（全部）',
-								registerFn: 'beautifyAll',
-							},
-							{
-								id: 'WidthSelected',
-								title: eda.sys_I18n ? eda.sys_I18n.text('过渡线宽（选中）') : '过渡线宽（选中）',
-								registerFn: 'widthTransitionSelected',
-							},
-							{
-								id: 'WidthAll',
-								title: eda.sys_I18n ? eda.sys_I18n.text('过渡线宽（全部）') : '过渡线宽（全部）',
-								registerFn: 'widthTransitionAll',
-							},
-							{
-								id: 'Undo',
-								title: eda.sys_I18n ? eda.sys_I18n.text('撤销') : '撤销',
-								registerFn: 'undoOperation',
-							},
-							{
-								id: 'Settings',
-								title: eda.sys_I18n ? eda.sys_I18n.text('设置') : '设置',
-								registerFn: 'openSettings',
-							},
-						],
-					},
-				],
-			});
-			debugLog('Header menus registered successfully', 'PCB');
-		}
-		else {
-			debugWarn('sys_HeaderMenu not available', 'PCB');
-		}
+		await refreshShortcuts();
 	}
 	catch (e: any) {
-		debugWarn(`Failed to register header menus dynamically: ${e.message || e}`, 'PCB');
+		debugWarn(`Initialization failed: ${e.message || e}`, 'PCB');
 	}
 }
 
@@ -86,6 +80,7 @@ export function activate(_status?: 'onStartupFinished', _arg?: string): void {
  * 圆滑所选布线
  */
 export async function beautifySelected() {
+	debugLog('[Smooth] beautifySelected triggered');
 	try {
 		await beautifyTask('selected');
 
@@ -101,6 +96,7 @@ export async function beautifySelected() {
  * 圆滑所有布线
  */
 export async function beautifyAll() {
+	debugLog('[Smooth] beautifyAll triggered');
 	try {
 		await beautifyTask('all');
 
@@ -129,6 +125,7 @@ function handleError(e: any) {
  * 撤销操作
  */
 export async function undoOperation() {
+	debugLog('[Smooth] undoOperation triggered');
 	try {
 		await undoTask();
 	}
@@ -141,6 +138,7 @@ export async function undoOperation() {
  * 线宽过渡 - 所选
  */
 export async function widthTransitionSelected() {
+	debugLog('[Smooth] widthTransitionSelected triggered');
 	try {
 		await addWidthTransitionsSelected();
 
@@ -165,13 +163,14 @@ export async function widthTransitionSelected() {
  * 线宽过渡 - 所有
  */
 export async function widthTransitionAll() {
+	debugLog('[Smooth] widthTransitionAll triggered');
 	try {
 		await addWidthTransitionsAll();
 
 		// 重铺覆铜
 		await rebuildAllCopperPoursIfEnabled();
 
-		eda.sys_Message?.showToastMessage(eda.sys_I18n ? eda.sys_I18n.text('线宽过渡完成') : '线宽过渡完成');
+		eda.sys_Message?.showToastMessage('线宽过渡完成');
 	}
 	catch (e: any) {
 		logError(`Width Transition Error: ${e.message || e}`);
@@ -188,19 +187,27 @@ export async function widthTransitionAll() {
 }
 
 /**
+ * 创建手动快照
+ */
+export async function createManualSnapshot() {
+	debugLog('[Smooth] createManualSnapshot triggered');
+	try {
+		const name = '手动快照';
+		await Snapshot.createSnapshot(name, true);
+		eda.sys_Message?.showToastMessage('快照已创建');
+	}
+	catch (e: any) {
+		logError(`Create Snapshot Error: ${e.message || e}`);
+	}
+}
+
+/**
  * 打开设置
  */
 export async function openSettings() {
 	// 使用内联框架打开设置窗口
-	// 窗口尺寸：宽度 540px，高度 600px
-	eda.sys_IFrame.openIFrame('/iframe/settings.html', 540, 600, 'settings', {
+	// 窗口尺寸：宽度 540px，高度 700px
+	eda.sys_IFrame.openIFrame('/iframe/settings.html', 540, 700, 'settings', {
 		minimizeButton: true, // 显示最小化按钮
 	});
-}
-
-export function about(): void {
-	eda.sys_Dialog.showInformationMessage(
-		eda.sys_I18n.text('圆滑布线 & 线宽过渡工具'),
-		eda.sys_I18n.text('About'),
-	);
 }

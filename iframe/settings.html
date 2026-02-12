@@ -479,6 +479,70 @@
         .card-header:active .drag-handle {
             cursor: grabbing;
         }
+
+        .shortcut-input {
+            width: 140px;
+            background: var(--card-bg) !important;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 6px 8px;
+            color: var(--primary);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .shortcut-input:focus {
+            border-color: var(--primary);
+            background: var(--bg) !important;
+            outline: none;
+            box-shadow: 0 0 4px var(--primary);
+        }
+        .shortcut-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .btn-run-shortcut {
+            padding: 4px 10px;
+            font-size: 11px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--bg-button);
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s;
+            line-height: 1;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+        }
+        .btn-run-shortcut:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--hover-bg);
+        }
+        .btn-clear-shortcut {
+            padding: 4px 6px;
+            font-size: 14px;
+            color: var(--danger);
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 28px;
+        }
+        .btn-clear-shortcut:hover {
+            background: var(--hover-bg);
+            color: var(--danger);
+        }
     </style>
 </head>
 <body>
@@ -599,6 +663,90 @@
                             <span class="slider"></span>
                         </label>
                         <span class="switch-label" id="drcIgnoreCopperPourLabel" data-i18n="启用">启用</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shortcut Settings -->
+    <div class="card" id="card-shortcut" draggable="true">
+        <div class="card-header">
+            <div style="display: flex; align-items: center;">
+                <div class="drag-handle">⋮⋮</div>
+                <div class="card-title" data-i18n="快捷键设置">快捷键设置</div>
+            </div>
+        </div>
+        <div class="card-content">
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="圆滑导线（选中）">圆滑导线（选中）</div>
+                </div>
+                <div class="setting-control">
+                    <div class="shortcut-group">
+                        <button type="button" class="btn-run-shortcut" data-i18n="执行" onclick="executeAction('beautifySelected')">执行</button>
+                        <input type="text" class="shortcut-input" id="shortcutBeautifySelected" readonly placeholder="Click to set">
+                        <div class="btn-clear-shortcut" onclick="clearShortcut('shortcutBeautifySelected')">✕</div>
+                    </div>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="圆滑导线（全部）">圆滑导线（全部）</div>
+                </div>
+                <div class="setting-control">
+                    <div class="shortcut-group">
+                        <button type="button" class="btn-run-shortcut" data-i18n="执行" onclick="executeAction('beautifyAll')">执行</button>
+                        <input type="text" class="shortcut-input" id="shortcutBeautifyAll" readonly placeholder="Click to set">
+                        <div class="btn-clear-shortcut" onclick="clearShortcut('shortcutBeautifyAll')">✕</div>
+                    </div>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="线宽过渡（选中）">线宽过渡（选中）</div>
+                </div>
+                <div class="setting-control">
+                    <div class="shortcut-group">
+                        <button type="button" class="btn-run-shortcut" data-i18n="执行" onclick="executeAction('widthTransitionSelected')">执行</button>
+                        <input type="text" class="shortcut-input" id="shortcutWidthTransitionSelected" readonly placeholder="Click to set">
+                        <div class="btn-clear-shortcut" onclick="clearShortcut('shortcutWidthTransitionSelected')">✕</div>
+                    </div>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="线宽过渡（全部）">线宽过渡（全部）</div>
+                </div>
+                <div class="setting-control">
+                    <div class="shortcut-group">
+                        <button type="button" class="btn-run-shortcut" data-i18n="执行" onclick="executeAction('widthTransitionAll')">执行</button>
+                        <input type="text" class="shortcut-input" id="shortcutWidthTransitionAll" readonly placeholder="Click to set">
+                        <div class="btn-clear-shortcut" onclick="clearShortcut('shortcutWidthTransitionAll')">✕</div>
+                    </div>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="撤销美化操作">撤销美化操作</div>
+                </div>
+                <div class="setting-control">
+                    <div class="shortcut-group">
+                        <button type="button" class="btn-run-shortcut" data-i18n="执行" onclick="executeAction('undoOperation')">执行</button>
+                        <input type="text" class="shortcut-input" id="shortcutUndoOperation" readonly placeholder="Click to set">
+                        <div class="btn-clear-shortcut" onclick="clearShortcut('shortcutUndoOperation')">✕</div>
+                    </div>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="创建手动快照">创建手动快照</div>
+                </div>
+                <div class="setting-control">
+                    <div class="shortcut-group">
+                        <button type="button" class="btn-run-shortcut" data-i18n="执行" onclick="executeAction('createManualSnapshot')">执行</button>
+                        <input type="text" class="shortcut-input" id="shortcutCreateSnapshot" readonly placeholder="Click to set">
+                        <div class="btn-clear-shortcut" onclick="clearShortcut('shortcutCreateSnapshot')">✕</div>
                     </div>
                 </div>
             </div>
@@ -946,6 +1094,14 @@
         const elDrcIgnoreCopperPour = document.getElementById('drcIgnoreCopperPour');
         const elRebuildCopperPour = document.getElementById('rebuildCopperPour');
 
+        // Shortcuts
+        const elShortcutBeautifySelected = document.getElementById('shortcutBeautifySelected');
+        const elShortcutBeautifyAll = document.getElementById('shortcutBeautifyAll');
+        const elShortcutWidthTransitionSelected = document.getElementById('shortcutWidthTransitionSelected');
+        const elShortcutWidthTransitionAll = document.getElementById('shortcutWidthTransitionAll');
+        const elShortcutUndoOperation = document.getElementById('shortcutUndoOperation');
+        const elShortcutCreateSnapshot = document.getElementById('shortcutCreateSnapshot');
+
         // I18n labels update
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
         const elDebugLabel = document.getElementById('debugLabel');
@@ -1034,6 +1190,15 @@
                 if (elDrcIgnoreCopperPour) elDrcIgnoreCopperPour.checked = config.drcIgnoreCopperPour !== undefined ? config.drcIgnoreCopperPour : true;
                 if (elRebuildCopperPour) elRebuildCopperPour.checked = config.rebuildCopperPourAfterBeautify !== undefined ? config.rebuildCopperPourAfterBeautify : true;
 
+                // 快捷键
+                const fmt = (keys) => (keys || []).map(toFriendlyKey).filter(k => k).join(' + ');
+                if (elShortcutBeautifySelected) elShortcutBeautifySelected.value = fmt(config.shortcutKeys?.beautifySelected);
+                if (elShortcutBeautifyAll) elShortcutBeautifyAll.value = fmt(config.shortcutKeys?.beautifyAll);
+                if (elShortcutWidthTransitionSelected) elShortcutWidthTransitionSelected.value = fmt(config.shortcutKeys?.widthTransitionSelected);
+                if (elShortcutWidthTransitionAll) elShortcutWidthTransitionAll.value = fmt(config.shortcutKeys?.widthTransitionAll);
+                if (elShortcutUndoOperation) elShortcutUndoOperation.value = fmt(config.shortcutKeys?.undo);
+                if (elShortcutCreateSnapshot) elShortcutCreateSnapshot.value = fmt(config.shortcutKeys?.createSnapshot);
+
                 // 还原卡片排序
                 if (config.cardOrder && config.cardOrder.length > 0) {
                     const container = document.getElementById('cardContainer');
@@ -1107,6 +1272,14 @@
                 rebuildCopperPourAfterBeautify: elRebuildCopperPour.checked,
                 cardOrder: cardOrder,
                 collapsedStates: collapsedStates,
+                shortcutKeys: {
+                    beautifySelected: elShortcutBeautifySelected && elShortcutBeautifySelected.value.trim() ? elShortcutBeautifySelected.value.split(' + ') : [],
+                    beautifyAll: elShortcutBeautifyAll && elShortcutBeautifyAll.value.trim() ? elShortcutBeautifyAll.value.split(' + ') : [],
+                    widthTransitionSelected: elShortcutWidthTransitionSelected && elShortcutWidthTransitionSelected.value.trim() ? elShortcutWidthTransitionSelected.value.split(' + ') : [],
+                    widthTransitionAll: elShortcutWidthTransitionAll && elShortcutWidthTransitionAll.value.trim() ? elShortcutWidthTransitionAll.value.split(' + ') : [],
+                    undo: elShortcutUndoOperation && elShortcutUndoOperation.value.trim() ? elShortcutUndoOperation.value.split(' + ') : [],
+                    createSnapshot: elShortcutCreateSnapshot && elShortcutCreateSnapshot.value.trim() ? elShortcutCreateSnapshot.value.split(' + ') : [],
+                },
             };
 
             try {
@@ -1116,6 +1289,8 @@
                 // 通知插件主进程刷新设置缓存
                 if (typeof api.jlc_eda_beautify_refreshSettings === 'function') {
                     await api.jlc_eda_beautify_refreshSettings();
+                    // 再次加载设置，以防止后端因冲突修改了设置（如清空冲突快捷键）
+                    await loadSettings();
                 }
 
                 if (!silent) {
@@ -1293,11 +1468,129 @@
             el.addEventListener('wheel', handleWheel, { passive: false });
         }
 
+        function toFriendlyKey(k) {
+            if (!k) return '';
+            const upper = k.toUpperCase();
+            switch (upper) {
+                case 'CONTROL':
+                case 'CTRL': return 'Ctrl';
+                case 'ALT': return 'Alt';
+                case 'SHIFT': return 'Shift';
+                case 'COMMAND':
+                case 'CMD': return 'Cmd';
+                case 'WIN':
+                case 'META':
+                case 'SUPER': return 'Win';
+                case 'ARROWUP': return 'Up';
+                case 'ARROWDOWN': return 'Down';
+                case 'ARROWLEFT': return 'Left';
+                case 'ARROWRIGHT': return 'Right';
+                case 'SPACE': return 'Space';
+                case 'TAB': return 'Tab';
+                default: return upper;
+            }
+        }
+
+        function bindShortcutInput(el) {
+            if (!el) return;
+            
+            el.addEventListener('keydown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // 处理 Backspace/Delete 清除快捷键
+                if (e.key === 'Backspace' || e.key === 'Delete') {
+                    if (el.value === '') return;
+                    el.value = '';
+                    saveSettings();
+                    el.blur();
+                    return;
+                }
+
+                const keys = [];
+                if (e.ctrlKey) keys.push('Ctrl');
+                if (e.altKey) keys.push('Alt');
+                if (e.shiftKey) keys.push('Shift');
+                if (e.metaKey) keys.push('Win');
+                
+                // 不记录单纯的修饰键及其状态
+                const isModifierOnly = ['Control', 'Alt', 'Shift', 'Meta'].includes(e.key);
+                
+                // 仅记录官方 DOC 支持的非修饰键
+                if (!isModifierOnly) {
+                    const k = e.key.toUpperCase();
+                    // 过滤掉 DOC 中不直接支持的控制键（如 Escape, Enter 等不在 TSYS_ShortcutKeys 中）
+                    const unsupported = ['ESCAPE', 'ENTER', 'BACKSPACE', 'DELETE', 'CAPSLOCK', 'SCROLLLOCK', 'PAUSE', 'INSERT', 'HOME', 'END', 'PAGEUP', 'PAGEDOWN'];
+                    if (!unsupported.includes(k)) {
+                        keys.push(toFriendlyKey(e.key === ' ' ? 'SPACE' : e.key));
+                    }
+                }
+                
+                // 进行排重
+                const uniqueKeys = [...new Set(keys)];
+                el.value = uniqueKeys.join(' + ');
+
+                // 如果按下了按键（非单纯修饰键），则完成输入
+                if (!isModifierOnly && uniqueKeys.length > 0) {
+                    el.blur();
+                    saveSettings();
+                }
+            });
+
+            // 失去焦点时如果内容为空（且不是刚刚清空的），恢复旧值
+            el.addEventListener('blur', async () => {
+                if (!el.value) {
+                    // 如果用户确实想清空，这里需要判断
+                    // 但由于 saveSettings 在 keydown 时已经调用了，这里的 loadSettings 反而会把空值加载回来（如果已保存）
+                    // 所以只有在完全没输入的情况下才 load
+                    await loadSettings();
+                }
+            });
+        }
+
+        // 全局清除函数
+        async function clearShortcut(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.value = '';
+                await saveSettings();
+            }
+        }
+
+        async function executeAction(action) {
+            const api = API || getEda();
+            if (!api || typeof api.jlc_eda_beautify_runAction !== 'function') {
+                if (api && api.sys_Dialog) {
+                    const msg = api.sys_I18n ? api.sys_I18n.text('执行接口不可用') : 'Execute API is unavailable';
+                    api.sys_Dialog.showInformationMessage(msg);
+                }
+                return;
+            }
+
+            try {
+                await api.jlc_eda_beautify_runAction(action);
+            }
+            catch (e) {
+                if (api.sys_Dialog) {
+                    const msg = api.sys_I18n ? api.sys_I18n.text('执行失败') : 'Execution failed';
+                    api.sys_Dialog.showInformationMessage(`${msg}: ${e.message || e}`);
+                }
+            }
+        }
+
         // Apply bindings
         bindSmartInput(elCornerRadiusRatio, false);
         bindSmartInput(elSegments, true);
         bindSmartInput(elRatio, false);
         bindSmartInput(elDirection, true);
+
+        // Shortcuts
+        bindShortcutInput(elShortcutBeautifySelected);
+        bindShortcutInput(elShortcutBeautifyAll);
+        bindShortcutInput(elShortcutWidthTransitionSelected);
+        bindShortcutInput(elShortcutWidthTransitionAll);
+        bindShortcutInput(elShortcutUndoOperation);
+        bindShortcutInput(elShortcutCreateSnapshot);
 
         [elSyncWidth, elDebug, elMergeTransitionSegments, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
             if (el) el.addEventListener('change', () => saveSettings());

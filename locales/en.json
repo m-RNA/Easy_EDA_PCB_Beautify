@@ -69,5 +69,16 @@
 	"请先打开PCB文档": "Please open a PCB document first",
 	"完成后重铺覆铜": "Rebuild Copper Pour After Completion",
 	"执行全部操作后自动重铺所有覆铜区域": "Automatically rebuild all copper pours after Beautify All or Width Transition All",
-	"正在重铺覆铜...": "Rebuilding copper pours..."
+	"正在重铺覆铜...": "Rebuilding copper pours...",
+	"快捷键设置": "Shortcut Settings",
+	"圆滑导线（选中）": "Smooth Routing (Selected)",
+	"圆滑导线（全部）": "Smooth Routing (All)",
+	"线宽过渡（选中）": "Width Transition (Selected)",
+	"线宽过渡（全部）": "Width Transition (All)",
+	"撤销美化操作": "Undo Beautify Operation",
+	"执行": "Execute",
+	"执行失败": "Execution failed",
+	"执行接口不可用": "Execute API is unavailable",
+	"检测到快捷键冲突": "Shortcut conflict detected. Please reconfigure to avoid overwriting existing functions.",
+	"创建手动快照": "Create Manual Snapshot"
 }

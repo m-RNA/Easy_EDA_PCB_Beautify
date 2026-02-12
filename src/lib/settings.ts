@@ -13,6 +13,14 @@ export interface BeautifySettings {
 	drcRetryCount: number; // DRC 失败最大重试次数 (控制二分法的深度)
 	cardOrder: string[]; // 设置界面的卡片排序顺序
 	collapsedStates: Record<string, boolean>; // 卡片折叠状态
+	shortcutKeys: {
+		beautifySelected: string[];
+		beautifyAll: string[];
+		widthTransitionSelected: string[];
+		widthTransitionAll: string[];
+		undo: string[];
+		createSnapshot: string[];
+	};
 }
 
 const DEFAULT_SETTINGS: BeautifySettings = {
@@ -28,9 +36,19 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	drcIgnoreCopperPour: true, // 默认忽略覆铜规则（覆铜重铺后通常会自动解决）
 	rebuildCopperPourAfterBeautify: true, // 默认执行全部操作后重铺覆铜
 	drcRetryCount: 4, // 4次二分法 (100% -> 50% -> 25% -> 12.5% -> 直角)
-	cardOrder: ['card-transition', 'card-drc', 'card-advanced', 'card-snapshot'],
+	cardOrder: ['card-transition', 'card-drc', 'card-shortcut', 'card-advanced', 'card-snapshot'],
 	collapsedStates: {
+		'card-drc': true, // 默认收起DRC设置
+		'card-shortcut': true, // 默认收起快捷键设置
 		'card-advanced': true, // 默认收起高级设置
+	},
+	shortcutKeys: {
+		beautifySelected: ['SHIFT', 'Q'],
+		beautifyAll: ['CONTROL', 'SHIFT', 'Q'],
+		widthTransitionSelected: [],
+		widthTransitionAll: [],
+		undo: ['CONTROL', 'SHIFT', 'Z'],
+		createSnapshot: [],
 	},
 };
 
