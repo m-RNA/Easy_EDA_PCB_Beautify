@@ -483,8 +483,7 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 			if (isSnapshotGeometryIdentical(latest, snapshot)) {
 				debugLog(`Snapshot skipped: Geometry identical to latest "${latest.name}" (id: ${latest.id})`, 'Snapshot');
 				if (isManual && eda.sys_Message) {
-					const msg = eda.sys_I18n ? eda.sys_I18n.text('当前布线状态与最新快照一致，无需重复创建') : 'Current state matches the latest snapshot.';
-					eda.sys_Message.showToastMessage(msg);
+					eda.sys_Message.showToastMessage('当前布线状态与最新快照一致，无需重复创建');
 				}
 				if (eda.sys_LoadingAndProgressBar) {
 					eda.sys_LoadingAndProgressBar.destroyLoading();
@@ -567,10 +566,8 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 			if (eda.sys_Dialog && typeof eda.sys_Dialog.showConfirmationMessage === 'function') {
 				confirmed = await new Promise<boolean>((resolve) => {
 					eda.sys_Dialog.showConfirmationMessage(
-						eda.sys_I18n.text
-							? eda.sys_I18n.text('!!! 警告：快照所属PCB与当前不一致 !!!\n\n可能会导致数据错乱，系统将尝试备份当前状态。是否继续？')
-							: '!!! WARNING: PCB ID MISMATCH !!!\n\nSystem will try to backup. Continue?',
-						eda.sys_I18n.text ? eda.sys_I18n.text('!!! 危险操作确认 !!!') : '!!! DANGER CONFIRMATION !!!',
+						'!!! 警告：快照所属PCB与当前不一致 !!!\n\n可能会导致数据错乱，系统将尝试备份当前状态。是否继续？',
+						'!!! 危险操作确认 !!!',
 						undefined,
 						undefined,
 						(ok: boolean) => resolve(ok),
@@ -585,8 +582,8 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 			if (eda.sys_Dialog && typeof eda.sys_Dialog.showConfirmationMessage === 'function') {
 				confirmed = await new Promise<boolean>((resolve) => {
 					eda.sys_Dialog.showConfirmationMessage(
-						eda.sys_I18n.text ? eda.sys_I18n.text('确定恢复快照？当前未保存的修改将丢失。') : 'Restore snapshot? Unsaved changes will be lost.',
-						eda.sys_I18n.text ? eda.sys_I18n.text('恢复快照') : 'Restore Snapshot',
+						'确定恢复快照？当前未保存的修改将丢失。',
+						'恢复快照',
 						undefined,
 						undefined,
 						(ok: boolean) => resolve(ok),
@@ -603,9 +600,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		const isSpecialRestore = snapshot.isManual || isMismatch;
 
 		if (isSpecialRestore) {
-			const beforeName = eda.sys_I18n?.text
-				? `${eda.sys_I18n.text('恢复')} [${snapName}] Before`
-				: `Restore [${snapName}] Before`;
+			const beforeName = `恢复 [${snapName}] Before`;
 			await createSnapshot(beforeName, false);
 		}
 
@@ -729,9 +724,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 
 		// 如果是特殊恢复（手动或跨PCB），创建 After 快照作为当前状态
 		if (isSpecialRestore) {
-			const afterName = eda.sys_I18n?.text
-				? `${eda.sys_I18n.text('恢复')} [${snapName}] After`
-				: `Restore [${snapName}] After`;
+			const afterName = `恢复 [${snapName}] After`;
 			await createSnapshot(afterName, false);
 		}
 
@@ -811,7 +804,7 @@ export async function undoLastOperation() {
 
 		// 如果没有自动快照
 		if (!pcbData || !pcbData.auto || pcbData.auto.length === 0) {
-			eda.sys_Message?.showToastMessage(eda.sys_I18n ? eda.sys_I18n.text('没有可撤销的操作') : 'No undo history');
+			eda.sys_Message?.showToastMessage('没有可撤销的操作');
 			return;
 		}
 
@@ -846,16 +839,13 @@ export async function undoLastOperation() {
 		if (targetSnapshot) {
 			const success = await restoreSnapshot(targetSnapshot.id, false, false);
 			if (success) {
-				const msg = eda.sys_I18n ? eda.sys_I18n.text('已撤销') : 'Undone';
-				let dispName = targetSnapshot.name.replace(/^\[.*?\]\s*/, '');
-				if (eda.sys_I18n && eda.sys_I18n.text(dispName) !== dispName) {
-					dispName = eda.sys_I18n.text(dispName);
-				}
+				const msg = '已撤销';
+				const dispName = targetSnapshot.name.replace(/^\[.*?\]\s*/, '');
 				eda.sys_Message?.showToastMessage(`${msg}: ${dispName}`);
 			}
 		}
 		else {
-			eda.sys_Message?.showToastMessage(eda.sys_I18n ? eda.sys_I18n.text('已到达撤销记录尽头') : 'End of undo history');
+			eda.sys_Message?.showToastMessage('已到达撤销记录尽头');
 		}
 	}
 	catch (e: any) {

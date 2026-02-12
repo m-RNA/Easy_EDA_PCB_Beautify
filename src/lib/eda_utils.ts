@@ -184,6 +184,6 @@ export async function rebuildAllCopperPoursIfEnabled(): Promise<number> {
 
 	// smartCount < 0: 执行异常，回退到全量重铺
 	debugLog('[CopperPour] Smart rebuild failed, falling back to full rebuild.');
-	eda.sys_Message?.showToastMessage(eda.sys_I18n ? eda.sys_I18n.text('正在全量重铺覆铜...') : '正在全量重铺覆铜...');
+	eda.sys_Message?.showToastMessage('正在全量重铺覆铜...');
 	return rebuildAllCopperPours();
 }

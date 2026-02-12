@@ -317,7 +317,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		else {
 			const selectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
 			if (!selectedIds || selectedIds.length === 0) {
-				eda.sys_Message?.showToastMessage(eda.sys_I18n.text('请先选择要处理的导线'));
+				eda.sys_Message?.showToastMessage('请先选择要处理的导线');
 				return;
 			}
 			const primitives = await getSafeSelectedTracks(selectedIds);
@@ -370,10 +370,9 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		}
 
 		if (tracks.length < 1) {
-			eda.sys_Message?.showToastMessage(eda.sys_I18n.text('未找到可处理的导线'));
+			eda.sys_Message?.showToastMessage('未找到可处理的导线');
 			return;
 		}
-
 		// 创建快照
 		try {
 			const name = scope === 'all' ? 'Beautify (All) Before' : 'Beautify (Selected) Before';
