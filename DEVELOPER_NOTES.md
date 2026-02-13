@@ -1,6 +1,6 @@
-# Developer Notes: Handling Memory Isolation Issues in EasyEDA Extension Development
+# Developer Notes & Best Practices: JLC EDA Pro Extension Development
 
-This document describes a specific pitfall encountered during the development of JLC EDA extensions and how to solve it. This is particularly relevant when extensions involve both a Main Process (running in the extension worker) and an Iframe UI (running in a sandboxed iframe).
+This document serves as a comprehensive technical guide and architecture log for the **EASY EDA PCB Beautify** project. It documents critical discoveries, optimization strategies, and best practices for building high-performance, idiomatic extensions in the JLC EDA Pro environment.
 
 ## Background: The `eda` Global Object
 
@@ -325,6 +325,94 @@ This reduces rebuild scope from all pours to only those on affected layers (e.g.
 
 When working with EDA Pro's internal object model, **never assume IDs from different API endpoints share the same namespace**. Always verify with diagnostic logging before building ID-based matching logic.
 
+## Architectural Pattern: Manifest-Driven UI
+
+In later stages of development, we moved away from procedural UI management to a **Manifest-Driven** approach.
+
+- **Centralized Definition**: The `extension.json` (Manifest) is the single source of truth for the menu structure (`headerMenus`).
+- **Elimination of Redundancy**: Functions like `updateHeaderMenus()` that manually injected or updated menu items were removed.
+- **Auto-Mapping**: The SDK automatically maps `registerFn` in the manifest to `export` functions in the entry file (`index.ts`).
+- **Benefits**: This significantly reduces code complexity, eliminates "flashing" UI during registration, and ensures better compatibility with the host application's lifecycle.
+
+## Shortcut Key Management
+
+### Critical Discovery: Key Name Case Sensitivity (2026-02-13)
+
+The `TSYS_ShortcutKeys` type definition declares **all keys in uppercase** (`'SHIFT'`, `'CONTROL'`, `'ALT'`, `'Q'`, `'F9'`, etc.). However, the EDA **runtime** is case-sensitive and requires a specific mixed-case format for shortcuts to actually trigger:
+
+| Key Type | Type Definition | Runtime Requirement | Example |
+| --- | --- | --- | --- |
+| Modifier keys | `'SHIFT'`, `'CONTROL'`, `'ALT'` | **Title Case** | `'Shift'`, `'Ctrl'`, `'Alt'` |
+| Letter keys | `'Q'`, `'W'`, `'Z'` | **Uppercase** | `'Q'`, `'W'`, `'Z'` |
+| F-keys | `'F1'` – `'F20'` | **Uppercase** | `'F9'`, `'F6'` |
+| Special keys | `'SPACE'`, `'TAB'`, `'UP'` | **Uppercase** | `'SPACE'`, `'TAB'`, `'UP'` |
+
+**Symptom**: `registerShortcutKey()` returns `true` (success) regardless of case, but callbacks registered with all-uppercase modifier keys (`'SHIFT'`, `'CONTROL'`) **never fire** when the shortcut is pressed.
+
+**Test Evidence**:
+
+| Registration Format | Triggers? |
+| --- | --- |
+| `['Shift', 'Q']` | ✅ Yes |
+| `['SHIFT', 'Q']` | ❌ No (registers OK, never fires) |
+| `['Ctrl', 'Shift', 'Q']` | ✅ Yes |
+| `['CONTROL', 'SHIFT', 'Q']` | ❌ No |
+| `['F9']` | ✅ Yes (no modifier, already uppercase) |
+| `['Shift', 'F6']` | ✅ Yes |
+| `['SHIFT', 'F5']` | ❌ No |
+
+**Important**: The modifier key `Ctrl` must be spelled `'Ctrl'`, NOT `'Control'`. The type definition says `'CONTROL'` but the runtime recognizes `'Ctrl'`.
+
+**Fix**: The `normalizeKeyToken()` function in `shortcuts.ts` must output Title Case for modifiers (`Ctrl`, `Shift`, `Alt`, `Cmd`, `Win`) and uppercase for everything else. The frontend `settings.html` already saves keys in the correct format via `toFriendlyKey()`.
+
+### Conflict Detection
+
+Before registering shortcuts, we use `eda.sys_ShortcutKey.getShortcutKeys(true)` to pull the complete list of existing bindings (including user-defined and system-defaults).
+
+- **Implementation**: We sort the key arrays and join them with `+` to perform a normalized string match against our targets.
+- **Protection**: If a conflict is detected, we log a warning and skip our registration rather than overriding host/user keys.
+
+### Documentation Alignment: `TSYS_ShortcutKeys`
+
+Our shortcut registration logic references the [TSYS_ShortcutKeys](EDA_EX_DOC/JLC_EDA_API/TSYS_ShortcutKeys%20type%20_%20嘉立创EDA专业版用户指南.html) definition for the list of supported keys.
+
+- **Supported Keys ONLY**: The settings UI (`settings.html`) filters out keys NOT found in the `TSYS_ShortcutKeys` type (e.g., `Escape`, `Enter`, `Delete`, `Backspace` are forbidden for registry).
+- **Modifier Mapping** (runtime format, NOT type-definition format):
+  - `CONTROL` / `CTRL` → `Ctrl`
+  - `SHIFT` → `Shift`
+  - `ALT` → `Alt`
+  - `COMMAND` / `CMD` → `Cmd` (macOS)
+  - `WIN` / `META` / `SUPER` → `Win` (Windows/Linux)
+- **Frontend-Backend Consistency**: Both `settings.html` (`toFriendlyKey()`) and `shortcuts.ts` (`normalizeKeyToken()`) must produce the **same output format**. The frontend saves keys directly in the runtime-compatible format.
+
+### Common EDA Shortcuts
+
+To match user muscle memory from other EDA tools, we register the following by default (if free):
+
+| Shortcut | Action |
+| --- | --- |
+| `Shift + Q` | Beautify Selected |
+| `Ctrl + Shift + Q` | Beautify All |
+| `Ctrl + Shift + Z` | Undo Operation |
+
+### Registration Context
+
+- **DocumentType**: `[4]` (PCB) - Ensures keys only trigger in the layout editor.
+- **Scene**: `[1, 2, 3, 4, 5, 6]` (All editor scenes) - Allows keys to work during all editing modes including selection, drawing, and placement.
+
+## Multi-language Support (I18n)
+
+### Automatic Translation Mechanism
+
+嘉立创 EDA Pro SDK 提供了自动翻译机制。只需在 `./locales/` 目录下创建对应的语言文件（如 `zh-Hans.json`, `en.json`），SDK 会在渲染 UI 时自动执行翻译。
+
+- **适用范围**：`headerMenus` 的 `title`、`sys_ShortcutKey` 注册时的 `title` 等。
+- **最佳实践**：
+    1. **直接使用 Key**：代码中直接书写中文或英文原文作为 Key，无需手动调用 `eda.sys_I18n.text()`。
+    2. **无代码介入**：移除 `index.ts` 中所有用于手动翻译的代码。
+    3. **简化代码**：移除冗余的翻译，完全依赖 `.json` 配置文件。
+    4. **回退语言**：确保包含 `zh-Hans.json` 作为主语言定义。
+
 ---
 Created: 2026-01-31
-Updated: 2026-02-12
+Updated: 2026-02-13

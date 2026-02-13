@@ -1,4 +1,4 @@
-# Melt/Optimize/Beautify PCB Routing
+# ![LOGO](./images/logo.gif) | Melt/Optimize/Beautify PCB Routing
 
 [简体中文](./README.md) | [English](./README.en.md) | When translation has deviations, the Chinese version shall prevail.
 
@@ -24,9 +24,9 @@ Menu location: Advanced → Beautify PCB
 - Smooth Routing (Selected/All) – Process trace corners (arc-based beautification)
 - Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment)
 - DRC Rule Check – Apply optimistic routing first, then perform design rule checks and automatically revert non-compliant sections; supports ignoring copper pour rules
-- Automatic Copper Pour Rebuild – Automatically rebuild all copper pour regions after executing "All" operations
-- Undo / Snapshot – Multi-step undo functionality; switch between auto/manual snapshots for safe state recovery at any time
-- Advanced Settings – Configure radius limits, transition parameters, snapshot history management, card reordering, and other optimization options
+- Automatic Copper Pour Rebuild – Automatically rebuild copper pour regions (Safe threshold of 5 areas to ensure UI responsiveness)
+- Undo / Snapshot – Multi-step undo with **Incremental Sync Engine**, updating only changed primitives for lightning-fast recovery; switch between auto/manual snapshot views
+- Advanced Settings – Configure radius, transition parameters, snapshot history, **Custom Shortcuts**, and persistent card reordering/folding
 
 You can enable display in the top menu via: Advanced → Extension Manager → Installed Extensions → Beautify PCB → Configure (check the option to show in top menu for convenient use)
 
