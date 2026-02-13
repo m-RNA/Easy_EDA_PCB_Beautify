@@ -1,5 +1,5 @@
 import { getViolatedCopperPours } from './drc';
-import { debugLog, debugWarn, logError } from './logger';
+import { debugLog, debugWarn, logError, logInfo } from './logger';
 import { getSettings } from './settings';
 
 /**
@@ -71,15 +71,30 @@ export async function rebuildAllCopperPours(): Promise<number> {
 			return 0;
 		}
 
+		// 检查数量限制：若覆铜区域过多，放弃自动重铺以免阻塞主线程
+		if (pours.length > 5) {
+			eda.sys_Message?.showToastMessage(`覆铜区域较多(${pours.length})，已跳过自动重铺，请手动执行`);
+			debugLog(`[CopperPour] Too many pours (${pours.length}), skipping auto rebuild.`);
+			return 0;
+		}
+
+		eda.sys_Message?.showToastMessage(`正在重铺全部 ${pours.length} 个覆铜区域...`);
+
 		let rebuilt = 0;
 		for (const pour of pours) {
 			try {
-				await (pour as any).rebuildCopperRegion();
-				rebuilt++;
+				if ((pour as any).rebuildCopperRegion) {
+					await (pour as any).rebuildCopperRegion();
+					rebuilt++;
+				}
 			}
 			catch (e: any) {
 				debugWarn(`[CopperPour] Failed to rebuild pour: ${e.message || e}`);
 			}
+		}
+
+		if (rebuilt > 0) {
+			eda.sys_Message?.showToastMessage(`已完成 ${rebuilt} 个覆铜区域重铺`);
 		}
 
 		debugLog(`[CopperPour] Rebuilt ${rebuilt}/${pours.length} copper pours`);
@@ -120,15 +135,7 @@ export async function rebuildViolatedCopperPours(): Promise<number> {
 		// 如果无法从 DRC 中提取到图层信息，兜底重铺所有
 		if (violation.violatedLayers.size === 0) {
 			debugLog(`[CopperPour] ${violation.issueCount} copper issues found but no layer info extracted. Rebuilding all ${allPours.length} pours.`);
-			let rebuilt = 0;
-			for (const pour of allPours) {
-				try {
-					await (pour as any).rebuildCopperRegion();
-					rebuilt++;
-				}
-				catch { }
-			}
-			return rebuilt;
+			return rebuildAllCopperPours();
 		}
 
 		// 按图层过滤: 仅重铺 DRC 违规涉及的图层上的覆铜
@@ -140,7 +147,19 @@ export async function rebuildViolatedCopperPours(): Promise<number> {
 			}
 		}
 
+		if (poursToRebuild.length === 0) {
+			return 0;
+		}
+
+		// 检查数量限制
+		if (poursToRebuild.length > 5) {
+			eda.sys_Message?.showToastMessage(`涉及覆铜区域较多(${poursToRebuild.length})，已跳过自动重铺`);
+			logInfo(`[CopperPour] Too many violated pours (${poursToRebuild.length}), skipping rebuild.`);
+			return 0;
+		}
+
 		debugLog(`[CopperPour] Smart Rebuild: ${violation.issueCount} DRC issues on layers [${Array.from(violation.violatedLayers).join(', ')}] → rebuilding ${poursToRebuild.length}/${allPours.length} pours`);
+		eda.sys_Message?.showToastMessage(`检测到覆铜冲突，正在重铺 ${poursToRebuild.length} 个相关区域...`);
 
 		let successCount = 0;
 		for (const pour of poursToRebuild) {
@@ -154,6 +173,10 @@ export async function rebuildViolatedCopperPours(): Promise<number> {
 				const pid = pour.getState_PrimitiveId ? pour.getState_PrimitiveId() : '?';
 				debugWarn(`[CopperPour] Failed to rebuild pour ${pid}: ${e.message || e}`);
 			}
+		}
+
+		if (successCount > 0) {
+			eda.sys_Message?.showToastMessage(`已自动修复 ${successCount} 个覆铜区域`);
 		}
 
 		return successCount;
@@ -178,12 +201,11 @@ export async function rebuildAllCopperPoursIfEnabled(): Promise<number> {
 	// 智能重铺: 仅重铺 DRC 违规涉及的图层上的覆铜
 	const smartCount = await rebuildViolatedCopperPours();
 	if (smartCount >= 0) {
-		// 0=无违规, >0=局部重铺成功
+		// 0=无违规或因数量多跳过, >0=局部重铺完成
 		return smartCount;
 	}
 
 	// smartCount < 0: 执行异常，回退到全量重铺
 	debugLog('[CopperPour] Smart rebuild failed, falling back to full rebuild.');
-	eda.sys_Message?.showToastMessage('正在全量重铺覆铜...');
 	return rebuildAllCopperPours();
 }
