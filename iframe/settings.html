@@ -126,6 +126,7 @@
             padding: 0 20px 20px 20px;
             max-height: 1000px;
             opacity: 1;
+            overflow: hidden;
             /* 展开时：快速开始，缓慢结束 */
             transition: max-height 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0s,
                         opacity 0.1s cubic-bezier(0.4, 0, 1, 1) 0.15s,
@@ -135,6 +136,7 @@
         /* 收起时：同样快速开始，缓慢结束 */
         .card.collapsed .card-content {
             max-height: 0;
+            opacity: 0;
             padding-bottom: 0;
             overflow: hidden;
             /* 收起时：快速开始，缓慢结束（相同缓动函数）*/
@@ -957,8 +959,8 @@
                         card.classList.add('animating');
                         card.classList.toggle('collapsed');
                         
-                        // 保存折叠状态
-                        saveSettings(true);
+                        // 保存折叠状态（仅保存 UI 布局，不触发运行时刷新）
+                        saveSettings(true, { refreshRuntime: false, reloadAfterRefresh: false });
                         
                         // Remove animating class after animation completes
                         setTimeout(() => {
@@ -989,7 +991,7 @@
                 
                 card.addEventListener('dragend', () => {
                     card.classList.remove('dragging');
-                    saveSettings(true);
+                    saveSettings(true, { refreshRuntime: false, reloadAfterRefresh: false });
                 });
                 
                 card.addEventListener('dragover', (e) => {
@@ -1230,10 +1232,15 @@
         }
 
         // 改进的保存函数，添加错误处理和用户反馈
-        async function saveSettings(silent = false) {
+        async function saveSettings(silent = false, options = {}) {
             const api = API || getEda();
             if (!api)
                 return false;
+
+            const {
+                refreshRuntime = true,
+                reloadAfterRefresh = true,
+            } = options;
 
             // Validate numbers
             let radiusRatio = Number.parseFloat(elCornerRadiusRatio.value);
@@ -1295,10 +1302,11 @@
                 updateSwitchLabels();
 
                 // 通知插件主进程刷新设置缓存
-                if (typeof api.jlc_eda_beautify_refreshSettings === 'function') {
+                if (refreshRuntime && typeof api.jlc_eda_beautify_refreshSettings === 'function') {
                     await api.jlc_eda_beautify_refreshSettings();
                     // 再次加载设置，以防止后端因冲突修改了设置（如清空冲突快捷键）
-                    await loadSettings();
+                    if (reloadAfterRefresh)
+                        await loadSettings();
                 }
 
                 if (!silent) {
