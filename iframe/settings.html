@@ -860,6 +860,7 @@
                 <div class="drag-handle">⋮⋮</div>
                 <div class="card-title">
                     <span data-i18n="布线状态管理">布线状态管理</span>
+                    <span id="snapshotPcbName" style="font-weight: normal; color: var(--text-secondary); font-size: 12px; margin-left: 4px;"></span>
                     <span id="snapshotCount" style="font-weight: normal; color: var(--text-hint); font-size: 12px; margin-left: 4px;"></span>
                 </div>
             </div>
@@ -1283,7 +1284,14 @@
             };
 
             try {
-                await api.sys_Storage.setExtensionAllUserConfigs(settings);
+                // 合并现有配置，避免覆盖其它模块（如快照云存储）写入的键
+                const existingConfigs = await api.sys_Storage.getExtensionAllUserConfigs() || {};
+                const mergedConfigs = {
+                    ...existingConfigs,
+                    ...settings,
+                };
+
+                await api.sys_Storage.setExtensionAllUserConfigs(mergedConfigs);
                 updateSwitchLabels();
 
                 // 通知插件主进程刷新设置缓存
@@ -1601,7 +1609,9 @@
 
         // Snapshots logic
         const snapshotList = document.getElementById('snapshotList');
+        const elSnapshotPcbName = document.getElementById('snapshotPcbName');
         let currentPcbId = null;
+        let currentPcbName = '';
 
         // 定期检查 PCB 切换
         // View Mode State
@@ -1612,11 +1622,23 @@
             if (!api || !api.dmt_Pcb) return;
             try {
                 let pid = null;
+                let pname = '';
                 const info = await api.dmt_Pcb.getCurrentPcbInfo();
-                if (info) pid = info.uuid;
+                if (info) {
+                    pid = info.uuid;
+                    pname = info.name || '';
+                }
                 else {
                     const boardInfo = await api.dmt_Board.getCurrentBoardInfo();
-                    if (boardInfo && boardInfo.pcb) pid = boardInfo.pcb.uuid;
+                    if (boardInfo && boardInfo.pcb) {
+                        pid = boardInfo.pcb.uuid;
+                        pname = boardInfo.pcb.name || boardInfo.name || '';
+                    }
+                }
+
+                currentPcbName = pname || '';
+                if (elSnapshotPcbName) {
+                    elSnapshotPcbName.textContent = currentPcbName ? `[${currentPcbName}]` : '';
                 }
 
                 if (pid && pid !== currentPcbId) {
@@ -1682,6 +1704,7 @@
                 if (!currentPcbId) {
                      // 依然没有 PCB，可能是没打开文档
                      snapshotList.innerHTML = `<div class="snapshot-placeholder">${api.sys_I18n ? api.sys_I18n.text('请先打开PCB文档') : 'Please open a PCB'}</div>`;
+                     if (elSnapshotPcbName) elSnapshotPcbName.textContent = '';
                      const countEl = document.getElementById('snapshotCount');
                      if (countEl) countEl.textContent = `(0/0)`;
                      return;
@@ -1723,6 +1746,9 @@
                     const timeStr = `${dateStr} ${date.toLocaleTimeString([], { hour12: false })}`;
                     
                     let nameStr = snap.name;
+                    if (nameStr) {
+                        nameStr = String(nameStr).replace(/^\[[^\]]+\]\s*/, '');
+                    }
                     if (!nameStr) {
                         nameStr = api.sys_I18n ? api.sys_I18n.text('自动快照') : 'Automatic Snapshot';
                     }
@@ -1886,6 +1912,33 @@
         let lastSnapshotCount = -1;
         let lastSnapshotId = null;
 
+        async function runSnapshotStorageDiagnostic() {
+            const api = API || getEda();
+            if (!api || !api.jlc_eda_beautify_snapshot)
+                return;
+
+            if (typeof api.jlc_eda_beautify_snapshot.diagnoseSnapshotStorage !== 'function') {
+                console.warn('[SnapshotDiag] diagnoseSnapshotStorage() is unavailable');
+                return;
+            }
+
+            try {
+                const diag = await api.jlc_eda_beautify_snapshot.diagnoseSnapshotStorage();
+                console.group('[SnapshotDiag] Storage Check');
+                console.log('currentPcbId:', diag.currentPcbId);
+                console.log('hasV4Root:', diag.hasV4Root);
+                console.log('v4PcbCount:', diag.v4PcbCount);
+                console.log('v4CurrentManualCount:', diag.v4CurrentManualCount);
+                console.log('v4CurrentAutoCount:', diag.v4CurrentAutoCount);
+                console.log('hasV3CurrentKey:', diag.hasV3CurrentKey);
+                console.log('storageKeysSample:', diag.storageKeysSample);
+                console.groupEnd();
+            }
+            catch (e) {
+                console.error('[SnapshotDiag] failed:', e);
+            }
+        }
+
         async function init() {
             try {
                 // Load Settings first
@@ -1899,6 +1952,9 @@
                 
                 // Load Snapshots
                 refreshSnapshots();
+
+                // 输出快照存储诊断日志（用于确认是否写入 ExtensionAllUserConfigs）
+                await runSnapshotStorageDiagnostic();
 
                 // 注册快照变化回调，当主代码创建/删除快照时自动刷新列表
                 const api = API || getEda();

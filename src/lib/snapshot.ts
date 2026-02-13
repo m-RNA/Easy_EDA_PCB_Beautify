@@ -4,8 +4,10 @@ import { isClose } from './math';
 
 const SNAPSHOT_STORAGE_KEY_V2 = 'jlc_eda_beautify_snapshots_v2';
 const SNAPSHOT_STORAGE_KEY_V3_PREFIX = 'jlc_eda_beautify_snapshots_v3_';
+const SNAPSHOT_STORAGE_KEY_V4 = 'jlc_eda_beautify_snapshots_v4';
 // 内存缓存 key，挂载在 eda 对象上
 const CACHE_KEY_V3_PREFIX = '_jlc_beautify_snapshots_cache_v3_';
+const V3_KEYS_CLEANED_FLAG = '_jlc_beautify_snapshots_v3_keys_cleaned';
 // 回调 key
 const CALLBACK_KEY = '_jlc_beautify_snapshot_callback';
 // 记录上一次撤销恢复到的快照ID
@@ -26,6 +28,55 @@ export interface RoutingSnapshot {
 interface PcbSnapshotStorage {
 	manual: RoutingSnapshot[];
 	auto: RoutingSnapshot[];
+}
+
+type SnapshotCloudStore = Record<string, PcbSnapshotStorage>;
+
+function collectLegacyV3Keys(allConfigs: Record<string, any>): string[] {
+	return Object.keys(allConfigs || {}).filter(k => k.startsWith(SNAPSHOT_STORAGE_KEY_V3_PREFIX));
+}
+
+async function cleanupLegacyV3Keys(allConfigs: Record<string, any>): Promise<Record<string, any>> {
+	if ((eda as any)[V3_KEYS_CLEANED_FLAG])
+		return allConfigs;
+
+	const legacyKeys = collectLegacyV3Keys(allConfigs);
+	if (legacyKeys.length === 0) {
+		(eda as any)[V3_KEYS_CLEANED_FLAG] = true;
+		return allConfigs;
+	}
+
+	const nextConfigs = { ...allConfigs };
+	for (const key of legacyKeys)
+		delete nextConfigs[key];
+
+	const ok = await eda.sys_Storage.setExtensionAllUserConfigs(nextConfigs);
+	if (ok) {
+		for (const key of legacyKeys) {
+			try {
+				await eda.sys_Storage.deleteExtensionUserConfig(key);
+			}
+			catch {
+				// ignore cleanup failure for legacy per-key config
+			}
+		}
+		(eda as any)[V3_KEYS_CLEANED_FLAG] = true;
+		debugLog(`Cleaned legacy snapshot keys: ${legacyKeys.length}`, 'Snapshot');
+		return nextConfigs;
+	}
+
+	logWarn('Failed to cleanup legacy V3 keys from extension all-user-configs', 'Snapshot');
+	return allConfigs;
+}
+
+export interface SnapshotStorageDiagnostic {
+	currentPcbId: string | null;
+	hasV4Root: boolean;
+	v4PcbCount: number;
+	v4CurrentManualCount: number;
+	v4CurrentAutoCount: number;
+	hasV3CurrentKey: boolean;
+	storageKeysSample: string[];
 }
 
 export const SNAPSHOT_LIMIT = 20;
@@ -86,11 +137,38 @@ async function getPcbStorageData(pcbId: string): Promise<PcbSnapshotStorage> {
 		return cached;
 	}
 
-	// 2. 从 V3 存储读取
+	// 2. 优先从 V4（与扩展设置同一配置容器）读取，并尝试清理遗留 V3 键
+	try {
+		let allConfigs = await eda.sys_Storage.getExtensionAllUserConfigs() || {};
+		allConfigs = await cleanupLegacyV3Keys(allConfigs);
+		const cloudRoot = allConfigs ? allConfigs[SNAPSHOT_STORAGE_KEY_V4] : undefined;
+		if (cloudRoot) {
+			const allV4: SnapshotCloudStore = typeof cloudRoot === 'string' ? JSON.parse(cloudRoot) : cloudRoot;
+			if (allV4 && allV4[pcbId]) {
+				const data = allV4[pcbId];
+				(eda as any)[cacheKey] = data;
+				return data;
+			}
+		}
+	}
+	catch (e: any) {
+		logError(`Failed to load snapshots v4 for ${pcbId}: ${e.message || e}`);
+	}
+
+	// 3. 回退从 V3 存储读取
 	try {
 		const stored = await eda.sys_Storage.getExtensionUserConfig(storageKey);
 		if (stored) {
 			const data = typeof stored === 'string' ? JSON.parse(stored) : stored;
+			// 迁移到 V4 并删除当前 V3 键
+			await savePcbStorageData(pcbId, data);
+			try {
+				await eda.sys_Storage.deleteExtensionUserConfig(storageKey);
+			}
+			catch {
+				// ignore
+			}
+
 			// 更新 cache
 			(eda as any)[cacheKey] = data;
 			return data;
@@ -100,7 +178,7 @@ async function getPcbStorageData(pcbId: string): Promise<PcbSnapshotStorage> {
 		logError(`Failed to load snapshots v3 for ${pcbId}: ${e.message || e}`);
 	}
 
-	// 3. 尝试从 V2 迁移 (仅当 V3 没有数据时)
+	// 4. 尝试从 V2 迁移 (仅当 V3/V4 没有数据时)
 	try {
 		const v2Data = await eda.sys_Storage.getExtensionUserConfig(SNAPSHOT_STORAGE_KEY_V2);
 		if (v2Data) {
@@ -108,7 +186,7 @@ async function getPcbStorageData(pcbId: string): Promise<PcbSnapshotStorage> {
 			if (allV2 && allV2[pcbId]) {
 				const migrated = allV2[pcbId];
 				debugLog(`Migrating snapshots from V2 for PCB: ${pcbId}`);
-				// 保存到 V3
+				// 保存到 V4
 				await savePcbStorageData(pcbId, migrated);
 				return migrated;
 			}
@@ -118,33 +196,41 @@ async function getPcbStorageData(pcbId: string): Promise<PcbSnapshotStorage> {
 		logWarn(`Migration from V2 failed for ${pcbId}: ${e.message || e}`);
 	}
 
-	// 4. 返回空
+	// 5. 返回空
 	const empty = { manual: [], auto: [] };
 	(eda as any)[cacheKey] = empty;
 	return empty;
 }
 
 /**
- * 保存指定 PCB 的快照存储 (V3)
+ * 保存指定 PCB 的快照存储 (V4)
  */
 async function savePcbStorageData(pcbId: string, data: PcbSnapshotStorage) {
 	if (!pcbId)
 		return;
 
 	const cacheKey = `${CACHE_KEY_V3_PREFIX}${pcbId}`;
-	const storageKey = `${SNAPSHOT_STORAGE_KEY_V3_PREFIX}${pcbId}`;
 
 	try {
 		// Update cache
 		(eda as any)[cacheKey] = data;
-		// Persist
-		const success = await eda.sys_Storage.setExtensionUserConfig(storageKey, JSON.stringify(data));
-		if (!success) {
-			logError(`Failed to persist snapshots for ${pcbId} (API returned false)`, 'Snapshot');
+
+		// Persist to V4 (extension all-user-configs), 与设置同一套云端配置通道
+		let allConfigs = await eda.sys_Storage.getExtensionAllUserConfigs() || {};
+		allConfigs = await cleanupLegacyV3Keys(allConfigs);
+		const cloudRoot = allConfigs[SNAPSHOT_STORAGE_KEY_V4];
+		const allV4: SnapshotCloudStore = cloudRoot
+			? (typeof cloudRoot === 'string' ? JSON.parse(cloudRoot) : cloudRoot)
+			: {};
+		allV4[pcbId] = data;
+		allConfigs[SNAPSHOT_STORAGE_KEY_V4] = allV4;
+		const cloudOk = await eda.sys_Storage.setExtensionAllUserConfigs(allConfigs);
+		if (!cloudOk) {
+			logError(`Failed to persist snapshots v4 for ${pcbId} (API returned false)`, 'Snapshot');
 		}
 	}
 	catch (e: any) {
-		logError(`Failed to save snapshots v3 for ${pcbId}: ${e.message || e}`);
+		logError(`Failed to save snapshots v4 for ${pcbId}: ${e.message || e}`);
 	}
 }
 
@@ -163,6 +249,37 @@ export async function getSnapshots(pcbId: string, type?: 'manual' | 'auto'): Pro
 
 	// 如果没有指定类型，则合并（通常也不推荐这么用，除非是为了兼容旧接口）
 	return [...(pcbData.manual || []), ...(pcbData.auto || [])].sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/**
+ * 扩展内诊断：检查快照是否写入 ExtensionAllUserConfigs（V4）
+ * 可在 settings iframe 中调用：
+ * await eda.jlc_eda_beautify_snapshot.diagnoseSnapshotStorage()
+ */
+export async function diagnoseSnapshotStorage(): Promise<SnapshotStorageDiagnostic> {
+	const currentPcb = await getCurrentPcbInfoSafe();
+	const currentPcbId = currentPcb?.id || null;
+
+	const allConfigs = await eda.sys_Storage.getExtensionAllUserConfigs() || {};
+	const cloudRoot = allConfigs[SNAPSHOT_STORAGE_KEY_V4];
+	const allV4: SnapshotCloudStore = cloudRoot
+		? (typeof cloudRoot === 'string' ? JSON.parse(cloudRoot) : cloudRoot)
+		: {};
+
+	const currentV4 = currentPcbId ? allV4[currentPcbId] : undefined;
+	const hasV3CurrentKey = currentPcbId
+		? !!(await eda.sys_Storage.getExtensionUserConfig(`${SNAPSHOT_STORAGE_KEY_V3_PREFIX}${currentPcbId}`))
+		: false;
+
+	return {
+		currentPcbId,
+		hasV4Root: !!cloudRoot,
+		v4PcbCount: Object.keys(allV4 || {}).length,
+		v4CurrentManualCount: currentV4?.manual?.length || 0,
+		v4CurrentAutoCount: currentV4?.auto?.length || 0,
+		hasV3CurrentKey,
+		storageKeysSample: Object.keys(allConfigs).slice(0, 20),
+	};
 }
 
 // 辅助函数：比较 Line 是否一致
