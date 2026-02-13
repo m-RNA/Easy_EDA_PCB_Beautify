@@ -512,21 +512,23 @@
             font-size: 11px;
             border: 1px solid var(--border);
             border-radius: 4px;
-            background: var(--bg-button);
-            color: var(--text-primary);
+            background: var(--card-bg);
+            color: var(--text);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.2s ease;
             line-height: 1;
             height: 28px;
             display: flex;
             align-items: center;
             justify-content: center;
             white-space: nowrap;
+            box-sizing: border-box;
         }
         .btn-run-shortcut:hover {
             border-color: var(--primary);
             color: var(--primary);
-            background: var(--hover-bg);
+            background-color: var(--hover-bg);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         .btn-clear-shortcut {
             padding: 4px 6px;
@@ -534,16 +536,25 @@
             color: var(--danger);
             cursor: pointer;
             border-radius: 4px;
-            transition: all 0.2s;
+            transition: all 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
             width: 24px;
             height: 28px;
+            box-sizing: border-box;
         }
+        /* 强制背景色，解决在已有 hover 背景的行内不明显的问题 */
         .btn-clear-shortcut:hover {
-            background: var(--hover-bg);
-            color: var(--danger);
+            background-color: rgba(220, 53, 69, 0.12) !important;
+            color: var(--danger) !important;
+        }
+        [data-theme="dark"] .btn-clear-shortcut:hover {
+            background-color: rgba(224, 96, 96, 0.18) !important;
+        }
+        /* 统一快照项内的按钮 hover 效果 */
+        .snapshot-item .btn-run-shortcut:hover {
+            background-color: rgba(66, 133, 244, 0.12) !important;
         }
     </style>
 </head>
@@ -1831,9 +1842,9 @@
                             <div class="snapshot-meta">${nameStr}${badgeHtml}</div>
                             <div class="snapshot-details">${timeStr} · ${linesText}</div>
                         </div>
-                        <div style="display:flex;gap:4px;">
-                            <button type="button" class="btn btn-white btn-recover" style="padding:4px 10px;font-size:12px;">${recoverText}</button>
-                            <button type="button" class="btn btn-ghost btn-delete" style="padding:4px 8px;font-size:12px;color:var(--danger);" title="${deleteText}">✕</button>
+                        <div style="display:flex;gap:4px;align-items:center;">
+                            <button type="button" class="btn-run-shortcut btn-recover">${recoverText}</button>
+                            <div class="btn-clear-shortcut btn-delete" title="${deleteText}">✕</div>
                         </div>
                     `;
 
