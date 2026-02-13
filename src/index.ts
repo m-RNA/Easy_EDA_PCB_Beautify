@@ -172,7 +172,7 @@ export async function widthTransitionAll() {
 		// 重铺覆铜
 		await rebuildAllCopperPoursIfEnabled();
 
-		eda.sys_Message?.showToastMessage('线宽过渡完成');
+		eda.sys_Message?.showToastMessage('线宽过渡完成', 'success' as any, 2);
 	}
 	catch (e: any) {
 		logError(`Width Transition Error: ${e.message || e}`);
@@ -196,7 +196,7 @@ export async function createManualSnapshot() {
 	try {
 		const name = '手动快照';
 		await Snapshot.createSnapshot(name, true);
-		eda.sys_Message?.showToastMessage('快照已创建');
+		eda.sys_Message?.showToastMessage('快照已创建', 'success' as any, 2);
 	}
 	catch (e: any) {
 		logError(`Create Snapshot Error: ${e.message || e}`);

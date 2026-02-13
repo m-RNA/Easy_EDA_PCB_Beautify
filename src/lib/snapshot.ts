@@ -600,7 +600,7 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 			if (isSnapshotGeometryIdentical(latest, snapshot)) {
 				debugLog(`Snapshot skipped: Geometry identical to latest "${latest.name}" (id: ${latest.id})`, 'Snapshot');
 				if (isManual && eda.sys_Message) {
-					eda.sys_Message.showToastMessage('当前布线状态与最新快照一致，无需重复创建');
+					eda.sys_Message.showToastMessage('当前布线状态与最新快照一致，无需重复创建', 'info' as any, 2);
 				}
 				if (eda.sys_LoadingAndProgressBar) {
 					eda.sys_LoadingAndProgressBar.destroyLoading();
@@ -628,7 +628,7 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 	catch (e: any) {
 		logError(`Create failed: ${e.message || e}`, 'Snapshot');
 		if (eda.sys_Message)
-			eda.sys_Message.showToastMessage(`创建快照失败: ${e.message}`);
+			eda.sys_Message.showToastMessage(`创建快照失败: ${e.message}`, 'error' as any, 4);
 		return null;
 	}
 	finally {
@@ -669,7 +669,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 
 		if (!snapshot) {
 			logError(`Snapshot not found with id: ${snapshotId}`, 'Snapshot');
-			eda.sys_Message?.showToastMessage('未找到指定快照');
+			eda.sys_Message?.showToastMessage('未找到指定快照', 'warn' as any, 3);
 			return false;
 		}
 
@@ -836,7 +836,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		}
 
 		if (showToast && eda.sys_Message) {
-			eda.sys_Message.showToastMessage(`恢复成功 (L:${linesToCreate.length - linesToDelete.length}, A:${arcsToCreate.length - arcsToDelete.length})`);
+			eda.sys_Message.showToastMessage(`恢复成功 (L:${linesToCreate.length - linesToDelete.length}, A:${arcsToCreate.length - arcsToDelete.length})`, 'success' as any, 2);
 		}
 
 		// 如果是特殊恢复（手动或跨PCB），创建 After 快照作为当前状态
@@ -854,7 +854,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 	catch (e: any) {
 		logError(`Restore failed: ${e.message || e}`, 'Snapshot');
 		if (eda.sys_Message)
-			eda.sys_Message.showToastMessage(`恢复快照失败: ${e.message}`);
+			eda.sys_Message.showToastMessage(`恢复快照失败: ${e.message}`, 'error' as any, 4);
 		return false;
 	}
 	finally {
@@ -912,7 +912,7 @@ export async function undoLastOperation() {
 	try {
 		const currentPcb = await getCurrentPcbInfoSafe();
 		if (!currentPcb) {
-			eda.sys_Message?.showToastMessage('无效的 PCB 状态');
+			eda.sys_Message?.showToastMessage('无效的 PCB 状态', 'warn' as any, 3);
 			return;
 		}
 
@@ -921,7 +921,7 @@ export async function undoLastOperation() {
 
 		// 如果没有自动快照
 		if (!pcbData || !pcbData.auto || pcbData.auto.length === 0) {
-			eda.sys_Message?.showToastMessage('没有可撤销的操作');
+			eda.sys_Message?.showToastMessage('没有可撤销的操作', 'info' as any, 2);
 			return;
 		}
 
@@ -958,11 +958,11 @@ export async function undoLastOperation() {
 			if (success) {
 				const msg = '已撤销';
 				const dispName = targetSnapshot.name.replace(/^\[.*?\]\s*/, '');
-				eda.sys_Message?.showToastMessage(`${msg}: ${dispName}`);
+				eda.sys_Message?.showToastMessage(`${msg}: ${dispName}`, 'info' as any, 2);
 			}
 		}
 		else {
-			eda.sys_Message?.showToastMessage('已到达撤销记录尽头');
+			eda.sys_Message?.showToastMessage('已到达撤销记录尽头', 'info' as any, 2);
 		}
 	}
 	catch (e: any) {

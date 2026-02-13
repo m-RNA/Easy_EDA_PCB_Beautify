@@ -317,7 +317,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		else {
 			const selectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
 			if (!selectedIds || selectedIds.length === 0) {
-				eda.sys_Message?.showToastMessage('请先选择要处理的导线');
+				eda.sys_Message?.showToastMessage('请先选择要处理的导线', 'warn' as any, 3);
 				return;
 			}
 			const primitives = await getSafeSelectedTracks(selectedIds);
@@ -370,7 +370,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		}
 
 		if (tracks.length < 1) {
-			eda.sys_Message?.showToastMessage('未找到可处理的导线');
+			eda.sys_Message?.showToastMessage('未找到可处理的导线', 'info' as any, 2);
 			return;
 		}
 		// 创建快照
@@ -671,7 +671,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 			while (drcAttempt <= maxDrcRetries) {
 				const isFinalAttempt = drcAttempt === maxDrcRetries;
-				eda.sys_Message?.showToastMessage(`DRC 检查中... (优化轮次 ${drcAttempt + 1}/${maxDrcRetries + 1})`);
+				eda.sys_Message?.showToastMessage(`DRC 检查中... (${drcAttempt + 1}/${maxDrcRetries + 1})`, 'info' as any, 1);
 
 				// 运行全局检查
 				const violatedIds = await runDrcCheckAndParse();
@@ -753,7 +753,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			}
 
 			if (drcAttempt > 0) {
-				eda.sys_Message?.showToastMessage(`自动优化完成，执行了 ${drcAttempt} 轮调整`);
+				eda.sys_Message?.showToastMessage(`自动优化完成，执行了 ${drcAttempt} 轮调整`, 'info' as any, 2);
 			}
 		}
 
@@ -769,11 +769,11 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		}
 		catch { }
 
-		eda.sys_Message?.showToastMessage('美化完成');
+		eda.sys_Message?.showToastMessage('美化完成', 'success' as any, 2);
 	}
 	catch (e: any) {
 		logError(e.message);
-		eda.sys_Message?.showToastMessage(`Error: ${e.message}`);
+		eda.sys_Message?.showToastMessage(`美化失败: ${e.message}`, 'error' as any, 4);
 	}
 	finally {
 		eda.sys_LoadingAndProgressBar?.destroyLoading?.();

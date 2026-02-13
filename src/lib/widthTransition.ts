@@ -68,7 +68,7 @@ export async function addWidthTransitionsSelected() {
 		// 获取选中的图元 ID
 		const allSelectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
 		if (!allSelectedIds || allSelectedIds.length === 0) {
-			eda.sys_Message?.showToastMessage('请先选择要处理的导线');
+			eda.sys_Message?.showToastMessage('请先选择要处理的导线', 'warn' as any, 3);
 			return; // finally会处理进度条
 		}
 
@@ -88,7 +88,7 @@ export async function addWidthTransitionsSelected() {
 			const selectedTracks = await getSafeSelectedTracks(allSelectedIds);
 
 			if (selectedTracks.length === 0) {
-				eda.sys_Message?.showToastMessage('没有找到导线');
+				eda.sys_Message?.showToastMessage('没有找到导线', 'info' as any, 2);
 				return;
 			}
 
@@ -99,6 +99,8 @@ export async function addWidthTransitionsSelected() {
 
 			eda.sys_Message?.showToastMessage(
 				`线宽过渡完成，处理了 ${result.count} 个连接点`,
+				'success' as any,
+				2,
 			);
 
 			// 保存操作后的快照
