@@ -639,22 +639,118 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 }
 
 /**
+ * 核心引擎：对比并应用差异
+ * 将快照状态与当前 PCB 状态进行对比，执行增删改操作
+ */
+async function applyStateDiff(type: 'line' | 'arc', snapPrims: any[], currentPrims: any[]) {
+	const api = type === 'line' ? eda.pcb_PrimitiveLine : eda.pcb_PrimitiveArc;
+	if (!api)
+		return { created: 0, deleted: 0, kept: 0 };
+
+	const currentPrimsMap = new Map(currentPrims.map(p => [p.i || p.id, p]));
+	const matchedOnPcbIds = new Set<string>();
+	const snapRemaining: any[] = [];
+
+	// 1. 第一轮：尝试精确 ID 匹配
+	for (const snap of snapPrims) {
+		const id = snap.i || snap.id;
+		const current = currentPrimsMap.get(id);
+		if (current) {
+			const isEqual = type === 'line' ? isLineEqual(snap, current) : isArcEqual(snap, current);
+			if (isEqual) {
+				matchedOnPcbIds.add(id);
+				currentPrimsMap.delete(id);
+				continue;
+			}
+		}
+		snapRemaining.push(snap);
+	}
+
+	// 2. 第二轮：模糊几何匹配 (解决 ID 变更但内容相同的场景)
+	if (snapRemaining.length > 0 && currentPrimsMap.size > 0) {
+		const geoMap = new Map<string, any[]>();
+		for (const [_id, p] of currentPrimsMap.entries()) {
+			const key = geometrySortKey(p);
+			if (!geoMap.has(key))
+				geoMap.set(key, []);
+			geoMap.get(key)!.push(p);
+		}
+
+		const finalSnapRemaining: any[] = [];
+		for (const snap of snapRemaining) {
+			const key = geometrySortKey(snap);
+			const matches = geoMap.get(key);
+			if (matches && matches.length > 0) {
+				const match = matches.shift()!;
+				matchedOnPcbIds.add(match.i || match.id);
+				currentPrimsMap.delete(match.i || match.id);
+			}
+			else {
+				finalSnapRemaining.push(snap);
+			}
+		}
+		snapRemaining.splice(0, snapRemaining.length, ...finalSnapRemaining);
+	}
+
+	// 3. 执行删除：没被匹配上的当前图元
+	const finalToDelete = Array.from(currentPrimsMap.keys());
+	if (finalToDelete.length > 0) {
+		await api.delete(finalToDelete);
+	}
+
+	// 4. 执行创建：没找到匹配项的快照图元
+	for (const p of snapRemaining) {
+		try {
+			if (type === 'line') {
+				await api.create(
+					p.n ?? p.net,
+					p.l ?? p.layer,
+					p.sX ?? p.sx ?? p.startX,
+					p.sY ?? p.sy ?? p.startY,
+					p.eX ?? p.ex ?? p.endX,
+					p.eY ?? p.ey ?? p.endY,
+					p.w ?? p.lineWidth ?? 10,
+				);
+			}
+			else {
+				const angle = p.a ?? p.arcAngle;
+				const width = p.w ?? p.lineWidth ?? 10;
+				await api.create(
+					p.n ?? p.net,
+					p.l ?? p.layer,
+					p.sX ?? p.sx ?? p.startX,
+					p.sY ?? p.sy ?? p.startY,
+					p.eX ?? p.ex ?? p.endX,
+					p.eY ?? p.ey ?? p.endY,
+					angle,
+					width,
+				);
+			}
+		}
+		catch (e) {
+			logWarn(`${type} recreate error: ${e}`);
+		}
+	}
+
+	return {
+		created: snapRemaining.length,
+		deleted: finalToDelete.length,
+		kept: matchedOnPcbIds.size,
+	};
+}
+
+/**
  * 恢复快照
  */
 export async function restoreSnapshot(snapshotId: number, showToast: boolean = true, requireConfirmation: boolean = false): Promise<boolean> {
 	try {
 		const currentPcb = await getCurrentPcbInfoSafe();
-		if (!currentPcb) {
-			logWarn('Cannot restore snapshot: No active PCB found.', 'Snapshot');
+		if (!currentPcb)
 			return false;
-		}
-		const currentPcbId = currentPcb.id;
 
-		// 因为 restoreSnapshot 只给 ID，优先从当前 PCB 查找
-		const pcbStore = await getPcbStorageData(currentPcbId);
+		const pcbStore = await getPcbStorageData(currentPcb.id);
 		let snapshot = pcbStore.manual.find(s => s.id === snapshotId) || pcbStore.auto.find(s => s.id === snapshotId);
 
-		// 如果当前 PCB 没找到，尝试在迁移过来的数据或其它 PCB 中找（通过 V2 兜底）
 		if (!snapshot) {
 			const v2Data = await eda.sys_Storage.getExtensionUserConfig(SNAPSHOT_STORAGE_KEY_V2);
 			if (v2Data) {
@@ -668,198 +764,69 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		}
 
 		if (!snapshot) {
-			logError(`Snapshot not found with id: ${snapshotId}`, 'Snapshot');
 			eda.sys_Message?.showToastMessage('未找到指定快照', 'warn' as any, 3);
 			return false;
 		}
 
-		// 1. 检查 PCB ID
 		let confirmed = !requireConfirmation;
-		let isMismatch = false;
+		const isMismatch = snapshot.pcbId && snapshot.pcbId !== currentPcb.id;
 
-		if (snapshot.pcbId && snapshot.pcbId !== currentPcbId) {
-			isMismatch = true;
-			// 如果 ID 不匹配，显示严重警告
-			if (eda.sys_Dialog && typeof eda.sys_Dialog.showConfirmationMessage === 'function') {
-				confirmed = await new Promise<boolean>((resolve) => {
-					eda.sys_Dialog.showConfirmationMessage(
-						'!!! 警告：快照所属PCB与当前不一致 !!!\n\n可能会导致数据错乱，系统将尝试备份当前状态。是否继续？',
-						'!!! 危险操作确认 !!!',
-						undefined,
-						undefined,
-						(ok: boolean) => resolve(ok),
-					);
-				});
-			}
-			else {
-				confirmed = true;
-			}
+		if (isMismatch && eda.sys_Dialog) {
+			confirmed = await new Promise(r => eda.sys_Dialog.showConfirmationMessage('!!! 警告：快照所属PCB不一致 !!!\n可能会影响当前设计，是否确认恢复？', '危险确认', undefined, undefined, r));
 		}
-		else if (requireConfirmation) {
-			if (eda.sys_Dialog && typeof eda.sys_Dialog.showConfirmationMessage === 'function') {
-				confirmed = await new Promise<boolean>((resolve) => {
-					eda.sys_Dialog.showConfirmationMessage(
-						'确定恢复快照？当前未保存的修改将丢失。',
-						'恢复快照',
-						undefined,
-						undefined,
-						(ok: boolean) => resolve(ok),
-					);
-				});
-			}
+		else if (requireConfirmation && eda.sys_Dialog) {
+			confirmed = await new Promise(r => eda.sys_Dialog.showConfirmationMessage('确定恢复快照？当前未保存的修改将丢失。', '确认恢复', undefined, undefined, r));
 		}
 
 		if (!confirmed)
 			return false;
 
-		// 自动备份逻辑：将手动恢复视为一个独立操作，记录 Before/After
-		const snapName = snapshot.name.replace(/^\[.*?\]\s*/, '');
-		const isSpecialRestore = snapshot.isManual || isMismatch;
-
-		if (isSpecialRestore) {
-			const beforeName = `恢复 [${snapName}] Before`;
-			await createSnapshot(beforeName, false);
+		// 触发 Before 备份（手动恢复或跨 PCB 恢复时）
+		if (snapshot.isManual || isMismatch) {
+			const snapName = snapshot.name.replace(/^\[.*?\]\s*/, '');
+			await createSnapshot(`恢复 [${snapName}] 之前`, false);
 		}
 
-		if (eda.sys_LoadingAndProgressBar) {
+		if (eda.sys_LoadingAndProgressBar)
 			eda.sys_LoadingAndProgressBar.showLoading();
-		}
 
-		// 恢复逻辑 (Diff)
 		const currentLines = extractPrimitiveData(await eda.pcb_PrimitiveLine.getAll() || [], 'line');
 		const currentArcs = extractPrimitiveData(await eda.pcb_PrimitiveArc.getAll() || [], 'arc');
 
-		const currentLineMap = new Map(currentLines.map((l: any) => [l.i || l.id, l]));
-		const linesToDelete: string[] = [];
-		const linesToCreate: any[] = [];
+		// 应用导线差异
+		const lineRes = await applyStateDiff('line', snapshot.lines, currentLines);
 
-		for (const snapLine of snapshot.lines) {
-			const snapId = snapLine.i || snapLine.id;
-			if (currentLineMap.has(snapId)) {
-				if (isLineEqual(snapLine, currentLineMap.get(snapId))) {
-					currentLineMap.delete(snapId);
-				}
-				else {
-					linesToDelete.push(snapId);
-					linesToCreate.push(snapLine);
-					currentLineMap.delete(snapId);
-				}
-			}
-			else {
-				linesToCreate.push(snapLine);
-			}
-		}
-		for (const id of currentLineMap.keys()) linesToDelete.push(id as string);
-
-		const currentArcMap = new Map(currentArcs.map((a: any) => [a.i || a.id, a]));
-		const arcsToDelete: string[] = [];
-		const arcsToCreate: any[] = [];
-
-		for (const snapArc of snapshot.arcs) {
-			const snapId = snapArc.i || snapArc.id;
-			if (currentArcMap.has(snapId)) {
-				if (isArcEqual(snapArc, currentArcMap.get(snapId))) {
-					currentArcMap.delete(snapId);
-				}
-				else {
-					arcsToDelete.push(snapId);
-					arcsToCreate.push(snapArc);
-					currentArcMap.delete(snapId);
-				}
-			}
-			else {
-				arcsToCreate.push(snapArc);
-			}
-		}
-		for (const id of currentArcMap.keys()) arcsToDelete.push(id as string);
-
-		// Execute
-		if (linesToDelete.length > 0)
-			await eda.pcb_PrimitiveLine.delete(linesToDelete);
-		if (arcsToDelete.length > 0)
-			await eda.pcb_PrimitiveArc.delete(arcsToDelete);
-
-		for (const l of linesToCreate) {
-			try {
-				const lineWidth = l.w ?? l.lineWidth ?? 10;
-				await eda.pcb_PrimitiveLine.create(
-					l.n ?? l.net,
-					l.l ?? l.layer,
-					l.sX ?? l.sx ?? l.startX,
-					l.sY ?? l.sy ?? l.startY,
-					l.eX ?? l.ex ?? l.endX,
-					l.eY ?? l.ey ?? l.endY,
-					lineWidth,
-				);
-			}
-			catch (e) { logWarn(`Line restore error: ${e}`); }
-		}
-
-		// 修复快照中圆弧线宽（通过连接关系从导线推导）
-		// arcsToCreate 引用自 snapshot.arcs 对象，修改会同步生效
+		// 预校准圆弧线宽并应用差异
 		resolveArcWidths(snapshot.lines, snapshot.arcs);
-
-		// 创建圆弧
-		for (const a of arcsToCreate) {
-			try {
-				const startX = a.sX ?? a.sx ?? a.startX;
-				const angle = a.a ?? a.arcAngle;
-				// 优先使用 geo map 中的正确宽度（由 beautifyRouting 写入）
-				// 快照中的 w 可能因之前的 API Bug 而不正确
-				let width = a.w ?? a.lineWidth ?? 10;
-				const geoKey = makeArcWidthGeoKey(
-					a.n ?? a.net,
-					a.l ?? a.layer,
-					startX,
-					a.sY ?? a.sy ?? a.startY,
-					a.eX ?? a.ex ?? a.endX,
-					a.eY ?? a.ey ?? a.endY,
-				);
-				const geoWidth = getArcWidthByGeoMap().get(geoKey);
-				if (geoWidth !== undefined) {
-					width = geoWidth;
-				}
-				if (startX !== undefined && angle !== undefined) {
-					await eda.pcb_PrimitiveArc.create(
-						a.n ?? a.net,
-						a.l ?? a.layer,
-						startX,
-						a.sY ?? a.sy ?? a.startY,
-						a.eX ?? a.ex ?? a.endX,
-						a.eY ?? a.ey ?? a.endY,
-						angle,
-						width,
-					);
-				}
-			}
-			catch (e) { logWarn(`Arc restore error: ${e}`); }
-		}
+		const arcRes = await applyStateDiff('arc', snapshot.arcs, currentArcs);
 
 		if (showToast && eda.sys_Message) {
-			eda.sys_Message.showToastMessage(`恢复成功 (L:${linesToCreate.length - linesToDelete.length}, A:${arcsToCreate.length - arcsToDelete.length})`, 'success' as any, 2);
+			const totalKept = lineRes.kept + arcRes.kept;
+			const totalChanged = lineRes.created + arcRes.created + lineRes.deleted + arcRes.deleted;
+			if (totalChanged === 0) {
+				eda.sys_Message.showToastMessage('当前状态与快照完全一致', 'info' as any, 2);
+			}
+			else {
+				eda.sys_Message.showToastMessage(`恢复成功：保持 ${totalKept}，更新 ${lineRes.created + arcRes.created} 处`, 'success' as any, 2);
+			}
 		}
 
-		// 如果是特殊恢复（手动或跨PCB），创建 After 快照作为当前状态
-		if (isSpecialRestore) {
-			const afterName = `恢复 [${snapName}] After`;
-			await createSnapshot(afterName, false);
+		// 如果是手动或跨 PCB，恢复后存个 After
+		if (snapshot.isManual || isMismatch) {
+			const snapName = snapshot.name.replace(/^\[.*?\]\s*/, '');
+			await createSnapshot(`恢复 [${snapName}] 之后`, false);
 		}
 
-		// 记录恢复点：无论是手动还是自动，都记录其 ID 以便在 UI 显示“上次撤销至此”
 		setLastRestoredId(snapshot.id);
-
 		notifySnapshotChange();
 		return true;
 	}
 	catch (e: any) {
-		logError(`Restore failed: ${e.message || e}`, 'Snapshot');
-		if (eda.sys_Message)
-			eda.sys_Message.showToastMessage(`恢复快照失败: ${e.message}`, 'error' as any, 4);
+		logError(`Restore failed: ${e.message || e}`);
 		return false;
 	}
 	finally {
-		if (eda.sys_LoadingAndProgressBar)
-			eda.sys_LoadingAndProgressBar.destroyLoading();
+		eda.sys_LoadingAndProgressBar?.destroyLoading();
 	}
 }
 
@@ -898,80 +865,53 @@ export async function clearSnapshots() {
 }
 
 /**
- * 撤销上一次操作 (通过恢复快照)
- * 查找最新的快照并恢复
+ * 撤销上一次操作 (复用 restoreSnapshot)
  */
 export async function undoLastOperation() {
 	if (isUndoing())
 		return;
 	setUndoing(true);
 
-	if (eda.sys_LoadingAndProgressBar?.showLoading)
-		eda.sys_LoadingAndProgressBar.showLoading();
-
 	try {
 		const currentPcb = await getCurrentPcbInfoSafe();
-		if (!currentPcb) {
-			eda.sys_Message?.showToastMessage('无效的 PCB 状态', 'warn' as any, 3);
+		if (!currentPcb)
 			return;
-		}
 
-		const pcbId = currentPcb.id;
-		const pcbData = await getPcbStorageData(pcbId);
+		const pcbData = await getPcbStorageData(currentPcb.id);
+		const autoSnaps = pcbData.auto || [];
 
-		// 如果没有自动快照
-		if (!pcbData || !pcbData.auto || pcbData.auto.length === 0) {
+		if (autoSnaps.length === 0) {
 			eda.sys_Message?.showToastMessage('没有可撤销的操作', 'info' as any, 2);
 			return;
 		}
 
-		const autoSnapshots = pcbData.auto;
+		const lastId = getLastRestoredId();
+		let targetIdx = 0;
 
-		// 寻找目标快照
-		let targetSnapshot: RoutingSnapshot | undefined;
-		const lastRestoredId = getLastRestoredId();
-		let startIndex = 0;
-
-		if (lastRestoredId !== null) {
-			const idx = autoSnapshots.findIndex(s => s.id === lastRestoredId);
-			if (idx !== -1) {
-				startIndex = idx + 1; // 找更旧的一个
-			}
+		if (lastId !== null) {
+			const idx = autoSnaps.findIndex(s => s.id === lastId);
+			if (idx !== -1)
+				targetIdx = idx + 1;
 		}
 
-		// 补偿检查：
-		// 1. 如果是从 manual 恢复的 (lastRestoredId 在 auto 中不存在)
-		// 2. 或者是正常操作后第一次撤销 (lastRestoredId 为空)
-		// 只要顶部是 "After" 快照（代表当前状态），就需要跳过它去恢复 "Before"
-		if (startIndex === 0) {
-			if (autoSnapshots.length > 0 && autoSnapshots[0].name && /\sAfter$/.test(autoSnapshots[0].name)) {
-				startIndex = 1;
-			}
+		// 如果处于 "After" 状态（刚做完一次操作或刚恢复完），跳过 After 直达 Before
+		if (targetIdx === 0 && autoSnaps[0].name.endsWith('After')) {
+			targetIdx = 1;
 		}
 
-		if (startIndex < autoSnapshots.length) {
-			targetSnapshot = autoSnapshots[startIndex];
-		}
-
-		if (targetSnapshot) {
-			const success = await restoreSnapshot(targetSnapshot.id, false, false);
-			if (success) {
-				const msg = '已撤销';
-				const dispName = targetSnapshot.name.replace(/^\[.*?\]\s*/, '');
-				eda.sys_Message?.showToastMessage(`${msg}: ${dispName}`, 'info' as any, 2);
+		if (targetIdx < autoSnaps.length) {
+			const target = autoSnaps[targetIdx];
+			const ok = await restoreSnapshot(target.id, false, false);
+			if (ok) {
+				const dispName = target.name.replace(/^\[.*?\]\s*/, '');
+				eda.sys_Message?.showToastMessage(`已撤销至: ${dispName}`, 'info' as any, 2);
 			}
 		}
 		else {
 			eda.sys_Message?.showToastMessage('已到达撤销记录尽头', 'info' as any, 2);
 		}
 	}
-	catch (e: any) {
-		if (eda.sys_Dialog)
-			eda.sys_Dialog.showInformationMessage(`撤销失败: ${e.message}`, 'Undo Error');
-	}
 	finally {
 		setUndoing(false);
-		if (eda.sys_LoadingAndProgressBar?.destroyLoading)
-			eda.sys_LoadingAndProgressBar.destroyLoading();
 	}
 }
