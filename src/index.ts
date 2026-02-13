@@ -15,7 +15,7 @@ import { beautifyRouting as beautifyTask } from './lib/beautify';
 import { rebuildAllCopperPoursIfEnabled } from './lib/eda_utils';
 import { debugLog, debugWarn, logError } from './lib/logger';
 import { getDefaultSettings, getSettings } from './lib/settings';
-import { initShortcuts } from './lib/shortcuts';
+import { clearAllExtensionShortcuts, diagnoseShortcuts, initShortcuts } from './lib/shortcuts';
 import { undoLastOperation as undoTask } from './lib/snapshot';
 import * as Snapshot from './lib/snapshot';
 import { addWidthTransitionsAll, addWidthTransitionsSelected } from './lib/widthTransition';
@@ -66,13 +66,15 @@ export async function activate(_status?: 'onStartupFinished', _arg?: string): Pr
 		await refreshShortcuts(); // 刷新快捷键
 	};
 	(eda as any).jlc_eda_beautify_getDefaultSettings = getDefaultSettings;
+	(eda as any).jlc_eda_beautify_diagnoseShortcuts = diagnoseShortcuts;
+	(eda as any).jlc_eda_beautify_clearShortcuts = clearAllExtensionShortcuts;
 
 	// 注册快捷键
 	try {
 		await refreshShortcuts();
 	}
 	catch (e: any) {
-		debugWarn(`Initialization failed: ${e.message || e}`, 'PCB');
+		debugWarn(`Shortcut initialization failed: ${e.message || e}`, 'PCB');
 	}
 }
 

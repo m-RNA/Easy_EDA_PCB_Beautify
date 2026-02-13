@@ -1489,10 +1489,14 @@
                 case 'WIN':
                 case 'META':
                 case 'SUPER': return 'Win';
-                case 'ARROWUP': return 'Up';
-                case 'ARROWDOWN': return 'Down';
-                case 'ARROWLEFT': return 'Left';
-                case 'ARROWRIGHT': return 'Right';
+                case 'ARROWUP':
+                case 'UP': return 'Up';
+                case 'ARROWDOWN':
+                case 'DOWN': return 'Down';
+                case 'ARROWLEFT':
+                case 'LEFT': return 'Left';
+                case 'ARROWRIGHT':
+                case 'RIGHT': return 'Right';
                 case 'SPACE': return 'Space';
                 case 'TAB': return 'Tab';
                 default: return upper;
@@ -1562,6 +1566,43 @@
             if (el) {
                 el.value = '';
                 await saveSettings();
+            }
+        }
+
+        async function runClearAllShortcuts() {
+            const api = API || getEda();
+            if (!api || typeof api.jlc_eda_beautify_clearShortcuts !== 'function') {
+                alert('接口不可用，请确保扩展已加载');
+                return;
+            }
+            try {
+                const count = await api.jlc_eda_beautify_clearShortcuts();
+                const msg = count >= 0 ? `已清除 ${count} 个快捷键绑定` : '清除失败';
+                if (api.sys_Message && typeof api.sys_Message.showToastMessage === 'function') {
+                    api.sys_Message.showToastMessage(msg);
+                } else {
+                    alert(msg);
+                }
+            } catch (e) {
+                alert('清除失败: ' + (e.message || e));
+            }
+        }
+
+        async function runShortcutDiagnose() {
+            const api = API || getEda();
+            if (!api || typeof api.jlc_eda_beautify_diagnoseShortcuts !== 'function') {
+                alert('诊断接口不可用，请确保扩展已加载');
+                return;
+            }
+            try {
+                const report = await api.jlc_eda_beautify_diagnoseShortcuts();
+                if (api.sys_Dialog && typeof api.sys_Dialog.showInformationMessage === 'function') {
+                    api.sys_Dialog.showInformationMessage(report, '快捷键诊断报告');
+                } else {
+                    alert(report);
+                }
+            } catch (e) {
+                alert('诊断失败: ' + (e.message || e));
             }
         }
 
