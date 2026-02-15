@@ -75,6 +75,7 @@ src/
     ├── beautify.ts    # Corner smoothing (Beautify)
     ├── widthTransition.ts # Width transition
     ├── snapshot.ts    # Snapshot management
+    ├── shortcuts.ts   # Shortcut registration
     ├── math.ts        # Math utilities
     ├── drc.ts         # DRC checks & copper pour filtering
     ├── eda_utils.ts   # EDA utilities (copper pour rebuild, etc.)

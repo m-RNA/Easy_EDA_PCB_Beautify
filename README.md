@@ -85,6 +85,7 @@ src/
     ├── widthTransition.ts # 线宽过渡
     ├── drc.ts             # DRC 检查与覆铜过滤
     ├── snapshot.ts        # 快照管理
+    ├── shortcuts.ts       # 快捷键注册
     ├── math.ts            # 数学工具
     ├── eda_utils.ts       # EDA 工具 (覆铜重铺等)
     ├── logger.ts          # 日志打印
