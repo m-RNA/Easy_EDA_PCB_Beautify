@@ -64,7 +64,7 @@ Instead of:
 
 ```typescript
 // src/lib/state.ts
-let myCache: any[] = []; // ❌ Risky: May be isolated per context
+let myCache: any[] = []; // Risky: May be isolated per context
 
 export function updateCache(data: any) {
 	myCache = data;
@@ -82,7 +82,7 @@ Use:
 const CACHE_KEY = '_unique_extension_id_cache';
 
 export function updateCache(data: any) {
-	// ✅ Safe: Anchored to the single source of truth 'eda'
+	// Safe: Anchored to the single source of truth 'eda'
 	(eda as any)[CACHE_KEY] = data;
 }
 
@@ -213,19 +213,22 @@ For DRC-based auto-rollback, we extract object IDs from the remaining (non-coppe
 
 These IDs are matched against the primitives being modified to determine which corners need radius reduction.
 
-## Undocumented API: Copper Pour Rebuild
+## Copper Pour Rebuild API
 
 ### Discovery
 
-The `IPCB_PrimitivePour` class has a method `rebuildCopperRegion()` that is **excluded from the official type declarations** (`@jlceda/pro-api-types`) but **exists and works at runtime**.
+The `IPCB_PrimitivePour` class has a method `rebuildCopperRegion()` for rebuilding the filled copper region associated with a pour boundary.
 
-In the `.d.ts` file, many `IPCB_PrimitivePour` methods are annotated with:
+As of `@jlceda/pro-api-types@0.3.4`, this method is present in the official type declarations as a `@beta` API:
 
-```ts
-// Excluded from this release type
+```typescript
+interface IPCB_PrimitivePour {
+	getCopperRegion: () => Promise<IPCB_PrimitivePoured | undefined>;
+	rebuildCopperRegion: () => Promise<IPCB_PrimitivePoured | undefined>;
+}
 ```
 
-However, at runtime the prototype contains 32 methods including `rebuildCopperRegion`.
+Older host/type combinations may still expose it only at runtime, so code that needs to support older environments should continue to guard the call.
 
 ### Verification
 
@@ -243,7 +246,7 @@ pours[0].rebuildCopperRegion();
 
 ### Usage in Code
 
-Since the method is not in the type declarations, we must use `as any` to bypass TypeScript:
+With current type declarations, the direct call is typed. For older SDK versions, keep a small runtime guard when compatibility matters:
 
 ```typescript
 export async function rebuildAllCopperPours(): Promise<number> {
@@ -252,7 +255,8 @@ export async function rebuildAllCopperPours(): Promise<number> {
 		return 0;
 
 	for (const pour of pours) {
-		(pour as any).rebuildCopperRegion();
+		if (typeof pour.rebuildCopperRegion === 'function')
+			await pour.rebuildCopperRegion();
 	}
 	return pours.length;
 }
@@ -271,7 +275,7 @@ Both `beautifyAll()` and `widthTransitionAll()` in `index.ts` call the high-leve
 
 - The method triggers an asynchronous pour calculation in the EDA worker. The canvas updates after the worker completes.
 - Each pour is rebuilt independently. For boards with many copper zones, this may take noticeable time.
-- Since this API is undocumented, it may change or be removed in future EDA versions. Monitor for breakage on EDA updates.
+- The API is marked `@beta`, so host behavior and performance should still be checked after EDA updates.
 
 ## Copper Pour ID Spaces: Three Non-Overlapping Systems
 
@@ -353,13 +357,13 @@ The `TSYS_ShortcutKeys` type definition declares **all keys in uppercase** (`'SH
 
 | Registration Format | Triggers? |
 | --- | --- |
-| `['Shift', 'Q']` | ✅ Yes |
-| `['SHIFT', 'Q']` | ❌ No (registers OK, never fires) |
-| `['Ctrl', 'Shift', 'Q']` | ✅ Yes |
-| `['CONTROL', 'SHIFT', 'Q']` | ❌ No |
-| `['F9']` | ✅ Yes (no modifier, already uppercase) |
-| `['Shift', 'F6']` | ✅ Yes |
-| `['SHIFT', 'F5']` | ❌ No |
+| `['Shift', 'Q']` | Yes |
+| `['SHIFT', 'Q']` | No (registers OK, never fires) |
+| `['Ctrl', 'Shift', 'Q']` | Yes |
+| `['CONTROL', 'SHIFT', 'Q']` | No |
+| `['F9']` | Yes (no modifier, already uppercase) |
+| `['Shift', 'F6']` | Yes |
+| `['SHIFT', 'F5']` | No |
 
 **Important**: The modifier key `Ctrl` must be spelled `'Ctrl'`, NOT `'Control'`. The type definition says `'CONTROL'` but the runtime recognizes `'Ctrl'`.
 
@@ -415,4 +419,4 @@ To match user muscle memory from other EDA tools, we register the following by d
 
 ---
 Created: 2026-01-31
-Updated: 2026-02-13
+Updated: 2026-07-08

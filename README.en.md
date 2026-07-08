@@ -2,7 +2,7 @@
 
 [简体中文](./README.md) | [English](./README.en.md) | When translation has deviations, the Chinese version shall prevail.
 
-One-click optimization of PCB corners into arcs, ensuring impedance continuity; Bezier optimization at trace width transitions (better teardrops); Supports DRC checks, automatic copper pour rebuild, multi-step undo, snapshot management, transitional segment merging, forced arc generation, and other advanced optimization features
+One-click optimization of PCB corners into arcs, ensuring impedance continuity; Bezier optimization at trace width transitions (better teardrops); Supports differential/equal-length protection, DRC checks, automatic copper pour rebuild, multi-step undo, snapshot management, transitional segment merging, forced arc generation, and other advanced optimization features
 
 > Inspiration: [[Melt your circuit boards]](https://www.youtube.com/watch?v=euJgtLcWWyo)
 
@@ -15,13 +15,14 @@ One-click optimization of PCB corners into arcs, ensuring impedance continuity; 
 1. DRC Rule Check
 ![preview](./images/preview4.png)
 
-> ⚠️ Plugin under development. It's recommended to backup your project before operation. Feedback welcome when encountering issues.
+> Note: Plugin under development. It's recommended to backup your project before operation. Feedback welcome when encountering issues.
 
-📖 **Usage**
+**Usage**
 
 Menu location: Advanced → Beautify PCB
 
 - Smooth Routing (Selected/All) – Process trace corners (arc-based beautification)
+- Diff/Length Protection – Enabled by default for DRC differential pairs and equal-length net groups; uses concentric arcs when corners can be matched and keeps uncertain corners straight
 - Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment)
 - DRC Rule Check – Apply optimistic routing first, then perform design rule checks and automatically revert non-compliant sections; supports ignoring copper pour rules
 - Automatic Copper Pour Rebuild – Automatically rebuild copper pour regions (Safe threshold of 5 areas to ensure UI responsiveness)
@@ -36,7 +37,7 @@ You can enable display in the top menu via: Advanced → Extension Manager → I
 
 ![preview](./images/setting.png)
 
-🚀 **Contributing**
+**Contributing**
 
 Forks & PRs welcome! Development environment setup as follows:
 
@@ -53,7 +54,7 @@ Already cloned? Pull submodules:
 git submodule update --init --recursive
 ```
 
-⚠️ Note: Submodules are locked to specific compatible versions. Do not update using the `--remote` parameter, as this may cause compilation failures.
+Note: Submodules are locked to specific compatible versions. Do not update using the `--remote` parameter, as this may cause compilation failures.
 
 Install & Build:
 
@@ -64,15 +65,16 @@ npm run build
 
 Build output: `.eext` extension package in the `build/dist/` directory
 
-Development note: Please read this file to avoid pitfalls: [DEVELOPER_NOTES.md](./DEVELOPER_NOTES.md)
+Development note: Please read this file to avoid pitfalls: [agents.md](./agents.md)
 
-📁 **Structure**
+**Structure**
 
 ```txt
 src/
 ├── index.ts           # Entry point & menu registration
 └── lib/
     ├── beautify.ts    # Corner smoothing (Beautify)
+    ├── arcGeometry.ts # Corner and concentric-arc geometry
     ├── widthTransition.ts # Width transition
     ├── snapshot.ts    # Snapshot management
     ├── shortcuts.ts   # Shortcut registration
@@ -86,6 +88,6 @@ iframe/
 pro-api-sdk/           # Git submodule (JLCEDA Pro Extension API SDK)
 ```
 
-📜 **License**
+**License**
 
 This project is licensed under the Apache-2.0 License - see [LICENSE](https://www.apache.org/licenses/LICENSE-2.0.txt) for details.
