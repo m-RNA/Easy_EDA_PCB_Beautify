@@ -38,7 +38,7 @@
 
 可通过 高级 → 扩展管理器 → 已安装扩展 → 美化PCB → 配置 勾选“显示在顶部菜单”，方便使用（右键菜单API暂未开放）
 
-![效果预览](./images/topMenuConfig.png)
+![效果预览](./images/topMenuConfig.jpg)
 
 ![效果预览](./images/topMenu.png)
 

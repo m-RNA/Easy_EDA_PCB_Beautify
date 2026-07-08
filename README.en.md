@@ -31,7 +31,7 @@ Menu location: Advanced → Beautify PCB
 
 You can enable display in the top menu via: Advanced → Extension Manager → Installed Extensions → Beautify PCB → Configure (check the option to show in top menu for convenient use)
 
-![preview](./images/topMenuConfig.png)
+![preview](./images/topMenuConfig.jpg)
 
 ![preview](./images/topMenu.png)
 
