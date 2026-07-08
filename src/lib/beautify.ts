@@ -1,4 +1,6 @@
+import type { CornerArcOverride } from './arcGeometry';
 import type { Point } from './math';
+import { buildConcentricOverrides, computeCornerArcCandidate } from './arcGeometry';
 import { runDrcCheckAndParse } from './drc';
 import { getSafeSelectedTracks } from './eda_utils';
 import { debugLog, logError } from './logger';
@@ -62,6 +64,29 @@ interface PathOp {
 	cornerIndex: number; // 关联的拐角索引，用于回滚定位
 }
 
+interface ProtectedNetGroup {
+	key: string;
+	name: string;
+	type: 'differential' | 'equalLength';
+	nets: string[];
+}
+
+interface PathContext {
+	pathId: number; // 唯一标识
+	points: Point[];
+	orderedSegs: any[];
+	net: string;
+	layer: number;
+	backupPrimitives: any[]; // 原始数据备份
+	createdIds: string[]; // 当前生成的ID
+	idToCornerMap: Map<string, number>; // ID -> 拐角索引映射
+	badCorners: Set<number>; // 已知的坏拐角
+	cornerScales: Map<number, number>; // 拐角缩放因子
+	protectedGroupKeys: string[];
+	protectedCornerKeys: Map<number, string>;
+	cornerOverrides: Map<number, CornerArcOverride | null>;
+}
+
 /**
  * 核心几何计算函数：根据路径点生成绘图指令
  * @param path 设置线段信息
@@ -75,6 +100,7 @@ function generatePathOps(
 	settings: any,
 	badCorners: Set<number> = new Set(),
 	cornerScales: Map<number, number> = new Map(),
+	cornerOverrides: Map<number, CornerArcOverride | null> = new Map(),
 ): PathOp[] {
 	const { points, orderedSegs } = path;
 	const ops: PathOp[] = [];
@@ -120,6 +146,38 @@ function generatePathOps(
 		const scale = cornerScales.get(i);
 		if (scale !== undefined) {
 			radius = baseRadius * scale;
+		}
+
+		const override = cornerOverrides.get(i);
+		if (override === null) {
+			ops.push({
+				type: 'line',
+				start: currentStart,
+				end: pCorner,
+				width: prevSegWidth,
+				cornerIndex: i,
+			});
+			currentStart = pCorner;
+			continue;
+		}
+		if (override) {
+			ops.push({
+				type: 'line',
+				start: currentStart,
+				end: override.start,
+				width: prevSegWidth,
+				cornerIndex: i,
+			});
+			ops.push({
+				type: 'arc',
+				start: override.start,
+				end: override.end,
+				width: override.width,
+				angle: override.angle,
+				cornerIndex: i,
+			});
+			currentStart = override.end;
+			continue;
 		}
 
 		let isMerged = false;
@@ -297,6 +355,206 @@ function generatePathOps(
 	return ops;
 }
 
+async function loadProtectedNetGroups(settings: any): Promise<ProtectedNetGroup[]> {
+	if (!settings.protectDifferentialAndEqualLength)
+		return [];
+
+	const groups: ProtectedNetGroup[] = [];
+	try {
+		const drcApi = eda.pcb_Drc as any;
+		const differentialRaw = typeof drcApi.getAllDifferentialPairs === 'function'
+			? await drcApi.getAllDifferentialPairs()
+			: [];
+		const differentialPairs = normalizeDifferentialPairs(differentialRaw);
+		for (const pair of differentialPairs) {
+			const nets = uniqueNets([pair.positiveNet, pair.negativeNet]);
+			if (nets.length >= 2) {
+				groups.push({
+					key: `diff:${pair.name || nets.join('/')}`,
+					name: pair.name || nets.join('/'),
+					type: 'differential',
+					nets,
+				});
+			}
+		}
+
+		const equalLengthGroups = typeof drcApi.getAllEqualLengthNetGroups === 'function'
+			? await drcApi.getAllEqualLengthNetGroups()
+			: [];
+		if (Array.isArray(equalLengthGroups)) {
+			for (const group of equalLengthGroups) {
+				const nets = uniqueNets(group?.nets || []);
+				if (nets.length >= 2) {
+					groups.push({
+						key: `eq:${group.name || nets.join('/')}`,
+						name: group.name || nets.join('/'),
+						type: 'equalLength',
+						nets,
+					});
+				}
+			}
+		}
+	}
+	catch (e: any) {
+		debugLog(`[ProtectedRoute] 读取差分/等长组失败，跳过保护: ${e.message || e}`);
+	}
+
+	return groups;
+}
+
+function normalizeDifferentialPairs(input: any): Array<{ name?: string; positiveNet?: string; negativeNet?: string }> {
+	const pairs: Array<{ name?: string; positiveNet?: string; negativeNet?: string }> = [];
+	const visit = (value: any) => {
+		if (!value)
+			return;
+		if (Array.isArray(value)) {
+			for (const item of value) visit(item);
+			return;
+		}
+		if (typeof value !== 'object')
+			return;
+		if (typeof value.positiveNet === 'string' && typeof value.negativeNet === 'string') {
+			pairs.push(value);
+			return;
+		}
+		for (const child of Object.values(value)) visit(child);
+	};
+	visit(input);
+	return pairs;
+}
+
+function uniqueNets(nets: any[]): string[] {
+	const result: string[] = [];
+	for (const net of nets) {
+		if (typeof net !== 'string' || !net)
+			continue;
+		if (!result.includes(net))
+			result.push(net);
+	}
+	return result;
+}
+
+function buildNetToProtectedGroups(groups: ProtectedNetGroup[]): Map<string, ProtectedNetGroup[]> {
+	const map = new Map<string, ProtectedNetGroup[]>();
+	for (const group of groups) {
+		for (const net of group.nets) {
+			if (!map.has(net))
+				map.set(net, []);
+			map.get(net)!.push(group);
+		}
+	}
+	return map;
+}
+
+function refreshProtectedCornerOverrides(activePaths: PathContext[], protectedGroups: ProtectedNetGroup[], settings: any) {
+	for (const ctx of activePaths) {
+		ctx.cornerOverrides.clear();
+		ctx.protectedCornerKeys.clear();
+	}
+	if (!settings.protectDifferentialAndEqualLength || protectedGroups.length === 0)
+		return;
+
+	for (const group of protectedGroups) {
+		const contexts = activePaths.filter(ctx => ctx.protectedGroupKeys.includes(group.key));
+		const contextsByLayer = new Map<number, PathContext[]>();
+		for (const ctx of contexts) {
+			if (!contextsByLayer.has(ctx.layer))
+				contextsByLayer.set(ctx.layer, []);
+			contextsByLayer.get(ctx.layer)!.push(ctx);
+		}
+
+		for (const [layer, layerContexts] of contextsByLayer) {
+			const groupNets = new Set(group.nets);
+			const presentNets = new Set(layerContexts.map(ctx => ctx.net));
+			const hasFullGroup = Array.from(groupNets).every(net => presentNets.has(net));
+			if (!hasFullGroup) {
+				for (const ctx of layerContexts)
+					markAllProtectedCornersStraight(ctx, group.key, layer);
+				continue;
+			}
+
+			const maxCornerCount = Math.max(...layerContexts.map(ctx => ctx.points.length - 2));
+			for (let cornerIndex = 1; cornerIndex <= maxCornerCount; cornerIndex++) {
+				const cornerKey = `${group.key}#${layer}#${cornerIndex}`;
+				const candidates = [];
+				let canProtect = true;
+				for (const ctx of layerContexts) {
+					if (cornerIndex >= ctx.points.length - 1) {
+						canProtect = false;
+						break;
+					}
+					ctx.protectedCornerKeys.set(cornerIndex, cornerKey);
+					if (ctx.badCorners.has(cornerIndex)) {
+						canProtect = false;
+						break;
+					}
+					const candidate = computeCornerArcCandidate(
+						ctx.points,
+						ctx.orderedSegs,
+						cornerIndex,
+						{ ...settings, forceArc: false },
+						ctx.cornerScales.get(cornerIndex),
+					);
+					if (!candidate) {
+						canProtect = false;
+						break;
+					}
+					candidates.push({ ctx, candidate });
+				}
+
+				if (!canProtect) {
+					for (const ctx of layerContexts) {
+						if (cornerIndex < ctx.points.length - 1)
+							ctx.cornerOverrides.set(cornerIndex, null);
+					}
+					continue;
+				}
+
+				const overrides = buildConcentricOverrides(candidates.map(item => item.candidate));
+				if (!overrides) {
+					for (const { ctx } of candidates)
+						ctx.cornerOverrides.set(cornerIndex, null);
+					continue;
+				}
+
+				for (let i = 0; i < candidates.length; i++)
+					candidates[i].ctx.cornerOverrides.set(cornerIndex, overrides[i]);
+			}
+		}
+	}
+}
+
+function markAllProtectedCornersStraight(ctx: PathContext, groupKey: string, layer: number) {
+	for (let cornerIndex = 1; cornerIndex < ctx.points.length - 1; cornerIndex++) {
+		ctx.protectedCornerKeys.set(cornerIndex, `${groupKey}#${layer}#${cornerIndex}`);
+		ctx.cornerOverrides.set(cornerIndex, null);
+	}
+}
+
+function syncProtectedCornerRepair(
+	activePaths: PathContext[],
+	sourceCtx: PathContext,
+	cornerIndex: number,
+	apply: (ctx: PathContext, idx: number) => void,
+): PathContext[] {
+	const cornerKey = sourceCtx.protectedCornerKeys.get(cornerIndex);
+	if (!cornerKey) {
+		apply(sourceCtx, cornerIndex);
+		return [sourceCtx];
+	}
+
+	const changed: PathContext[] = [];
+	for (const ctx of activePaths) {
+		for (const [idx, key] of ctx.protectedCornerKeys) {
+			if (key === cornerKey) {
+				apply(ctx, idx);
+				changed.push(ctx);
+			}
+		}
+	}
+	return changed.length > 0 ? changed : [sourceCtx];
+}
+
 /**
  * 圆滑布线
  * @param scope 'selected' 只处理选中的导线, 'all' 处理所有导线
@@ -373,6 +631,11 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			eda.sys_Message?.showToastMessage('未找到可处理的导线', 'info' as any, 2);
 			return;
 		}
+		const protectedGroups = await loadProtectedNetGroups(settings);
+		const netToProtectedGroups = buildNetToProtectedGroups(protectedGroups);
+		if (protectedGroups.length > 0)
+			debugLog(`[ProtectedRoute] 已读取 ${protectedGroups.length} 个差分/等长保护组`);
+
 		// 创建快照
 		try {
 			const name = scope === 'all' ? 'Beautify (All) Before' : 'Beautify (Selected) Before';
@@ -391,20 +654,6 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			if (!groups.has(key))
 				groups.set(key, []);
 			groups.get(key)?.push(track);
-		}
-
-		// 定义处理上下文接口
-		interface PathContext {
-			pathId: number; // 唯一标识
-			points: Point[];
-			orderedSegs: any[];
-			net: string;
-			layer: number;
-			backupPrimitives: any[]; // 原始数据备份
-			createdIds: string[]; // 当前生成的ID
-			idToCornerMap: Map<string, number>; // ID -> 拐角索引映射
-			badCorners: Set<number>; // 已知的坏拐角
-			cornerScales: Map<number, number>; // 拐角缩放因子
 		}
 
 		const activePaths: PathContext[] = [];
@@ -585,6 +834,9 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 						idToCornerMap: new Map(),
 						badCorners: new Set<number>(),
 						cornerScales: new Map<number, number>(),
+						protectedGroupKeys: (netToProtectedGroups.get(net) || []).map(group => group.key),
+						protectedCornerKeys: new Map(),
+						cornerOverrides: new Map(),
 					});
 				}
 			}
@@ -654,12 +906,14 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		};
 
 		// 2. 第一次执行：生成所有路径 (Optimistic Pass)
+		refreshProtectedCornerOverrides(activePaths, protectedGroups, settings);
 		for (const ctx of activePaths) {
 			const ops = generatePathOps(
 				{ points: ctx.points, orderedSegs: ctx.orderedSegs },
 				settings,
 				ctx.badCorners,
 				ctx.cornerScales,
+				ctx.cornerOverrides,
 			);
 			await commitOps(ops, ctx);
 		}
@@ -688,35 +942,29 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				let _repairedCorners = 0;
 
 				for (const ctx of activePaths) {
-					let needsUpdate = false;
 					for (const id of ctx.createdIds) {
 						if (violatedIds.has(id)) {
 							const idx = ctx.idToCornerMap.get(id);
 							if (idx !== undefined) {
-								needsUpdate = true;
 								_repairedCorners++;
 
-								// 二分法/折半缩小策略
-								// 默认初始 scale 为 1.0 (即使用 settings.cornerRadiusRatio)
-								// 每次违规，我们将 scale 减半
-								const currentScale = ctx.cornerScales.get(idx) ?? 1.0;
-								const nextScale = currentScale * 0.5;
+								const changed = syncProtectedCornerRepair(activePaths, ctx, idx, (repairCtx, repairIdx) => {
+									const currentScale = repairCtx.cornerScales.get(repairIdx) ?? 1.0;
+									const nextScale = currentScale * 0.5;
 
-								if (isFinalAttempt || nextScale < 0.1) {
-									// 尝试次数耗尽或比例过小，放弃治疗，回滚为直角
-									ctx.badCorners.add(idx);
-									debugLog(`[DRC] Corner ${idx} marked BAD (Straight)`);
-								}
-								else {
-									// 尝试更小的半径
-									ctx.cornerScales.set(idx, nextScale);
-									debugLog(`[DRC] Corner ${idx} reducing scale to ${nextScale.toFixed(3)}`);
-								}
+									if (isFinalAttempt || nextScale < 0.1) {
+										repairCtx.badCorners.add(repairIdx);
+										debugLog(`[DRC] Corner ${repairIdx} marked BAD (Straight)`);
+									}
+									else {
+										repairCtx.cornerScales.set(repairIdx, nextScale);
+										debugLog(`[DRC] Corner ${repairIdx} reducing scale to ${nextScale.toFixed(3)}`);
+									}
+								});
+								for (const changedCtx of changed)
+									pathsToRepair.add(changedCtx);
 							}
 						}
-					}
-					if (needsUpdate) {
-						pathsToRepair.add(ctx);
 					}
 				}
 
@@ -726,6 +974,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				}
 
 				// 重绘
+				refreshProtectedCornerOverrides(activePaths, protectedGroups, settings);
 				for (const ctx of pathsToRepair) {
 					// 删除旧图元
 					if (ctx.createdIds.length > 0) {
@@ -744,6 +993,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 						settings,
 						ctx.badCorners,
 						ctx.cornerScales,
+						ctx.cornerOverrides,
 					);
 					// 3. 重新绘制
 					await commitOps(ops, ctx);

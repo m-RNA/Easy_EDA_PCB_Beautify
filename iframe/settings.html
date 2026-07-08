@@ -796,6 +796,26 @@
                 </div>
             </div>
 
+            <!-- Protected Length Groups -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label">
+                        <span data-i18n="差分/等长保护">差分/等长保护</span>
+                        <span style="background:var(--bg);color:var(--primary);border:1px solid var(--primary);padding:1px 5px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
+                    </div>
+                    <div class="setting-desc" data-i18n="差分对和等长组使用同心圆弧，无法可靠匹配时保持直角">差分对和等长组使用同心圆弧，无法可靠匹配时保持直角</div>
+                </div>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="protectDifferentialAndEqualLength" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="protectDifferentialAndEqualLengthLabel" data-i18n="启用">启用</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Force Arc -->
             <div class="setting-item">
                 <div class="setting-info">
@@ -1104,6 +1124,7 @@
         const elDebug = document.getElementById('debug');
         const elForceArc = document.getElementById('forceArc');
         const elMergeTransitionSegments = document.getElementById('mergeTransitionSegments');
+        const elProtectDifferentialAndEqualLength = document.getElementById('protectDifferentialAndEqualLength');
         const elEnableDRC = document.getElementById('enableDRC');
         const elDrcIgnoreCopperPour = document.getElementById('drcIgnoreCopperPour');
         const elRebuildCopperPour = document.getElementById('rebuildCopperPour');
@@ -1121,6 +1142,7 @@
         const elDebugLabel = document.getElementById('debugLabel');
         const elMergeTransitionSegmentsLabel = document.getElementById('mergeTransitionSegmentsLabel');
         const elForceArcLabel = document.getElementById('forceArcLabel');
+        const elProtectDifferentialAndEqualLengthLabel = document.getElementById('protectDifferentialAndEqualLengthLabel');
         const elEnableDRCLabel = document.getElementById('enableDRCLabel');
         const elDrcIgnoreCopperPourLabel = document.getElementById('drcIgnoreCopperPourLabel');
         const elRebuildCopperPourLabel = document.getElementById('rebuildCopperPourLabel');
@@ -1136,6 +1158,7 @@
             elSyncWidthLabel.textContent = elSyncWidth.checked ? enabledText : disabledText;
             elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
             elMergeTransitionSegmentsLabel.textContent = elMergeTransitionSegments.checked ? enabledText : disabledText;
+            elProtectDifferentialAndEqualLengthLabel.textContent = elProtectDifferentialAndEqualLength.checked ? enabledText : disabledText;
             elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
             elEnableDRCLabel.textContent = elEnableDRC.checked ? enabledText : disabledText;
             elDrcIgnoreCopperPourLabel.textContent = elDrcIgnoreCopperPour.checked ? enabledText : disabledText;
@@ -1145,6 +1168,7 @@
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elMergeTransitionSegmentsLabel.style.color = elMergeTransitionSegments.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elProtectDifferentialAndEqualLengthLabel.style.color = elProtectDifferentialAndEqualLength.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elEnableDRCLabel.style.color = elEnableDRC.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDrcIgnoreCopperPourLabel.style.color = elDrcIgnoreCopperPour.checked ? 'var(--primary)' : 'var(--text-secondary)';
@@ -1181,6 +1205,7 @@
                 }
 
                 if (elMergeTransitionSegments) elMergeTransitionSegments.checked = config.mergeTransitionSegments !== undefined ? config.mergeTransitionSegments : true;
+                if (elProtectDifferentialAndEqualLength) elProtectDifferentialAndEqualLength.checked = config.protectDifferentialAndEqualLength !== undefined ? config.protectDifferentialAndEqualLength : true;
                 if (elSyncWidth) elSyncWidth.checked = config.syncWidthTransition;
 
                 if (elSegments) {
@@ -1280,6 +1305,7 @@
             const settings = {
                 cornerRadiusRatio: radiusRatio,
                 mergeTransitionSegments: elMergeTransitionSegments.checked,
+                protectDifferentialAndEqualLength: elProtectDifferentialAndEqualLength.checked,
                 syncWidthTransition: elSyncWidth.checked,
                 widthTransitionSegments: segments,
                 widthTransitionRatio: ratio,
@@ -1660,7 +1686,7 @@
         bindShortcutInput(elShortcutUndoOperation);
         bindShortcutInput(elShortcutCreateSnapshot);
 
-        [elSyncWidth, elDebug, elMergeTransitionSegments, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
+        [elSyncWidth, elDebug, elMergeTransitionSegments, elProtectDifferentialAndEqualLength, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
             if (el) el.addEventListener('change', () => saveSettings());
         });
 

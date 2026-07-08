@@ -18,6 +18,8 @@
 	"高级设置": "Advanced Settings",
 	"合并过渡线段": "Merge Transition Segments",
 	"自动合并中间的过渡线段以生成圆弧": "Automatically merge intermediate transition segments to generate arcs",
+	"差分/等长保护": "Diff/Length Protection",
+	"差分对和等长组使用同心圆弧，无法可靠匹配时保持直角": "Use concentric arcs for differential pairs and equal-length groups; keep corners straight when matching is uncertain",
 	"强制生成圆弧": "Force Arc Generation",
 	"短线段导致圆弧不相切也生成（半径减小）": "Generate arcs even if short segments cause non-tangency (radius reduced)",
 	"最大过渡段数": "Max Transition Segments",
