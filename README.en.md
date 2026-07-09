@@ -11,7 +11,6 @@ One-click optimization of PCB corners into arcs to improve geometric continuity 
 1. Smooth beautification at sudden width changes (based on Bezier curves)
 ![preview](./images/preview2.gif)
 1. Snapshot management & undo support
-![preview](./images/preview3.gif)
 1. DRC Rule Check
 ![preview](./images/preview4.png)
 

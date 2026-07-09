@@ -16,8 +16,6 @@
 
 3、快照管理 & 撤销支持
 
-![效果预览](./images/preview3.gif)
-
 4、DRC 规则检查
 
 ![效果预览](./images/preview4.png)

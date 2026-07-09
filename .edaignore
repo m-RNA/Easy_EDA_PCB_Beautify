@@ -18,6 +18,13 @@
 /EDA_EX_DOC/
 /pro-api-sdk/
 /scripts/
-/images/logo.gif
+/images/*
+!/images/logo.png
+!/images/preview4.png
+!/images/preview1.gif
+!/images/preview2.gif
+!/images/setting.png
+!/images/topMenu.png
+!/images/topMenuConfig.jpg
 .eslintcache
 debug.log
