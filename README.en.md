@@ -1,4 +1,4 @@
-# ![LOGO](./images/logo.gif) | Melt/Optimize/Beautify PCB Routing
+# ![LOGO](./images/logo.png) | Melt/Optimize/Beautify PCB Routing
 
 [简体中文](./README.md) | [English](./README.en.md) | When translation has deviations, the Chinese version shall prevail.
 
