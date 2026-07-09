@@ -20,6 +20,7 @@
 /scripts/
 /images/*
 !/images/logo.png
+!/images/readme-logo.png
 !/images/preview4.png
 !/images/preview1.gif
 !/images/preview2.gif
