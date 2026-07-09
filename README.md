@@ -1,4 +1,6 @@
-# ![LOGO](./images/logo.png) | 熔化/优化/美化PCB
+<img src="./images/logo.png" alt="LOGO" width="96" />
+
+# 熔化/优化/美化PCB
 
 [简体中文](./README.md) | [English](./README.en.md) | 当翻译有偏差时，请以中文版本为准
 
