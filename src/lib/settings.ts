@@ -4,6 +4,7 @@ export interface BeautifySettings {
 	widthTransitionSegments: number; // 线宽过渡分段数
 	widthTransitionBalance: number; // 过渡区位置平衡 0-100%: 0=全部向窄线, 100=全部向宽线
 	cornerRadiusRatio: number; // 圆角半径与线宽的比率 (半径 = 线宽 * 比率)
+	protectPadAndViaNodes: boolean; // 保护焊盘和过孔中心节点，避免圆滑后断连
 	protectDifferentialAndEqualLength: boolean; // 保护差分对/等长组，使用同心圆弧或保守跳过
 	mergeTransitionSegments: boolean; // 是否合并过渡线段
 	debug: boolean; // 调试模式
@@ -30,6 +31,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	widthTransitionSegments: 25,
 	widthTransitionBalance: 50, // 中间位置= 50%
 	cornerRadiusRatio: 3.0, // 默认半径是线宽的3倍
+	protectPadAndViaNodes: true,
 	protectDifferentialAndEqualLength: true,
 	mergeTransitionSegments: false,
 	debug: false,

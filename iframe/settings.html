@@ -796,6 +796,23 @@
                 </div>
             </div>
 
+            <!-- Pad / Via Node Protection -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="保护焊盘/过孔节点">保护焊盘/过孔节点</div>
+                    <div class="setting-desc" data-i18n="保持焊盘和过孔中心处的连接原样，避免圆滑后断连">保持焊盘和过孔中心处的连接原样，避免圆滑后断连</div>
+                </div>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="protectPadAndViaNodes" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="protectPadAndViaNodesLabel" data-i18n="启用">启用</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Protected Length Groups -->
             <div class="setting-item">
                 <div class="setting-info">
@@ -1124,6 +1141,7 @@
         const elDebug = document.getElementById('debug');
         const elForceArc = document.getElementById('forceArc');
         const elMergeTransitionSegments = document.getElementById('mergeTransitionSegments');
+        const elProtectPadAndViaNodes = document.getElementById('protectPadAndViaNodes');
         const elProtectDifferentialAndEqualLength = document.getElementById('protectDifferentialAndEqualLength');
         const elEnableDRC = document.getElementById('enableDRC');
         const elDrcIgnoreCopperPour = document.getElementById('drcIgnoreCopperPour');
@@ -1142,6 +1160,7 @@
         const elDebugLabel = document.getElementById('debugLabel');
         const elMergeTransitionSegmentsLabel = document.getElementById('mergeTransitionSegmentsLabel');
         const elForceArcLabel = document.getElementById('forceArcLabel');
+        const elProtectPadAndViaNodesLabel = document.getElementById('protectPadAndViaNodesLabel');
         const elProtectDifferentialAndEqualLengthLabel = document.getElementById('protectDifferentialAndEqualLengthLabel');
         const elEnableDRCLabel = document.getElementById('enableDRCLabel');
         const elDrcIgnoreCopperPourLabel = document.getElementById('drcIgnoreCopperPourLabel');
@@ -1158,6 +1177,7 @@
             elSyncWidthLabel.textContent = elSyncWidth.checked ? enabledText : disabledText;
             elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
             elMergeTransitionSegmentsLabel.textContent = elMergeTransitionSegments.checked ? enabledText : disabledText;
+            elProtectPadAndViaNodesLabel.textContent = elProtectPadAndViaNodes.checked ? enabledText : disabledText;
             elProtectDifferentialAndEqualLengthLabel.textContent = elProtectDifferentialAndEqualLength.checked ? enabledText : disabledText;
             elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
             elEnableDRCLabel.textContent = elEnableDRC.checked ? enabledText : disabledText;
@@ -1168,6 +1188,7 @@
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elMergeTransitionSegmentsLabel.style.color = elMergeTransitionSegments.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elProtectPadAndViaNodesLabel.style.color = elProtectPadAndViaNodes.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elProtectDifferentialAndEqualLengthLabel.style.color = elProtectDifferentialAndEqualLength.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elEnableDRCLabel.style.color = elEnableDRC.checked ? 'var(--primary)' : 'var(--text-secondary)';
@@ -1205,6 +1226,7 @@
                 }
 
                 if (elMergeTransitionSegments) elMergeTransitionSegments.checked = config.mergeTransitionSegments !== undefined ? config.mergeTransitionSegments : true;
+                if (elProtectPadAndViaNodes) elProtectPadAndViaNodes.checked = config.protectPadAndViaNodes !== undefined ? config.protectPadAndViaNodes : true;
                 if (elProtectDifferentialAndEqualLength) elProtectDifferentialAndEqualLength.checked = config.protectDifferentialAndEqualLength !== undefined ? config.protectDifferentialAndEqualLength : true;
                 if (elSyncWidth) elSyncWidth.checked = config.syncWidthTransition;
 
@@ -1305,6 +1327,7 @@
             const settings = {
                 cornerRadiusRatio: radiusRatio,
                 mergeTransitionSegments: elMergeTransitionSegments.checked,
+                protectPadAndViaNodes: elProtectPadAndViaNodes.checked,
                 protectDifferentialAndEqualLength: elProtectDifferentialAndEqualLength.checked,
                 syncWidthTransition: elSyncWidth.checked,
                 widthTransitionSegments: segments,
@@ -1686,7 +1709,7 @@
         bindShortcutInput(elShortcutUndoOperation);
         bindShortcutInput(elShortcutCreateSnapshot);
 
-        [elSyncWidth, elDebug, elMergeTransitionSegments, elProtectDifferentialAndEqualLength, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
+        [elSyncWidth, elDebug, elMergeTransitionSegments, elProtectPadAndViaNodes, elProtectDifferentialAndEqualLength, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
             if (el) el.addEventListener('change', () => saveSettings());
         });
 

@@ -18,6 +18,8 @@
 	"高级设置": "Advanced Settings",
 	"合并过渡线段": "Merge Transition Segments",
 	"自动合并中间的过渡线段以生成圆弧": "Automatically merge intermediate transition segments to generate arcs",
+	"保护焊盘/过孔节点": "Protect Pad/Via Nodes",
+	"保持焊盘和过孔中心处的连接原样，避免圆滑后断连": "Keep connections at pad and via centers unchanged to prevent disconnections after smoothing",
 	"差分/等长保护": "Diff/Length Protection",
 	"差分对和等长组使用同心圆弧，无法可靠匹配时保持直角": "Use concentric arcs for differential pairs and equal-length groups; keep corners straight when matching is uncertain",
 	"强制生成圆弧": "Force Arc Generation",

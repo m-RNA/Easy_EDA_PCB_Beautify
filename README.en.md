@@ -21,6 +21,7 @@ One-click optimization of PCB corners into arcs to improve geometric continuity 
 Menu location: Advanced → Beautify PCB
 
 - Smooth Routing (Selected/All) – Process trace corners (arc-based beautification)
+- Connection Node Protection – Keeps pad/via centers and T/cross junctions unchanged by default to prevent disconnections after smoothing
 - Diff/Length Protection – Enabled by default for DRC differential pairs and equal-length net groups; uses concentric arcs when corners can be matched and keeps uncertain corners straight
 - Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment)
 - DRC Rule Check – Apply optimistic routing first, then perform design rule checks and automatically revert non-compliant sections; supports ignoring copper pour rules
@@ -32,7 +33,7 @@ Menu location: Advanced → Beautify PCB
 
 - Smooth routing is mainly intended for visual routing polish, flexible boards, high-voltage traces, high-current traces, and some RF or sharp-corner-sensitive layouts. It is usually low risk on ordinary low-speed boards, but snapshots and DRC checks are still recommended.
 - Do not blindly apply global smoothing to high-speed digital, RF, or impedance-controlled nets. A smoother-looking shape does not automatically mean lower signal reflection. Critical nets should be checked against impedance, length, and SI requirements; transition length should be calculated for the actual frequency and structure (for example, the tapered impedance transformer idea in `Variational Theory of the Tapered Impedance Transformer`).
-- Direct pad-to-trace connections are not always good candidates for automatic smoothing. In some high-speed designs, local cutouts, impedance compensation, or keeping the original connection can be more appropriate.
+- Pad/via node protection is enabled by default. Same-net center connections and T/cross junctions are kept unchanged. If pad/via protection is disabled, direct connections in high-speed designs should still be reviewed for local cutouts, impedance compensation, or other project-specific requirements.
 - Diff/Length Protection is enabled by default. The plugin uses concentric arcs for corners that can be matched reliably; uncertain corners are kept straight to avoid breaking length relationships just for smoother visuals. After processing, verify net lengths, equal-length rules, and DRC in EDA.
 - Before exporting manufacturing files, inspect the final geometry in Gerber preview or manufacturing checks, especially around forced arcs, width transitions, complex board outlines, and copper pours.
 
@@ -86,6 +87,7 @@ src/
     ├── snapshot.ts    # Snapshot management
     ├── shortcuts.ts   # Shortcut registration
     ├── math.ts        # Math utilities
+    ├── routeTopology.ts # Board topology and electrical anchor protection
     ├── drc.ts         # DRC checks & copper pour filtering
     ├── eda_utils.ts   # EDA utilities (copper pour rebuild, etc.)
     ├── logger.ts      # Logging

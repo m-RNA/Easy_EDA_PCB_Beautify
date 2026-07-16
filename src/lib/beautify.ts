@@ -3,8 +3,9 @@ import type { Point } from './math';
 import { buildConcentricOverrides, computeCornerArcCandidate } from './arcGeometry';
 import { runDrcCheckAndParse } from './drc';
 import { getSafeSelectedTracks } from './eda_utils';
-import { debugLog, logError } from './logger';
+import { debugLog, debugWarn, logError } from './logger';
 import { dist, getAngleBetween, getLineIntersection, lerp } from './math';
+import { buildNodeDegreeIndex, isProtectedRouteNode, isRouteJunction, loadBoardTopologySegments, loadElectricalAnchorIndex, makePointKey } from './routeTopology';
 import { getSettings } from './settings';
 import { createSnapshot } from './snapshot';
 import { addWidthTransitionsAll } from './widthTransition';
@@ -80,7 +81,7 @@ interface PathContext {
 	backupPrimitives: any[]; // 原始数据备份
 	createdIds: string[]; // 当前生成的ID
 	idToCornerMap: Map<string, number>; // ID -> 拐角索引映射
-	badCorners: Set<number>; // 已知的坏拐角
+	badCorners: Set<number>; // DRC 或电气锚点要求强制保持直线的拐角
 	cornerScales: Map<number, number>; // 拐角缩放因子
 	protectedGroupKeys: string[];
 	protectedCornerKeys: Map<number, string>;
@@ -631,6 +632,28 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			eda.sys_Message?.showToastMessage('未找到可处理的导线', 'info' as any, 2);
 			return;
 		}
+
+		// 节点保护必须基于整板真实拓扑，而不是仅基于当前选中的导线。
+		// 否则只选中 T 形/十字节点中的两条支路时，会被误判为普通拐角。
+		const topologyLines = scope === 'all'
+			? tracks
+			: await eda.pcb_PrimitiveLine.getAll();
+		const topologyResult = await loadBoardTopologySegments(topologyLines || [], eda as any);
+		const nodeDegreeIndex = buildNodeDegreeIndex(topologyResult.segments);
+		for (const warning of topologyResult.warnings)
+			debugWarn(`[RouteTopology] ${warning}`);
+
+		let protectedAnchorKeys = new Set<string>();
+		if (settings.protectPadAndViaNodes) {
+			const anchorResult = await loadElectricalAnchorIndex(eda as any);
+			protectedAnchorKeys = anchorResult.anchorKeys;
+			if (anchorResult.warnings.length > 0) {
+				for (const warning of new Set(anchorResult.warnings))
+					debugWarn(`[RouteAnchor] ${warning}`);
+				eda.sys_Message?.showToastMessage('部分焊盘或过孔读取失败，已按现有拓扑继续圆滑', 'warn' as any, 3);
+			}
+		}
+
 		const protectedGroups = await loadProtectedNetGroups(settings);
 		const netToProtectedGroups = buildNetToProtectedGroups(protectedGroups);
 		if (protectedGroups.length > 0)
@@ -672,13 +695,10 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				track: t,
 			}));
 
-			// 辅助函数：生成坐标键
-			// 使用 3 位小数精度，与 widthTransition 保持一致，避免浮点数误差导致断连
-			const pointKey = (p: { x: number; y: number }) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`;
 			const connections = new Map<string, typeof segs[0][]>();
 			for (const seg of segs) {
-				const k1 = pointKey(seg.p1);
-				const k2 = pointKey(seg.p2);
+				const k1 = makePointKey(seg.p1);
+				const k2 = makePointKey(seg.p2);
 				if (!connections.has(k1))
 					connections.set(k1, []);
 				if (!connections.has(k2))
@@ -689,6 +709,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 			// 提取所有连续路径
 			const used = new Set<string>();
+			const isPathBoundary = (point: Point) => isRouteJunction(net, layer, point, nodeDegreeIndex);
 
 			for (const startSeg of segs) {
 				if (used.has(startSeg.id))
@@ -703,16 +724,17 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				while (extended) {
 					extended = false;
 					// 尝试从末端扩展
-					const lastKey = pointKey(points[points.length - 1]);
+					const lastPoint = points[points.length - 1];
+					const lastKey = makePointKey(lastPoint);
 					const lastConns = connections.get(lastKey) || [];
 
-					// 遇到分叉点（连接数 > 2）停止扩展
-					if (lastConns.length <= 2) {
+					// 遇到整板真实分叉时停止扩展；焊盘/过孔作为路径内直角单独保护。
+					if (lastConns.length <= 2 && !isPathBoundary(lastPoint)) {
 						for (const seg of lastConns) {
 							if (used.has(seg.id))
 								continue;
-							const nextKey1 = pointKey(seg.p1);
-							const nextKey2 = pointKey(seg.p2);
+							const nextKey1 = makePointKey(seg.p1);
+							const nextKey2 = makePointKey(seg.p2);
 							if (nextKey1 === lastKey) {
 								points.push(seg.p2);
 								orderedSegs.push(seg);
@@ -732,16 +754,17 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 					// 尝试从起点扩展
 					if (!extended) {
-						const firstKey = pointKey(points[0]);
+						const firstPoint = points[0];
+						const firstKey = makePointKey(firstPoint);
 						const firstConns = connections.get(firstKey) || [];
 
-						// 遇到分叉点（连接数 > 2）停止扩展
-						if (firstConns.length <= 2) {
+						// 起点同样使用整板拓扑判定。
+						if (firstConns.length <= 2 && !isPathBoundary(firstPoint)) {
 							for (const seg of firstConns) {
 								if (used.has(seg.id))
 									continue;
-								const nextKey1 = pointKey(seg.p1);
-								const nextKey2 = pointKey(seg.p2);
+								const nextKey1 = makePointKey(seg.p1);
+								const nextKey2 = makePointKey(seg.p2);
 								if (nextKey1 === firstKey) {
 									points.unshift(seg.p2);
 									orderedSegs.unshift(seg);
@@ -762,6 +785,22 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				}
 
 				if (points.length >= 3) {
+					const protectedAnchorCorners = new Set<number>();
+					if (settings.protectPadAndViaNodes) {
+						for (let index = 1; index < points.length - 1; index++) {
+							if (isProtectedRouteNode(
+								net,
+								layer,
+								points[index],
+								nodeDegreeIndex,
+								protectedAnchorKeys,
+								true,
+							)) {
+								protectedAnchorCorners.add(index);
+							}
+						}
+					}
+
 					// 准备备份数据
 					const backupPrimitives: any[] = [];
 					// 准备工作：计算所有需要删除的ID
@@ -832,7 +871,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 						backupPrimitives,
 						createdIds: [],
 						idToCornerMap: new Map(),
-						badCorners: new Set<number>(),
+						badCorners: protectedAnchorCorners,
 						cornerScales: new Map<number, number>(),
 						protectedGroupKeys: (netToProtectedGroups.get(net) || []).map(group => group.key),
 						protectedCornerKeys: new Map(),
