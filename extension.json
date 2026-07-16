@@ -80,7 +80,7 @@
 					},
 					{
 						"id": "Settings",
-						"title": "设置",
+						"title": "高级菜单",
 						"registerFn": "openSettings"
 					}
 				]
