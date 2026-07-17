@@ -1,6 +1,7 @@
 import type { CornerArcOverride } from './arcGeometry';
 import type { Point } from './math';
 import { buildConcentricOverrides, computeCornerArcCandidate } from './arcGeometry';
+import { mapWithConcurrency } from './asyncPool';
 import { runDrcCheckAndParse } from './drc';
 import { getSafeSelectedTracks } from './eda_utils';
 import { debugLog, debugWarn, logError } from './logger';
@@ -86,6 +87,53 @@ interface PathContext {
 	protectedGroupKeys: string[];
 	protectedCornerKeys: Map<number, string>;
 	cornerOverrides: Map<number, CornerArcOverride | null>;
+}
+
+const CREATE_CONCURRENCY = 8;
+const DELETE_BATCH_SIZE = 200;
+const DELETE_FALLBACK_CONCURRENCY = 4;
+
+async function deletePrimitiveIdsInChunks(
+	primitiveIds: string[],
+	deleteFn: (ids: string[]) => Promise<boolean>,
+	label: string,
+): Promise<void> {
+	for (let start = 0; start < primitiveIds.length; start += DELETE_BATCH_SIZE) {
+		const chunk = primitiveIds.slice(start, start + DELETE_BATCH_SIZE);
+		try {
+			const success = await deleteFn(chunk);
+			if (success === false)
+				throw new Error('批量删除返回失败');
+		}
+		catch (error: any) {
+			debugWarn(`[BatchDelete] ${label} 批量删除失败，回退逐条删除: ${error?.message || error}`);
+			let failedCount = 0;
+			await mapWithConcurrency(chunk, DELETE_FALLBACK_CONCURRENCY, async (primitiveId) => {
+				try {
+					const success = await deleteFn([primitiveId]);
+					if (success === false)
+						failedCount++;
+				}
+				catch {
+					failedCount++;
+				}
+			});
+			if (failedCount > 0)
+				debugWarn(`[BatchDelete] ${label} 仍有 ${failedCount} 个图元删除失败`);
+		}
+	}
+}
+
+function getCreatedPrimitiveId(result: any): string | null {
+	if (typeof result === 'string')
+		return result;
+	if (result?.id)
+		return result.id;
+	if (result?.primitiveId)
+		return result.primitiveId;
+	if (typeof result?.getState_PrimitiveId === 'function')
+		return result.getState_PrimitiveId();
+	return null;
 }
 
 /**
@@ -680,6 +728,8 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		}
 
 		const activePaths: PathContext[] = [];
+		const pendingLineIdsToDelete = new Set<string>();
+		const pendingPolylineIdsToDelete = new Set<string>();
 		let pathIdCounter = 0;
 
 		// 1. 提取所有路径
@@ -803,9 +853,6 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 					// 准备备份数据
 					const backupPrimitives: any[] = [];
-					// 准备工作：计算所有需要删除的ID
-					const polylineIdsToDelete = new Set<string>();
-					const lineIdsToDelete = new Set<string>();
 
 					for (const seg of orderedSegs) {
 						backupPrimitives.push({
@@ -822,42 +869,11 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 							const orig = seg.track._originalPolyline;
 							const origId = orig.getState_PrimitiveId?.() || orig.primitiveId;
 							if (origId)
-								polylineIdsToDelete.add(origId);
+								pendingPolylineIdsToDelete.add(origId);
 						}
 						else {
 							// 是普通 Line / Track
-							lineIdsToDelete.add(seg.id);
-						}
-					}
-
-					// 删除旧线
-					if (polylineIdsToDelete.size > 0) {
-						const pIds = Array.from(polylineIdsToDelete);
-						try {
-							const pcbApi = eda as any;
-							if (pcbApi.pcb_PrimitivePolyline?.delete) {
-								// 尝试逐个删除
-								for (const pid of pIds) await pcbApi.pcb_PrimitivePolyline.delete([pid]);
-							}
-							else {
-								await eda.pcb_PrimitiveLine.delete(pIds);
-							}
-						}
-						catch {
-							// ignore
-						}
-					}
-					// 删除 Line (逐个删除以确保成功)
-					if (lineIdsToDelete.size > 0) {
-						const lIds = Array.from(lineIdsToDelete);
-						for (const lid of lIds) {
-							try {
-								// 尝试传递数组包含单个ID
-								await eda.pcb_PrimitiveLine.delete([lid]);
-							}
-							catch {
-								// ignore
-							}
+							pendingLineIdsToDelete.add(seg.id);
 						}
 					}
 
@@ -881,16 +897,33 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			}
 		}
 
-		// 辅助函数：根据指令创建图元
-		const commitOps = async (ops: PathOp[], ctx: PathContext) => {
-			let createdArcsCount = 0;
-			for (const item of ops) {
-				if (dist(item.start, item.end) < 0.001)
-					continue;
+		// 提取完所有路径后统一分块删除，避免为每条旧导线发起一次 Worker 调用。
+		const pcbApi = eda as any;
+		if (pendingPolylineIdsToDelete.size > 0) {
+			const deletePolyline = typeof pcbApi.pcb_PrimitivePolyline?.delete === 'function'
+				? (ids: string[]) => pcbApi.pcb_PrimitivePolyline.delete(ids)
+				: (ids: string[]) => eda.pcb_PrimitiveLine.delete(ids);
+			await deletePrimitiveIdsInChunks(
+				Array.from(pendingPolylineIdsToDelete),
+				deletePolyline,
+				'Polyline',
+			);
+		}
+		await deletePrimitiveIdsInChunks(
+			Array.from(pendingLineIdsToDelete),
+			ids => eda.pcb_PrimitiveLine.delete(ids),
+			'Line',
+		);
 
-				let newId: string | null = null;
+		// 将所有路径的绘制指令合并到同一个有限并发队列，避免短路径仍逐条等待。
+		const commitOps = async (jobs: Array<{ ops: PathOp[]; ctx: PathContext }>) => {
+			const pendingOps = jobs.flatMap(({ ops, ctx }) => ops
+				.filter(item => dist(item.start, item.end) >= 0.001)
+				.map(item => ({ item, ctx })));
+			await mapWithConcurrency(pendingOps, CREATE_CONCURRENCY, async ({ item, ctx }) => {
+				let result: any;
 				if (item.type === 'line') {
-					const res = await eda.pcb_PrimitiveLine.create(
+					result = await eda.pcb_PrimitiveLine.create(
 						ctx.net,
 						ctx.layer as any,
 						item.start.x,
@@ -899,19 +932,10 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 						item.end.y,
 						item.width,
 					);
-					// 兼容不同的返回值结构
-					if (typeof res === 'string')
-						newId = res;
-					else if (res && (res as any).id)
-						newId = (res as any).id;
-					else if (res && (res as any).primitiveId)
-						newId = (res as any).primitiveId;
-					else if (res && (res as any).getState_PrimitiveId)
-						newId = (res as any).getState_PrimitiveId();
 				}
 				else {
 					// Arc
-					const res = await eda.pcb_PrimitiveArc.create(
+					result = await eda.pcb_PrimitiveArc.create(
 						ctx.net,
 						ctx.layer as any,
 						item.start.x,
@@ -921,41 +945,32 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 						item.angle!,
 						item.width,
 					);
-					if (typeof res === 'string')
-						newId = res;
-					else if (res && (res as any).id)
-						newId = (res as any).id;
-					else if (res && (res as any).primitiveId)
-						newId = (res as any).primitiveId;
-					else if (res && (res as any).getState_PrimitiveId)
-						newId = (res as any).getState_PrimitiveId();
 
 					// 几何键存储（单一数据源，不依赖图元 ID）
 					const geoKey = makeArcWidthGeoKey(ctx.net, ctx.layer, item.start.x, item.start.y, item.end.x, item.end.y);
 					getArcWidthByGeoMap().set(geoKey, item.width);
-					createdArcsCount++;
 				}
 
+				const newId = getCreatedPrimitiveId(result);
 				if (newId) {
 					ctx.createdIds.push(newId);
 					ctx.idToCornerMap.set(newId, item.cornerIndex);
 				}
-			}
-			return createdArcsCount;
+			});
 		};
 
 		// 2. 第一次执行：生成所有路径 (Optimistic Pass)
 		refreshProtectedCornerOverrides(activePaths, protectedGroups, settings);
-		for (const ctx of activePaths) {
-			const ops = generatePathOps(
+		await commitOps(activePaths.map(ctx => ({
+			ctx,
+			ops: generatePathOps(
 				{ points: ctx.points, orderedSegs: ctx.orderedSegs },
 				settings,
 				ctx.badCorners,
 				ctx.cornerScales,
 				ctx.cornerOverrides,
-			);
-			await commitOps(ops, ctx);
-		}
+			),
+		})));
 
 		// 3. DRC 检查与二分法自动修复
 		if (settings.enableDRC && activePaths.length > 0) {
@@ -1014,6 +1029,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 				// 重绘
 				refreshProtectedCornerOverrides(activePaths, protectedGroups, settings);
+				const repairJobs: Array<{ ops: PathOp[]; ctx: PathContext }> = [];
 				for (const ctx of pathsToRepair) {
 					// 删除旧图元
 					if (ctx.createdIds.length > 0) {
@@ -1027,16 +1043,19 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 					}
 
 					// 使用新参数生成
-					const ops = generatePathOps(
-						{ points: ctx.points, orderedSegs: ctx.orderedSegs },
-						settings,
-						ctx.badCorners,
-						ctx.cornerScales,
-						ctx.cornerOverrides,
-					);
-					// 3. 重新绘制
-					await commitOps(ops, ctx);
+					repairJobs.push({
+						ctx,
+						ops: generatePathOps(
+							{ points: ctx.points, orderedSegs: ctx.orderedSegs },
+							settings,
+							ctx.badCorners,
+							ctx.cornerScales,
+							ctx.cornerOverrides,
+						),
+					});
 				}
+				// 3. 重新绘制
+				await commitOps(repairJobs);
 
 				drcAttempt++;
 			}

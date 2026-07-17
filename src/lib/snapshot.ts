@@ -1,6 +1,10 @@
+import { mapWithConcurrency } from './asyncPool';
 import { getArcWidthByGeoMap, makeArcWidthGeoKey } from './beautify';
 import { debugLog, logError, logWarn } from './logger';
 import { isClose } from './math';
+
+const RESTORE_CREATE_CONCURRENCY = 8;
+const RESTORE_CREATE_RETRIES = 3;
 
 const SNAPSHOT_STORAGE_KEY_V2 = 'jlc_eda_beautify_snapshots_v2';
 const SNAPSHOT_STORAGE_KEY_V3_PREFIX = 'jlc_eda_beautify_snapshots_v3_';
@@ -698,44 +702,60 @@ async function applyStateDiff(type: 'line' | 'arc', snapPrims: any[], currentPri
 		await api.delete(finalToDelete);
 	}
 
-	// 4. 执行创建：没找到匹配项的快照图元
-	for (const p of snapRemaining) {
-		try {
-			if (type === 'line') {
-				await api.create(
-					p.n ?? p.net,
-					p.l ?? p.layer,
-					p.sX ?? p.sx ?? p.startX,
-					p.sY ?? p.sy ?? p.startY,
-					p.eX ?? p.ex ?? p.endX,
-					p.eY ?? p.ey ?? p.endY,
-					p.w ?? p.lineWidth ?? 10,
-				);
+	// 4. 执行创建：有限并发重建，并对 API 返回 undefined/异常的图元降并发重试。
+	// 大型 PCB 逐条等待非常慢；同时旧实现把失败也计为成功，可能留下不完整恢复状态。
+	let pendingCreates = [...snapRemaining];
+	let createdCount = 0;
+	for (let attempt = 0; attempt < RESTORE_CREATE_RETRIES && pendingCreates.length > 0; attempt++) {
+		const concurrency = Math.max(1, RESTORE_CREATE_CONCURRENCY >> attempt);
+		const results = await mapWithConcurrency(pendingCreates, concurrency, async (p) => {
+			try {
+				let result: any;
+				if (type === 'line') {
+					result = await api.create(
+						p.n ?? p.net,
+						p.l ?? p.layer,
+						p.sX ?? p.sx ?? p.startX,
+						p.sY ?? p.sy ?? p.startY,
+						p.eX ?? p.ex ?? p.endX,
+						p.eY ?? p.ey ?? p.endY,
+						p.w ?? p.lineWidth ?? 10,
+					);
+				}
+				else {
+					const net = p.n ?? p.net;
+					const layer = p.l ?? p.layer;
+					const startX = p.sX ?? p.sx ?? p.startX;
+					const startY = p.sY ?? p.sy ?? p.startY;
+					const endX = p.eX ?? p.ex ?? p.endX;
+					const endY = p.eY ?? p.ey ?? p.endY;
+					const angle = p.a ?? p.arcAngle;
+					const width = p.w ?? p.lineWidth ?? 10;
+					result = await api.create(net, layer, startX, startY, endX, endY, angle, width);
+					if (result)
+						getArcWidthByGeoMap().set(makeArcWidthGeoKey(net, layer, startX, startY, endX, endY), width);
+				}
+				return !!result;
 			}
-			else {
-				const angle = p.a ?? p.arcAngle;
-				const width = p.w ?? p.lineWidth ?? 10;
-				await api.create(
-					p.n ?? p.net,
-					p.l ?? p.layer,
-					p.sX ?? p.sx ?? p.startX,
-					p.sY ?? p.sy ?? p.startY,
-					p.eX ?? p.ex ?? p.endX,
-					p.eY ?? p.ey ?? p.endY,
-					angle,
-					width,
-				);
+			catch (e) {
+				logWarn(`${type} recreate error: ${e}`);
+				return false;
 			}
-		}
-		catch (e) {
-			logWarn(`${type} recreate error: ${e}`);
-		}
+		});
+
+		createdCount += results.filter(Boolean).length;
+		pendingCreates = pendingCreates.filter((_p, index) => !results[index]);
+		if (pendingCreates.length > 0 && attempt + 1 < RESTORE_CREATE_RETRIES)
+			await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
 	}
+	if (pendingCreates.length > 0)
+		logWarn(`${type} restore incomplete: ${pendingCreates.length} primitives could not be recreated`, 'Snapshot');
 
 	return {
-		created: snapRemaining.length,
+		created: createdCount,
 		deleted: finalToDelete.length,
 		kept: matchedOnPcbIds.size,
+		failed: pendingCreates.length,
 	};
 }
 

@@ -9,11 +9,12 @@
 		"node": ">=20.17.0"
 	},
 	"scripts": {
-		"test": "npm run test:geometry && npm run test:topology",
+		"test": "npm run test:geometry && npm run test:topology && npm run test:async-pool",
 		"compile": "rimraf ./dist/ && ts-node ./config/esbuild.prod.ts",
 		"lint": "eslint",
 		"test:geometry": "ts-node ./scripts/test_arc_geometry.ts",
 		"test:topology": "ts-node ./scripts/test_route_topology.ts",
+		"test:async-pool": "ts-node ./scripts/test_async_pool.ts",
 		"fix": "eslint --fix",
 		"build": "npm run compile && ts-node ./build/packaged.ts"
 	},
