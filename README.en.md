@@ -26,7 +26,7 @@ Menu location: Advanced → Beautify PCB
 - Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment)
 - DRC Rule Check – Apply optimistic routing first, then perform design rule checks and automatically revert non-compliant sections; supports ignoring copper pour rules
 - Automatic Copper Pour Rebuild – Automatically rebuild copper pour regions (Safe threshold of 5 areas to ensure UI responsiveness)
-- Undo / Snapshot – Multi-step undo with **Incremental Sync Engine**, updating only changed primitives for lightning-fast recovery; switch between auto/manual snapshot views
+- Undo / Snapshot – Multi-step undo with an **Incremental Sync Engine** that updates only changed primitives; switch between auto/manual snapshot views
 - Advanced Settings – Configure radius, transition parameters, snapshot history, **Custom Shortcuts**, and persistent card reordering/folding
 
 **Use Cases and Notes**
