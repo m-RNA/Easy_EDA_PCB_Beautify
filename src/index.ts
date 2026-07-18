@@ -13,7 +13,7 @@
 
 import { beautifyRouting as beautifyTask } from './lib/beautify';
 import { rebuildAllCopperPoursIfEnabled } from './lib/eda_utils';
-import { debugLog, debugWarn, logError } from './lib/logger';
+import { debugLog, debugWarn, logError, logInfo } from './lib/logger';
 import { getDefaultSettings, getSettings } from './lib/settings';
 import { clearAllExtensionShortcuts, diagnoseShortcuts, initShortcuts } from './lib/shortcuts';
 import { undoLastOperation as undoTask } from './lib/snapshot';
@@ -99,11 +99,17 @@ export async function beautifySelected() {
  */
 export async function beautifyAll() {
 	debugLog('[Smooth] beautifyAll triggered');
+	const perfStartedAt = Date.now();
 	try {
 		await beautifyTask('all');
+		const coreFinishedAt = Date.now();
 
 		// 重铺覆铜
 		await rebuildAllCopperPoursIfEnabled();
+		logInfo(
+			`[Perf][BeautifyAll] core=${coreFinishedAt - perfStartedAt}ms copper=${Date.now() - coreFinishedAt}ms total=${Date.now() - perfStartedAt}ms`,
+			'Performance',
+		);
 	}
 	catch (e: any) {
 		handleError(e);
@@ -128,8 +134,10 @@ function handleError(e: any) {
  */
 export async function undoOperation() {
 	debugLog('[Smooth] undoOperation triggered');
+	const perfStartedAt = Date.now();
 	try {
 		await undoTask();
+		logInfo(`[Perf][Undo] total=${Date.now() - perfStartedAt}ms`, 'Performance');
 	}
 	catch (e: any) {
 		logError(`Undo Error: ${e.message || e}`);

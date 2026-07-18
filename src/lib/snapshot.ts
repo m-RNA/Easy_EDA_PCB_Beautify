@@ -1,6 +1,6 @@
 import { mapWithConcurrency } from './asyncPool';
 import { getArcWidthByGeoMap, makeArcWidthGeoKey } from './beautify';
-import { debugLog, logError, logWarn } from './logger';
+import { debugLog, logError, logInfo, logWarn } from './logger';
 import { isClose } from './math';
 
 const RESTORE_CREATE_CONCURRENCY = 8;
@@ -533,6 +533,18 @@ export async function getCurrentPcbInfoSafe() {
  * @param isManual 是否手动快照 (如果是手动，将存入 manual 表)
  */
 export async function createSnapshot(name: string = 'Auto Save', isManual: boolean = false): Promise<RoutingSnapshot | null> {
+	const perfStartedAt = Date.now();
+	let perfLastAt = perfStartedAt;
+	const perfStages: string[] = [];
+	let perfLineCount = 0;
+	let perfArcCount = 0;
+	let perfResult = 'failed';
+	const markPerf = (label: string) => {
+		const now = Date.now();
+		perfStages.push(`${label}=${now - perfLastAt}ms`);
+		perfLastAt = now;
+	};
+
 	try {
 		// 暂存撤销ID，不在此时立即重置，而是在后续逻辑中用于分支截断
 		const lastRestoredId = getLastRestoredId();
@@ -559,6 +571,9 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 		// 获取所有导线、圆弧
 		const lines = await eda.pcb_PrimitiveLine.getAll();
 		const arcs = await eda.pcb_PrimitiveArc.getAll();
+		perfLineCount = lines?.length || 0;
+		perfArcCount = arcs?.length || 0;
+		markPerf('read-primitives');
 
 		const snapshot: RoutingSnapshot = {
 			id: Date.now(),
@@ -573,9 +588,11 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 		// 修复圆弧线宽：通过端点连接关系从导线推导正确线宽
 		// 解决 getState_LineWidth() 对圆弧返回 10mil 且 geo map key 不匹配的问题
 		resolveArcWidths(snapshot.lines, snapshot.arcs);
+		markPerf('serialize');
 
 		// 获取现有数据
 		const pcbStore = await getPcbStorageData(pcbId);
+		markPerf('load-history');
 
 		// 历史分支管理：如果当前处于撤销状态，新操作将截断“未来”
 		if (lastRestoredId !== null) {
@@ -609,6 +626,7 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 				if (eda.sys_LoadingAndProgressBar) {
 					eda.sys_LoadingAndProgressBar.destroyLoading();
 				}
+				perfResult = 'identical';
 				return null;
 			}
 		}
@@ -623,10 +641,12 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 
 		// 保存
 		await savePcbStorageData(pcbId, pcbStore);
+		markPerf('persist');
 
 		// 通知设置界面刷新
 		notifySnapshotChange();
 
+		perfResult = 'created';
 		return snapshot;
 	}
 	catch (e: any) {
@@ -636,6 +656,10 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 		return null;
 	}
 	finally {
+		logInfo(
+			`[Perf][Snapshot] result=${perfResult} type=${isManual ? 'manual' : 'auto'} name="${name}" lines=${perfLineCount} arcs=${perfArcCount} total=${Date.now() - perfStartedAt}ms ${perfStages.join(' ')}`,
+			'Performance',
+		);
 		if (eda.sys_LoadingAndProgressBar) {
 			eda.sys_LoadingAndProgressBar.destroyLoading();
 		}

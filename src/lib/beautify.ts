@@ -4,7 +4,7 @@ import { buildConcentricOverrides, computeCornerArcCandidate } from './arcGeomet
 import { mapWithConcurrency } from './asyncPool';
 import { runDrcCheckAndParse } from './drc';
 import { getSafeSelectedTracks } from './eda_utils';
-import { debugLog, debugWarn, logError } from './logger';
+import { debugLog, debugWarn, logError, logInfo } from './logger';
 import { dist, getAngleBetween, getLineIntersection, lerp } from './math';
 import { buildNodeDegreeIndex, isProtectedRouteNode, isRouteJunction, loadBoardTopologySegments, loadElectricalAnchorIndex, makePointKey } from './routeTopology';
 import { getSettings } from './settings';
@@ -609,7 +609,18 @@ function syncProtectedCornerRepair(
  * @param scope 'selected' 只处理选中的导线, 'all' 处理所有导线
  */
 export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
+	const perfStartedAt = Date.now();
+	let perfLastAt = perfStartedAt;
+	const perfStages: string[] = [];
+	let perfResult = 'failed';
+	const markPerf = (label: string) => {
+		const now = Date.now();
+		perfStages.push(`${label}=${now - perfLastAt}ms`);
+		perfLastAt = now;
+	};
+
 	const settings = await getSettings();
+	markPerf('settings');
 	let tracks: any[] = [];
 
 	if (eda.sys_LoadingAndProgressBar?.showLoading) {
@@ -677,9 +688,11 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		}
 
 		if (tracks.length < 1) {
+			perfResult = 'skipped-no-tracks';
 			eda.sys_Message?.showToastMessage('未找到可处理的导线', 'info' as any, 2);
 			return;
 		}
+		markPerf('load-tracks');
 
 		// 节点保护必须基于整板真实拓扑，而不是仅基于当前选中的导线。
 		// 否则只选中 T 形/十字节点中的两条支路时，会被误判为普通拐角。
@@ -706,6 +719,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		const netToProtectedGroups = buildNetToProtectedGroups(protectedGroups);
 		if (protectedGroups.length > 0)
 			debugLog(`[ProtectedRoute] 已读取 ${protectedGroups.length} 个差分/等长保护组`);
+		markPerf('topology-and-protection');
 
 		// 创建快照
 		try {
@@ -715,6 +729,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		catch (e: any) {
 			logError(`Failed to create snapshot: ${e.message || e}`);
 		}
+		markPerf('snapshot-before');
 
 		// --- 路径提取逻辑 ---
 		const groups = new Map<string, any[]>();
@@ -896,6 +911,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				}
 			}
 		}
+		markPerf('path-analysis');
 
 		// 提取完所有路径后统一分块删除，避免为每条旧导线发起一次 Worker 调用。
 		const pcbApi = eda as any;
@@ -914,6 +930,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			ids => eda.pcb_PrimitiveLine.delete(ids),
 			'Line',
 		);
+		markPerf('delete-originals');
 
 		// 将所有路径的绘制指令合并到同一个有限并发队列，避免短路径仍逐条等待。
 		const commitOps = async (jobs: Array<{ ops: PathOp[]; ctx: PathContext }>) => {
@@ -971,6 +988,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				ctx.cornerOverrides,
 			),
 		})));
+		markPerf('initial-redraw');
 
 		// 3. DRC 检查与二分法自动修复
 		if (settings.enableDRC && activePaths.length > 0) {
@@ -983,6 +1001,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 
 				// 运行全局检查
 				const violatedIds = await runDrcCheckAndParse();
+				markPerf(`drc-check-${drcAttempt + 1}`);
 
 				if (violatedIds.size === 0) {
 					debugLog('[DRC] 检查通过。');
@@ -1056,6 +1075,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				}
 				// 3. 重新绘制
 				await commitOps(repairJobs);
+				markPerf(`drc-repair-${drcAttempt + 1}`);
 
 				drcAttempt++;
 			}
@@ -1069,6 +1089,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		if (settings.syncWidthTransition) {
 			// 在 Beautify 流程中调用，不需要额外快照（Beautify 已创建）
 			await addWidthTransitionsAll(false);
+			markPerf('width-transition');
 		}
 
 		try {
@@ -1076,7 +1097,9 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			await createSnapshot(name);
 		}
 		catch { }
+		markPerf('snapshot-after');
 
+		perfResult = 'completed';
 		eda.sys_Message?.showToastMessage('美化完成', 'success' as any, 2);
 	}
 	catch (e: any) {
@@ -1084,6 +1107,10 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		eda.sys_Message?.showToastMessage(`美化失败: ${e.message}`, 'error' as any, 4);
 	}
 	finally {
+		logInfo(
+			`[Perf][Beautify:${scope}] result=${perfResult} tracks=${tracks.length} total=${Date.now() - perfStartedAt}ms ${perfStages.join(' ')}`,
+			'Performance',
+		);
 		eda.sys_LoadingAndProgressBar?.destroyLoading?.();
 	}
 }
