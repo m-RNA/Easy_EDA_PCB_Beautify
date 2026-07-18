@@ -531,8 +531,13 @@ export async function getCurrentPcbInfoSafe() {
  * 创建当前布线状态的快照
  * @param name 快照名称
  * @param isManual 是否手动快照 (如果是手动，将存入 manual 表)
+ * @param returnLatestIfIdentical 若状态与最新快照一致，是否返回该快照供内部回滚使用
  */
-export async function createSnapshot(name: string = 'Auto Save', isManual: boolean = false): Promise<RoutingSnapshot | null> {
+export async function createSnapshot(
+	name: string = 'Auto Save',
+	isManual: boolean = false,
+	returnLatestIfIdentical: boolean = false,
+): Promise<RoutingSnapshot | null> {
 	const perfStartedAt = Date.now();
 	let perfLastAt = perfStartedAt;
 	const perfStages: string[] = [];
@@ -627,7 +632,7 @@ export async function createSnapshot(name: string = 'Auto Save', isManual: boole
 					eda.sys_LoadingAndProgressBar.destroyLoading();
 				}
 				perfResult = 'identical';
-				return null;
+				return returnLatestIfIdentical ? latest : null;
 			}
 		}
 

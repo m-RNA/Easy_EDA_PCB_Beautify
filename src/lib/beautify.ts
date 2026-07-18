@@ -5,10 +5,10 @@ import { mapWithConcurrency } from './asyncPool';
 import { runDrcCheckAndParse } from './drc';
 import { getSafeSelectedTracks } from './eda_utils';
 import { debugLog, debugWarn, logError, logInfo } from './logger';
-import { dist, getAngleBetween, getLineIntersection, lerp } from './math';
+import { dist, getAngleBetween, lerp } from './math';
 import { buildNodeDegreeIndex, isProtectedRouteNode, isRouteJunction, loadBoardTopologySegments, loadElectricalAnchorIndex, makePointKey } from './routeTopology';
 import { getSettings } from './settings';
-import { createSnapshot } from './snapshot';
+import { createSnapshot, restoreSnapshot } from './snapshot';
 import { addWidthTransitionsAll } from './widthTransition';
 
 /**
@@ -62,6 +62,7 @@ interface PathOp {
 	start: Point;
 	end: Point;
 	width: number;
+	primitiveLock?: boolean;
 	angle?: number;
 	cornerIndex: number; // 关联的拐角索引，用于回滚定位
 }
@@ -80,7 +81,9 @@ interface PathContext {
 	net: string;
 	layer: number;
 	backupPrimitives: any[]; // 原始数据备份
-	createdIds: string[]; // 当前生成的ID
+	createdIds: string[]; // 当前生成的全部图元 ID
+	createdLineIds: string[]; // 当前生成的 Line ID
+	createdArcIds: string[]; // 当前生成的 Arc ID
 	idToCornerMap: Map<string, number>; // ID -> 拐角索引映射
 	badCorners: Set<number>; // DRC 或电气锚点要求强制保持直线的拐角
 	cornerScales: Map<number, number>; // 拐角缩放因子
@@ -119,7 +122,7 @@ async function deletePrimitiveIdsInChunks(
 				}
 			});
 			if (failedCount > 0)
-				debugWarn(`[BatchDelete] ${label} 仍有 ${failedCount} 个图元删除失败`);
+				throw new Error(`${label} 有 ${failedCount} 个图元删除失败`);
 		}
 	}
 }
@@ -229,91 +232,8 @@ function generatePathOps(
 			continue;
 		}
 
-		let isMerged = false;
-
-		// --- 尝试合并过渡线段 (U型弯优化) ---
-		try {
-			// 如果当前索引未被禁用，且开启了合并
-			if (settings.mergeTransitionSegments && i < points.length - 2 && scale === undefined) {
-				// 如果下一个拐角也在黑名单里，则不进行合并操作，以免逻辑混乱
-				if (!badCorners.has(i + 1)) {
-					const pAfter = points[i + 2];
-					if (pAfter) {
-						const segLen = dist(pCorner, pNext);
-						if (segLen < radius * 1.5) {
-							const vIn = { x: pPrev.x - pCorner.x, y: pPrev.y - pCorner.y };
-							const vMid = { x: pNext.x - pCorner.x, y: pNext.y - pCorner.y };
-							const vOut = { x: pAfter.x - pNext.x, y: pAfter.y - pNext.y };
-							const angle1 = getAngleBetween({ x: -vIn.x, y: -vIn.y }, { x: vMid.x, y: vMid.y });
-							const angle2 = getAngleBetween({ x: vMid.x, y: vMid.y }, { x: vOut.x, y: vOut.y });
-
-							if (angle1 * angle2 > 0 && Math.abs(angle1) > 1 && Math.abs(angle2) > 1) {
-								const intersection = getLineIntersection(pPrev, pCorner, pNext, pAfter);
-								if (intersection) {
-									const dInt1 = dist(intersection, pCorner);
-									const dInt2 = dist(intersection, pNext);
-									if (dInt1 < segLen * 10 && dInt2 < segLen * 10) {
-										const t_v1 = { x: pPrev.x - intersection.x, y: pPrev.y - intersection.y };
-										const t_v2 = { x: pAfter.x - intersection.x, y: pAfter.y - intersection.y };
-										const t_mag1 = Math.sqrt(t_v1.x ** 2 + t_v1.y ** 2);
-										const t_mag2 = Math.sqrt(t_v2.x ** 2 + t_v2.y ** 2);
-										const t_dot = (t_v1.x * t_v2.x + t_v1.y * t_v2.y) / (t_mag1 * t_mag2);
-										const t_angleRad = Math.acos(Math.max(-1, Math.min(1, t_dot)));
-										const t_tanVal = Math.tan(t_angleRad / 2);
-										let t_d = 0;
-										if (Math.abs(t_tanVal) > 0.0001)
-											t_d = radius / t_tanVal;
-
-										const t_maxAllowedRadius = Math.min(t_mag1 * 0.95, t_mag2 * 0.95);
-										const t_actualD = Math.min(t_d, t_maxAllowedRadius);
-										const t_effectiveRadius = t_actualD * Math.abs(t_tanVal);
-
-										if (t_actualD > 0.05 && t_effectiveRadius >= (maxLineWidth / 2) - 0.05) {
-											const pStart = lerp(intersection, pPrev, t_actualD / t_mag1);
-											const pEnd = lerp(intersection, pAfter, t_actualD / t_mag2);
-											// 1. 直线: current -> pStart
-											if (dist(currentStart, pStart) > 0.001) {
-												ops.push({
-													type: 'line',
-													start: currentStart,
-													end: pStart,
-													width: prevSegWidth,
-													cornerIndex: i, // 归属当前拐角
-												});
-											}
-
-											const t_sweptAngle = getAngleBetween(
-												{ x: -t_v1.x, y: -t_v1.y },
-												{ x: t_v2.x, y: t_v2.y },
-											);
-
-											const afterSegWidth = orderedSegs[i + 1]?.width ?? nextSegWidth;
-											// 2. 合并大圆弧
-											ops.push({
-												type: 'arc',
-												start: pStart,
-												end: pEnd,
-												width: afterSegWidth,
-												angle: t_sweptAngle,
-												cornerIndex: i, // 归属当前拐角(虽然跨越了i+1)
-											});
-
-											currentStart = pEnd;
-											i++; // 跳过下一个点
-											isMerged = true;
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		catch { }
-
 		// --- 普通圆角逻辑 ---
-		if (!isMerged) {
+		{
 			const v1 = { x: pPrev.x - pCorner.x, y: pPrev.y - pCorner.y };
 			const v2 = { x: pNext.x - pCorner.x, y: pNext.y - pCorner.y };
 			const mag1 = Math.sqrt(v1.x ** 2 + v1.y ** 2);
@@ -613,6 +533,9 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 	let perfLastAt = perfStartedAt;
 	const perfStages: string[] = [];
 	let perfResult = 'failed';
+	let perfDeletedLines = 0;
+	let perfCreatedLines = 0;
+	let perfCreatedArcs = 0;
 	const markPerf = (label: string) => {
 		const now = Date.now();
 		perfStages.push(`${label}=${now - perfLastAt}ms`);
@@ -622,6 +545,8 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 	const settings = await getSettings();
 	markPerf('settings');
 	let tracks: any[] = [];
+	let rollbackSnapshotId: number | null = null;
+	let lineCountBefore = 0;
 
 	if (eda.sys_LoadingAndProgressBar?.showLoading) {
 		eda.sys_LoadingAndProgressBar.showLoading();
@@ -724,10 +649,15 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		// 创建快照
 		try {
 			const name = scope === 'all' ? 'Beautify (All) Before' : 'Beautify (Selected) Before';
-			await createSnapshot(name);
+			const snapshot = await createSnapshot(name, false, true);
+			if (!snapshot)
+				throw new Error('无法创建圆滑前快照，已取消操作');
+			rollbackSnapshotId = snapshot.id;
+			lineCountBefore = snapshot.lines.length;
 		}
 		catch (e: any) {
 			logError(`Failed to create snapshot: ${e.message || e}`);
+			throw e;
 		}
 		markPerf('snapshot-before');
 
@@ -757,6 +687,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				p2: { x: t.getState_EndX(), y: t.getState_EndY() },
 				width: t.getState_LineWidth(),
 				id: t.getState_PrimitiveId(),
+				primitiveLock: t.getState_PrimitiveLock?.() ?? false,
 				track: t,
 			}));
 
@@ -887,7 +818,6 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 								pendingPolylineIdsToDelete.add(origId);
 						}
 						else {
-							// 是普通 Line / Track
 							pendingLineIdsToDelete.add(seg.id);
 						}
 					}
@@ -901,6 +831,8 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 						layer,
 						backupPrimitives,
 						createdIds: [],
+						createdLineIds: [],
+						createdArcIds: [],
 						idToCornerMap: new Map(),
 						badCorners: protectedAnchorCorners,
 						cornerScales: new Map<number, number>(),
@@ -913,7 +845,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		}
 		markPerf('path-analysis');
 
-		// 提取完所有路径后统一分块删除，避免为每条旧导线发起一次 Worker 调用。
+		// 提取完路径后统一分块删除原图元，避免逐条调用 Worker。
 		const pcbApi = eda as any;
 		if (pendingPolylineIdsToDelete.size > 0) {
 			const deletePolyline = typeof pcbApi.pcb_PrimitivePolyline?.delete === 'function'
@@ -930,13 +862,27 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			ids => eda.pcb_PrimitiveLine.delete(ids),
 			'Line',
 		);
+		perfDeletedLines += pendingLineIdsToDelete.size;
 		markPerf('delete-originals');
 
-		// 将所有路径的绘制指令合并到同一个有限并发队列，避免短路径仍逐条等待。
+		// 将所有路径的创建指令合并到同一个有限并发队列。
 		const commitOps = async (jobs: Array<{ ops: PathOp[]; ctx: PathContext }>) => {
-			const pendingOps = jobs.flatMap(({ ops, ctx }) => ops
-				.filter(item => dist(item.start, item.end) >= 0.001)
-				.map(item => ({ item, ctx })));
+			for (const { ops, ctx } of jobs) {
+				const lineOps = ops.filter(op => op.type === 'line');
+				if (lineOps.length !== ctx.orderedSegs.length)
+					throw new Error(`路径 ${ctx.pathId} 的直线与原路径段无法一一对应`);
+				if (ops.some(op => dist(op.start, op.end) < 0.001))
+					throw new Error(`路径 ${ctx.pathId} 生成了过短图元`);
+				lineOps.forEach((op, index) => {
+					op.primitiveLock = ctx.orderedSegs[index]?.primitiveLock ?? false;
+				});
+				ctx.createdIds = [];
+				ctx.createdLineIds = [];
+				ctx.createdArcIds = [];
+				ctx.idToCornerMap.clear();
+			}
+
+			const pendingOps = jobs.flatMap(({ ops, ctx }) => ops.map(item => ({ item, ctx })));
 			await mapWithConcurrency(pendingOps, CREATE_CONCURRENCY, async ({ item, ctx }) => {
 				let result: any;
 				if (item.type === 'line') {
@@ -948,10 +894,10 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 						item.end.x,
 						item.end.y,
 						item.width,
+						item.primitiveLock ?? false,
 					);
 				}
 				else {
-					// Arc
 					result = await eda.pcb_PrimitiveArc.create(
 						ctx.net,
 						ctx.layer as any,
@@ -968,10 +914,18 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 					getArcWidthByGeoMap().set(geoKey, item.width);
 				}
 
-				const newId = getCreatedPrimitiveId(result);
-				if (newId) {
-					ctx.createdIds.push(newId);
-					ctx.idToCornerMap.set(newId, item.cornerIndex);
+				const outputId = getCreatedPrimitiveId(result);
+				if (!outputId)
+					throw new Error(`路径 ${ctx.pathId} 的图元提交失败`);
+				ctx.createdIds.push(outputId);
+				ctx.idToCornerMap.set(outputId, item.cornerIndex);
+				if (item.type === 'line') {
+					ctx.createdLineIds.push(outputId);
+					perfCreatedLines++;
+				}
+				else {
+					ctx.createdArcIds.push(outputId);
+					perfCreatedArcs++;
 				}
 			});
 		};
@@ -1049,18 +1003,20 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				// 重绘
 				refreshProtectedCornerOverrides(activePaths, protectedGroups, settings);
 				const repairJobs: Array<{ ops: PathOp[]; ctx: PathContext }> = [];
+				const oldLineIds = Array.from(pathsToRepair).flatMap(ctx => ctx.createdLineIds);
+				const oldArcIds = Array.from(pathsToRepair).flatMap(ctx => ctx.createdArcIds);
+				await deletePrimitiveIdsInChunks(
+					oldLineIds,
+					ids => eda.pcb_PrimitiveLine.delete(ids),
+					'Line',
+				);
+				await deletePrimitiveIdsInChunks(
+					oldArcIds,
+					ids => eda.pcb_PrimitiveArc.delete(ids),
+					'Arc',
+				);
+				perfDeletedLines += oldLineIds.length;
 				for (const ctx of pathsToRepair) {
-					// 删除旧图元
-					if (ctx.createdIds.length > 0) {
-						try {
-							await eda.pcb_PrimitiveLine.delete(ctx.createdIds);
-							await eda.pcb_PrimitiveArc.delete(ctx.createdIds); // 虽然ID是一样的，但为了保险
-						}
-						catch { }
-						ctx.createdIds = []; // 清空记录
-						ctx.idToCornerMap.clear();
-					}
-
 					// 使用新参数生成
 					repairJobs.push({
 						ctx,
@@ -1085,6 +1041,24 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			}
 		}
 
+		// 防止宿主 API 静默保留已删除的原线，造成新旧导线重叠。
+		const expectedLineCount = lineCountBefore
+			- pendingLineIdsToDelete.size
+			+ activePaths.reduce((count, ctx) => count + ctx.orderedSegs.length, 0);
+		const verifiedLines = await eda.pcb_PrimitiveLine.getAll() || [];
+		const staleOriginalIds = verifiedLines
+			.map(line => line.getState_PrimitiveId?.())
+			.filter((id): id is string => typeof id === 'string' && pendingLineIdsToDelete.has(id));
+		if (verifiedLines.length > expectedLineCount || staleOriginalIds.length > 0) {
+			throw new Error(
+				`圆滑结果校验失败：导线上限 ${expectedLineCount} 条，实际 ${verifiedLines.length} 条，残留原线 ${staleOriginalIds.length} 条`,
+			);
+		}
+		if (verifiedLines.length < expectedLineCount) {
+			debugWarn(`[BeautifyVerify] 宿主将导线从预期 ${expectedLineCount} 条归一化为 ${verifiedLines.length} 条，未发现原线残留`);
+		}
+		markPerf('verify-output');
+
 		// 结束
 		if (settings.syncWidthTransition) {
 			// 在 Beautify 流程中调用，不需要额外快照（Beautify 已创建）
@@ -1103,12 +1077,27 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		eda.sys_Message?.showToastMessage('美化完成', 'success' as any, 2);
 	}
 	catch (e: any) {
+		if (rollbackSnapshotId !== null) {
+			try {
+				const restored = await restoreSnapshot(rollbackSnapshotId, false, false);
+				if (restored) {
+					perfResult = 'failed-rolled-back';
+					debugWarn('[Beautify] 操作失败，已恢复圆滑前快照');
+				}
+				else {
+					debugWarn('[Beautify] 操作失败，圆滑前快照恢复未成功');
+				}
+			}
+			catch (rollbackError: any) {
+				logError(`Rollback failed: ${rollbackError?.message || rollbackError}`);
+			}
+		}
 		logError(e.message);
 		eda.sys_Message?.showToastMessage(`美化失败: ${e.message}`, 'error' as any, 4);
 	}
 	finally {
 		logInfo(
-			`[Perf][Beautify:${scope}] result=${perfResult} tracks=${tracks.length} total=${Date.now() - perfStartedAt}ms ${perfStages.join(' ')}`,
+			`[Perf][Beautify:${scope}] result=${perfResult} tracks=${tracks.length} total=${Date.now() - perfStartedAt}ms line-deleted=${perfDeletedLines} line-created=${perfCreatedLines} arc-created=${perfCreatedArcs} ${perfStages.join(' ')}`,
 			'Performance',
 		);
 		eda.sys_LoadingAndProgressBar?.destroyLoading?.();

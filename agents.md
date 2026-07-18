@@ -329,6 +329,32 @@ This reduces rebuild scope from all pours to only those on affected layers (e.g.
 
 When working with EDA Pro's internal object model, **never assume IDs from different API endpoints share the same namespace**. Always verify with diagnostic logging before building ID-based matching logic.
 
+## `PCB_PrimitiveLine.modify()` Is Not Reliable In-Place Mutation
+
+### Runtime Discovery (2026-07-18, Host V3.2.148)
+
+Do not treat `eda.pcb_PrimitiveLine.modify()` as an in-place replacement merely because of its API name or type declaration. In the tested host, using it to update rounded-track endpoints left the original Lines on the board while new output primitives were also present:
+
+```text
+Before: 987 Lines, 12 Arcs
+After:  1988 Lines, 523 Arcs
+```
+
+The canvas visibly showed the original sharp tracks underneath the new rounded tracks. Some calls returned results and others fell back to creation, but the key production conclusion is the same: **the old primitive ID cannot be assumed to have been replaced or removed**.
+
+### Required Production Pattern
+
+1. Calculate all output geometry before mutating the board.
+2. Batch-delete the exact original Line IDs.
+3. Create the replacement Line and Arc primitives with bounded concurrency.
+4. During DRC repair, track and delete created Line IDs and Arc IDs through their respective APIs; do not send a mixed ID list to both delete APIs.
+5. After drawing, verify that none of the original Line IDs remain and that the Line count does not exceed the calculated upper bound. A lower count can be legitimate because the host may normalize or coalesce geometry, so count equality alone must not trigger rollback.
+6. If deletion, creation, or verification fails, restore the pre-operation snapshot.
+
+### Lesson
+
+For beta mutation APIs, validate runtime identity and post-operation object counts on the target host version. Never infer in-place semantics from a method name or TypeScript signature.
+
 ## Architectural Pattern: Manifest-Driven UI
 
 In later stages of development, we moved away from procedural UI management to a **Manifest-Driven** approach.

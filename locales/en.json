@@ -16,8 +16,6 @@
 	"忽略覆铜规则": "Ignore Copper Pour Rules",
 	"DRC检查时跳过覆铜相关违规（覆铜重铺后通常会自动解决）": "Skip copper pour violations during DRC (usually resolved after re-pouring)",
 	"高级设置": "Advanced Settings",
-	"合并过渡线段": "Merge Transition Segments",
-	"自动合并中间的过渡线段以生成圆弧": "Automatically merge intermediate transition segments to generate arcs",
 	"保护焊盘/过孔节点": "Protect Pad/Via Nodes",
 	"保持焊盘和过孔中心处的连接原样，避免圆滑后断连": "Keep connections at pad and via centers unchanged to prevent disconnections after smoothing",
 	"差分/等长保护": "Diff/Length Protection",

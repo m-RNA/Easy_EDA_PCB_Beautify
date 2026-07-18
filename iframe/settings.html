@@ -775,27 +775,7 @@
             </div>
         </div>
 
-        <!-- Merge Short Segments -->
         <div class="card-content">
-            <div class="setting-item">
-                <div class="setting-info">
-                    <div class="setting-label">
-                        <span data-i18n="合并过渡线段">合并过渡线段</span>
-                        <span style="background:var(--bg);color:var(--primary);border:1px solid var(--primary);padding:1px 5px;border-radius:4px;font-size:10px;margin-left:6px;">Beta</span>
-                    </div>
-                    <div class="setting-desc" data-i18n="自动合并中间的过渡线段以生成圆弧">自动合并中间的过渡线段以生成圆弧</div>
-                </div>
-                <div class="setting-control">
-                    <div class="switch-container">
-                        <label class="switch">
-                            <input type="checkbox" id="mergeTransitionSegments" checked>
-                            <span class="slider"></span>
-                        </label>
-                        <span class="switch-label" id="mergeTransitionSegmentsLabel" data-i18n="启用">启用</span>
-                    </div>
-                </div>
-            </div>
-
             <!-- Pad / Via Node Protection -->
             <div class="setting-item">
                 <div class="setting-info">
@@ -1140,7 +1120,6 @@
         const elDirection = document.getElementById('widthTransitionBalance');
         const elDebug = document.getElementById('debug');
         const elForceArc = document.getElementById('forceArc');
-        const elMergeTransitionSegments = document.getElementById('mergeTransitionSegments');
         const elProtectPadAndViaNodes = document.getElementById('protectPadAndViaNodes');
         const elProtectDifferentialAndEqualLength = document.getElementById('protectDifferentialAndEqualLength');
         const elEnableDRC = document.getElementById('enableDRC');
@@ -1158,7 +1137,6 @@
         // I18n labels update
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
         const elDebugLabel = document.getElementById('debugLabel');
-        const elMergeTransitionSegmentsLabel = document.getElementById('mergeTransitionSegmentsLabel');
         const elForceArcLabel = document.getElementById('forceArcLabel');
         const elProtectPadAndViaNodesLabel = document.getElementById('protectPadAndViaNodesLabel');
         const elProtectDifferentialAndEqualLengthLabel = document.getElementById('protectDifferentialAndEqualLengthLabel');
@@ -1225,7 +1203,6 @@
                     elCornerRadiusRatio.setAttribute('data-last-valid', config.cornerRadiusRatio);
                 }
 
-                if (elMergeTransitionSegments) elMergeTransitionSegments.checked = config.mergeTransitionSegments !== undefined ? config.mergeTransitionSegments : true;
                 if (elProtectPadAndViaNodes) elProtectPadAndViaNodes.checked = config.protectPadAndViaNodes !== undefined ? config.protectPadAndViaNodes : true;
                 if (elProtectDifferentialAndEqualLength) elProtectDifferentialAndEqualLength.checked = config.protectDifferentialAndEqualLength !== undefined ? config.protectDifferentialAndEqualLength : true;
                 if (elSyncWidth) elSyncWidth.checked = config.syncWidthTransition;
@@ -1326,7 +1303,6 @@
 
             const settings = {
                 cornerRadiusRatio: radiusRatio,
-                mergeTransitionSegments: elMergeTransitionSegments.checked,
                 protectPadAndViaNodes: elProtectPadAndViaNodes.checked,
                 protectDifferentialAndEqualLength: elProtectDifferentialAndEqualLength.checked,
                 syncWidthTransition: elSyncWidth.checked,
