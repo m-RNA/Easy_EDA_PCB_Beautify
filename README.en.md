@@ -2,7 +2,7 @@
 
 [简体中文](./README.md) | [English](./README.en.md) | When translation has deviations, the Chinese version shall prevail.
 
-One-click optimization of PCB corners into arcs to improve geometric continuity and routing appearance while reducing manufacturing and stress risks from sharp corners; Bezier transitions at sudden trace-width changes; Supports differential/equal-length protection, DRC checks, automatic copper pour rebuild, multi-step undo, snapshot management, transitional segment merging, forced arc generation, and other advanced optimization features
+One-click optimization of PCB corners into arcs to improve geometric continuity and routing appearance while reducing manufacturing and stress risks from sharp corners; Bezier transitions at sudden trace-width changes; supports differential/equal-length protection, DRC checks, automatic copper-region rebuild, multi-step undo, snapshot management, forced arc generation, and other advanced optimization features
 
 > Inspiration: [[Melt your circuit boards]](https://www.youtube.com/watch?v=euJgtLcWWyo)
 
@@ -11,8 +11,9 @@ One-click optimization of PCB corners into arcs to improve geometric continuity 
 1. Smooth beautification at sudden width changes (based on Bezier curves)
 ![preview](./images/preview2.gif)
 1. Snapshot management & undo support
+![preview](./images/preview3.gif)
 1. DRC Rule Check
-![preview](./images/preview4.png)
+![preview](./images/preview4.jpg)
 
 > Note: Plugin under development. It's recommended to backup your project before operation. Feedback welcome when encountering issues.
 
@@ -25,9 +26,10 @@ Menu location: Advanced → Beautify PCB
 - Diff/Length Protection – Enabled by default for DRC differential pairs and equal-length net groups; uses concentric arcs when corners can be matched and keeps uncertain corners straight
 - Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment)
 - DRC Rule Check – Apply optimistic routing first, then perform design rule checks and automatically revert non-compliant sections; supports ignoring copper pour rules
-- Automatic Copper Pour Rebuild – Automatically rebuild copper pour regions (Safe threshold of 5 areas to ensure UI responsiveness)
-- Undo / Snapshot – Multi-step undo with an **Incremental Sync Engine** that updates only changed primitives; switch between auto/manual snapshot views
-- Advanced Settings – Configure radius, transition parameters, snapshot history, **Custom Shortcuts**, and persistent card reordering/folding
+- Automatic Copper Region Rebuild – Rebuild related regions with copper conflicts after an operation. The configurable automatic limit defaults to **10 copper regions**; above it, the extension prompts for the host's `Shift+B` command
+- Undo / Snapshot – Selected operations use incremental restore and update only changed primitives; All operations use full restore to prioritize whole-board integrity; switch between auto/manual snapshot views
+- Shortcuts – Defaults: `F6` for Smooth Selected, `F9` for Smooth All, and `Ctrl+Shift+Z` for Undo; includes customization, conflict detection, and runtime compatibility warnings
+- Advanced Settings – Configure radius, transition parameters, copper-region limit, snapshots, and shortcuts; supports persistent card ordering/folding, with debug logs disabled by default and available on demand
 
 **Use Cases and Notes**
 
@@ -41,9 +43,11 @@ You can enable display in the top menu via: Advanced → Extension Manager → I
 
 ![preview](./images/topMenuConfig.jpg)
 
-![preview](./images/topMenu.png)
+![preview](./images/topMenu.jpg)
 
-![preview](./images/setting.png)
+![preview](./images/setting.jpg)
+
+> The settings image illustrates the layout. Current defaults and shortcuts are defined by this document and the installed extension.
 
 **Contributing**
 

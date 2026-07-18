@@ -267,9 +267,9 @@ export async function rebuildAllCopperPours(): Promise<number> {
 The feature uses a two-layer design:
 
 1. **`rebuildAllCopperPours()`** — Pure execution: iterates all pours, calls `rebuildCopperRegion()`, returns count (0 = no pours, -1 = error).
-2. **`rebuildAllCopperPoursIfEnabled()`** — Settings-aware wrapper: reads `rebuildCopperPourAfterBeautify` toggle → shows toast → calls rebuild. Returns -2 if disabled.
+2. **`rebuildAllCopperPoursIfEnabled()`** — Settings-aware wrapper: reads `rebuildCopperPourAfterBeautify`, reuses or runs DRC to rebuild only affected layers, and falls back to all pours only if smart detection fails. Returns -2 if disabled.
 
-Both `beautifyAll()` and `widthTransitionAll()` in `index.ts` call the high-level wrapper at the entry layer, keeping the rebuild logic out of the core beautify/transition modules.
+Selected and All beautify/width-transition entry points call the high-level wrapper, keeping rebuild logic out of the core mutation modules.
 
 ### Notes
 
@@ -277,6 +277,12 @@ Both `beautifyAll()` and `widthTransitionAll()` in `index.ts` call the high-leve
 - Each pour is rebuilt independently. For boards with many copper zones, this may take noticeable time.
 - The API is marked `@beta`, so host behavior and performance should still be checked after EDA updates.
 - Automatic per-pour rebuilding is intentionally capped by the user setting `copperPourRebuildLimit` (default `10`) because `rebuildCopperRegion()` recalculates regions one at a time. When the affected count exceeds the limit, preserve responsiveness and prompt the user to run the host's full-board `Shift + B` command manually.
+
+## Snapshot Operation Boundaries
+
+- Store `restoreStrategy: 'incremental'` on Selected-operation Before snapshots and `restoreStrategy: 'full'` on All-operation Before snapshots.
+- Snapshot geometry deduplication must not reuse an explicit Before snapshot across different operation names or restore strategies. Geometrically identical `Beautify (All) Before` and `Beautify (Selected) Before` states are different undo boundaries.
+- Selected operations use state-diff restore; All operations use authoritative full restore and may accept only verified host-normalized geometric equivalence.
 
 ## Copper Pour ID Spaces: Three Non-Overlapping Systems
 

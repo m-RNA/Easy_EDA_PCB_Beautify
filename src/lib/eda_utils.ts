@@ -61,7 +61,7 @@ export async function getSafeSelectedTracks(selectedIds: string[]): Promise<any[
 /**
  * 重铺所有覆铜区域
  * 遍历 PCB 中所有 Pour 边框，逐个调用 rebuildCopperRegion()
- * 注意: rebuildCopperRegion 是未公开 API，通过 runtime 验证可用
+ * 注意: rebuildCopperRegion 是官方 @beta API，仍需兼容旧宿主的运行时差异
  * @returns 成功重铺的数量，失败时返回 -1
  */
 export async function rebuildAllCopperPours(): Promise<number> {
@@ -76,12 +76,12 @@ export async function rebuildAllCopperPours(): Promise<number> {
 
 		// 检查数量限制：若覆铜区域过多，放弃自动重铺以免阻塞主线程
 		if (pours.length > rebuildLimit) {
-			eda.sys_Message?.showToastMessage(`覆铜区域较多(${pours.length})，超过自动重铺上限 ${rebuildLimit}，请手动执行 Shift+B`, 'warn' as any, 4);
+			eda.sys_Message?.showToastMessage(`覆铜区域较多（${pours.length} 块），超过自动重铺上限 ${rebuildLimit} 块，请手动执行 Shift+B`, 'warn' as any, 4);
 			debugLog(`[CopperPour] Too many pours (${pours.length}), limit=${rebuildLimit}, skipping auto rebuild.`);
 			return 0;
 		}
 
-		eda.sys_Message?.showToastMessage(`正在重铺全部 ${pours.length} 个覆铜区域...`, 'info' as any, 2);
+		eda.sys_Message?.showToastMessage(`正在重铺全部 ${pours.length} 块覆铜区域...`, 'info' as any, 2);
 
 		let rebuilt = 0;
 		for (const pour of pours) {
@@ -97,7 +97,7 @@ export async function rebuildAllCopperPours(): Promise<number> {
 		}
 
 		if (rebuilt > 0) {
-			eda.sys_Message?.showToastMessage(`已完成 ${rebuilt} 个覆铜区域重铺`, 'success' as any, 2);
+			eda.sys_Message?.showToastMessage(`已完成 ${rebuilt} 块覆铜区域重铺`, 'success' as any, 2);
 		}
 
 		debugLog(`[CopperPour] Rebuilt ${rebuilt}/${pours.length} copper pours`);
@@ -159,7 +159,7 @@ export async function rebuildViolatedCopperPours(cachedViolation?: CopperViolati
 
 		// 检查数量限制
 		if (poursToRebuild.length > rebuildLimit) {
-			eda.sys_Message?.showToastMessage(`涉及覆铜区域 ${poursToRebuild.length} 个，超过自动重铺上限 ${rebuildLimit}，请手动执行 Shift+B`, 'warn' as any, 4);
+			eda.sys_Message?.showToastMessage(`涉及 ${poursToRebuild.length} 块覆铜区域，超过自动重铺上限 ${rebuildLimit} 块，请手动执行 Shift+B`, 'warn' as any, 4);
 			debugLog(`[CopperPour] Too many violated pours (${poursToRebuild.length}), limit=${rebuildLimit}, skipping rebuild.`);
 			return 0;
 		}
@@ -182,7 +182,7 @@ export async function rebuildViolatedCopperPours(cachedViolation?: CopperViolati
 		}
 
 		if (successCount > 0) {
-			eda.sys_Message?.showToastMessage(`已自动修复 ${successCount} 个覆铜区域`, 'success' as any, 2);
+			eda.sys_Message?.showToastMessage(`已自动重铺 ${successCount} 块覆铜区域`, 'success' as any, 2);
 		}
 		return successCount;
 	}

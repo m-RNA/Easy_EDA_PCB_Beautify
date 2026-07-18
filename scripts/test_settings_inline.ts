@@ -98,11 +98,11 @@ async function main() {
 		assert.deepEqual(runtimeErrors, [], '设置页初始化不应产生运行时异常');
 		assert.equal((dom.window.document.getElementById('cornerRadiusRatio') as HTMLInputElement).value, '5', '圆角半径默认值应为 5x');
 		assert.equal((dom.window.document.getElementById('widthTransitionRatio') as HTMLInputElement).value, '5', '线宽过渡默认值应为 5x');
-		assert.equal((dom.window.document.getElementById('copperPourRebuildLimit') as HTMLInputElement).value, '10', '自动重铺数量上限默认应为 10');
+		assert.equal((dom.window.document.getElementById('copperPourRebuildLimit') as HTMLInputElement).value, '10', '自动重铺上限默认应为 10 块覆铜区域');
 		const copperPourRebuildLimit = dom.window.document.getElementById('copperPourRebuildLimit') as HTMLInputElement;
 		copperPourRebuildLimit.value = '12';
 		copperPourRebuildLimit.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-		await waitFor(() => storedSettings.copperPourRebuildLimit === 12, '自动重铺数量上限应能保存');
+		await waitFor(() => storedSettings.copperPourRebuildLimit === 12, '自动重铺覆铜上限应能保存');
 
 		const advancedCard = dom.window.document.getElementById('card-advanced');
 		const advancedHeader = advancedCard?.querySelector('.card-header') as HTMLElement | null;
