@@ -84,10 +84,11 @@ export async function activate(_status?: 'onStartupFinished', _arg?: string): Pr
 export async function beautifySelected() {
 	debugLog('[Smooth] beautifySelected triggered');
 	try {
-		await beautifyTask('selected');
+		const result = await beautifyTask('selected');
 
 		// 重铺覆铜
-		await rebuildAllCopperPoursIfEnabled();
+		if (result.completed)
+			await rebuildAllCopperPoursIfEnabled(result.copperViolation);
 	}
 	catch (e: any) {
 		handleError(e);
@@ -101,13 +102,19 @@ export async function beautifyAll() {
 	debugLog('[Smooth] beautifyAll triggered');
 	const perfStartedAt = Date.now();
 	try {
-		await beautifyTask('all');
+		const result = await beautifyTask('all');
 		const coreFinishedAt = Date.now();
+		let copperDrcSource = 'skipped';
 
 		// 重铺覆铜
-		await rebuildAllCopperPoursIfEnabled();
+		if (result.completed) {
+			const rebuildResult = await rebuildAllCopperPoursIfEnabled(result.copperViolation);
+			copperDrcSource = rebuildResult === -2
+				? 'disabled'
+				: result.copperViolation !== undefined ? 'reused' : 'fresh';
+		}
 		logInfo(
-			`[Perf][BeautifyAll] core=${coreFinishedAt - perfStartedAt}ms copper=${Date.now() - coreFinishedAt}ms total=${Date.now() - perfStartedAt}ms`,
+			`[Perf][BeautifyAll] core=${coreFinishedAt - perfStartedAt}ms copper=${Date.now() - coreFinishedAt}ms total=${Date.now() - perfStartedAt}ms copper-drc=${copperDrcSource}`,
 			'Performance',
 		);
 	}

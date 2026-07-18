@@ -64,14 +64,19 @@ interface DrcCategory {
 
 /**
  * 运行 DRC 检查并解析结果
- * @returns 涉及违规的原语 ID 列表
+ * @returns 非覆铜违规 ID、覆铜违规图层以及结果是否可复用
  */
-export async function runDrcCheckAndParse(): Promise<Set<string>> {
+export async function runDrcCheckAndParse(): Promise<DrcCheckAnalysis> {
 	const violatedIds = new Set<string>();
+	const result: DrcCheckAnalysis = {
+		violatedIds,
+		copperViolation: { violatedLayers: new Set(), issueCount: 0 },
+		valid: false,
+	};
 	try {
 		const settings = await getSettings();
 		if (!settings.enableDRC) {
-			return violatedIds;
+			return result;
 		}
 
 		debugLog('[DRC] Starting global check...');
@@ -79,10 +84,11 @@ export async function runDrcCheckAndParse(): Promise<Set<string>> {
 
 		if (!Array.isArray(categories)) {
 			console.warn('[DRC] Check returned non-array:', categories);
-			return violatedIds;
+			return result;
 		}
 
 		debugLog(`[DRC] Found ${categories.length} categories`);
+		result.copperViolation = parseCopperViolationInfo(categories);
 
 		// 过滤覆铜相关 issue
 		let filtered = categories;
@@ -111,12 +117,13 @@ export async function runDrcCheckAndParse(): Promise<Set<string>> {
 
 		debugLog(`[DRC] Extracted ${violatedIds.size} unique violated IDs.`);
 
-		return violatedIds;
+		result.valid = true;
+		return result;
 	}
 	catch (e: any) {
 		debugWarn('[DRC] runDrcCheckAndParse failed');
 		console.warn('[DRC] runDrcCheckAndParse failed', e);
-		return violatedIds;
+		return result;
 	}
 }
 
@@ -128,6 +135,53 @@ export interface CopperViolationInfo {
 	issueCount: number;
 }
 
+/** 单次 DRC 的完整解析结果 */
+export interface DrcCheckAnalysis {
+	/** 排除覆铜后，涉及违规的图元 ID */
+	violatedIds: Set<string>;
+	/** 同一轮检查中提取的覆铜违规信息 */
+	copperViolation: CopperViolationInfo;
+	/** DRC 是否成功返回了可复用结果 */
+	valid: boolean;
+}
+
+/** 从既有 DRC 分类中提取覆铜违规信息，不再次调用 DRC API */
+function parseCopperViolationInfo(categories: DrcCategory[]): CopperViolationInfo {
+	const result: CopperViolationInfo = { violatedLayers: new Set(), issueCount: 0 };
+	for (const cat of categories) {
+		for (const sub of cat.list || []) {
+			const isCopperSub = sub.name?.includes('Copper Region') ?? false;
+			for (const issue of sub.list || []) {
+				const isCopperIssue = isCopperSub
+					|| issue.errorObjType?.includes('Copper')
+					|| issue.errorObjType?.includes('Region');
+
+				if (!isCopperIssue) {
+					const errData = issue.explanation?.errData;
+					if (!errData)
+						continue;
+					const hasCopper = errData.obj1Type?.includes('Copper')
+						|| errData.obj1Type?.includes('Region')
+						|| errData.obj2Type?.includes('Copper')
+						|| errData.obj2Type?.includes('Region');
+					if (!hasCopper)
+						continue;
+				}
+
+				result.issueCount++;
+				const errData = issue.explanation?.errData;
+				if (errData && Array.isArray(errData.layerIds)) {
+					for (const layerId of errData.layerIds) {
+						if (typeof layerId === 'number')
+							result.violatedLayers.add(layerId);
+					}
+				}
+			}
+		}
+	}
+	return result;
+}
+
 /**
  * 获取存在 DRC 问题的覆铜图层信息
  *
@@ -136,49 +190,15 @@ export interface CopperViolationInfo {
  * 因此改为提取违规所在的**图层 ID**，再按图层重铺对应的 Pour 边界。
  */
 export async function getViolatedCopperPours(): Promise<CopperViolationInfo> {
-	const result: CopperViolationInfo = { violatedLayers: new Set(), issueCount: 0 };
+	const emptyResult: CopperViolationInfo = { violatedLayers: new Set(), issueCount: 0 };
 	try {
 		debugLog('[DRC] Checking for copper-related DRC issues...');
 		const categories: DrcCategory[] = await eda.pcb_Drc.check(false, false, true);
 
 		if (!Array.isArray(categories))
-			return result;
+			return emptyResult;
 
-		// 遍历所有类别，只关注覆铜相关的 issue
-		for (const cat of categories) {
-			for (const sub of cat.list || []) {
-				const isCopperSub = sub.name?.includes('Copper Region') ?? false;
-				for (const issue of sub.list || []) {
-					const isCopperIssue = isCopperSub
-						|| issue.errorObjType?.includes('Copper')
-						|| issue.errorObjType?.includes('Region');
-
-					if (!isCopperIssue) {
-						// 也检查 errData 的 objType
-						const errData = issue.explanation?.errData;
-						if (!errData)
-							continue;
-						const hasCopper = errData.obj1Type?.includes('Copper')
-							|| errData.obj1Type?.includes('Region')
-							|| errData.obj2Type?.includes('Copper')
-							|| errData.obj2Type?.includes('Region');
-						if (!hasCopper)
-							continue;
-					}
-
-					result.issueCount++;
-
-					// 提取图层 ID
-					const errData = issue.explanation?.errData;
-					if (errData && Array.isArray(errData.layerIds)) {
-						for (const lid of errData.layerIds) {
-							if (typeof lid === 'number')
-								result.violatedLayers.add(lid);
-						}
-					}
-				}
-			}
-		}
+		const result = parseCopperViolationInfo(categories);
 
 		if (result.issueCount > 0) {
 			debugLog(`[DRC] Found ${result.issueCount} copper-related issues on layers: [${Array.from(result.violatedLayers).join(', ')}]`);
@@ -187,7 +207,7 @@ export async function getViolatedCopperPours(): Promise<CopperViolationInfo> {
 	}
 	catch (e: any) {
 		debugWarn(`[DRC] getViolatedCopperPours failed: ${e.message}`);
-		return result;
+		return emptyResult;
 	}
 }
 

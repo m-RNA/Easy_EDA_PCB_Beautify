@@ -1,4 +1,5 @@
 import type { CornerArcOverride } from './arcGeometry';
+import type { CopperViolationInfo } from './drc';
 import type { Point } from './math';
 import { buildConcentricOverrides, computeCornerArcCandidate } from './arcGeometry';
 import { mapWithConcurrency } from './asyncPool';
@@ -90,6 +91,11 @@ interface PathContext {
 	protectedGroupKeys: string[];
 	protectedCornerKeys: Map<number, string>;
 	cornerOverrides: Map<number, CornerArcOverride | null>;
+}
+
+export interface BeautifyRoutingResult {
+	completed: boolean;
+	copperViolation?: CopperViolationInfo;
 }
 
 const CREATE_CONCURRENCY = 8;
@@ -528,7 +534,7 @@ function syncProtectedCornerRepair(
  * 圆滑布线
  * @param scope 'selected' 只处理选中的导线, 'all' 处理所有导线
  */
-export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
+export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): Promise<BeautifyRoutingResult> {
 	const perfStartedAt = Date.now();
 	let perfLastAt = perfStartedAt;
 	const perfStages: string[] = [];
@@ -547,6 +553,8 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 	let tracks: any[] = [];
 	let rollbackSnapshotId: number | null = null;
 	let lineCountBefore = 0;
+	let latestCopperViolation: CopperViolationInfo | undefined;
+	const routingResult: BeautifyRoutingResult = { completed: false };
 
 	if (eda.sys_LoadingAndProgressBar?.showLoading) {
 		eda.sys_LoadingAndProgressBar.showLoading();
@@ -561,7 +569,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 			const selectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
 			if (!selectedIds || selectedIds.length === 0) {
 				eda.sys_Message?.showToastMessage('请先选择要处理的导线', 'warn' as any, 3);
-				return;
+				return routingResult;
 			}
 			const primitives = await getSafeSelectedTracks(selectedIds);
 
@@ -615,7 +623,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		if (tracks.length < 1) {
 			perfResult = 'skipped-no-tracks';
 			eda.sys_Message?.showToastMessage('未找到可处理的导线', 'info' as any, 2);
-			return;
+			return routingResult;
 		}
 		markPerf('load-tracks');
 
@@ -954,7 +962,9 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				eda.sys_Message?.showToastMessage(`DRC 检查中... (${drcAttempt + 1}/${maxDrcRetries + 1})`, 'info' as any, 1);
 
 				// 运行全局检查
-				const violatedIds = await runDrcCheckAndParse();
+				const drcAnalysis = await runDrcCheckAndParse();
+				const violatedIds = drcAnalysis.violatedIds;
+				latestCopperViolation = drcAnalysis.valid ? drcAnalysis.copperViolation : undefined;
 				markPerf(`drc-check-${drcAttempt + 1}`);
 
 				if (violatedIds.size === 0) {
@@ -1031,6 +1041,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 				}
 				// 3. 重新绘制
 				await commitOps(repairJobs);
+				latestCopperViolation = undefined;
 				markPerf(`drc-repair-${drcAttempt + 1}`);
 
 				drcAttempt++;
@@ -1063,6 +1074,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		if (settings.syncWidthTransition) {
 			// 在 Beautify 流程中调用，不需要额外快照（Beautify 已创建）
 			await addWidthTransitionsAll(false);
+			latestCopperViolation = undefined;
 			markPerf('width-transition');
 		}
 
@@ -1074,6 +1086,8 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		markPerf('snapshot-after');
 
 		perfResult = 'completed';
+		routingResult.completed = true;
+		routingResult.copperViolation = latestCopperViolation;
 		eda.sys_Message?.showToastMessage('美化完成', 'success' as any, 2);
 	}
 	catch (e: any) {
@@ -1102,4 +1116,5 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected') {
 		);
 		eda.sys_LoadingAndProgressBar?.destroyLoading?.();
 	}
+	return routingResult;
 }

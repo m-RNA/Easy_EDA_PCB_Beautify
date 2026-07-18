@@ -1,3 +1,4 @@
+import type { CopperViolationInfo } from './drc';
 import { getViolatedCopperPours } from './drc';
 import { debugLog, debugWarn, logError } from './logger';
 import { getSettings } from './settings';
@@ -116,9 +117,10 @@ export async function rebuildAllCopperPours(): Promise<number> {
  *
  * @returns 成功重铺的数量, 0=无违规, -1=执行异常
  */
-export async function rebuildViolatedCopperPours(): Promise<number> {
+export async function rebuildViolatedCopperPours(cachedViolation?: CopperViolationInfo): Promise<number> {
 	try {
-		const violation = await getViolatedCopperPours();
+		const violation = cachedViolation ?? await getViolatedCopperPours();
+		debugLog(`[CopperPour] DRC source: ${cachedViolation ? 'reused beautify result' : 'fresh check'}`);
 
 		// 没有覆铜相关的 DRC 问题
 		if (violation.issueCount === 0) {
@@ -192,14 +194,14 @@ export async function rebuildViolatedCopperPours(): Promise<number> {
  * 统一入口，供 beautify / widthTransition 等流程复用
  * @returns 成功重铺的数量，未启用时返回 -2，失败时返回 -1
  */
-export async function rebuildAllCopperPoursIfEnabled(): Promise<number> {
+export async function rebuildAllCopperPoursIfEnabled(cachedViolation?: CopperViolationInfo): Promise<number> {
 	const settings = await getSettings();
 	if (!settings.rebuildCopperPourAfterBeautify) {
 		return -2;
 	}
 
 	// 智能重铺: 仅重铺 DRC 违规涉及的图层上的覆铜
-	const smartCount = await rebuildViolatedCopperPours();
+	const smartCount = await rebuildViolatedCopperPours(cachedViolation);
 	if (smartCount >= 0) {
 		// 0=无违规或因数量多跳过, >0=局部重铺完成
 		return smartCount;
