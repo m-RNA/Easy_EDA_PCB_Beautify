@@ -577,7 +577,7 @@
                 </div>
                 <div class="setting-control">
                     <div class="input-group">
-                        <input type="text" id="cornerRadiusRatio" data-min="1" data-max="20" data-step="0.5" value="3.0">
+                        <input type="text" id="cornerRadiusRatio" data-min="1" data-max="20" data-step="0.5" value="5.0">
                         <span class="addon">X</span>
                     </div>
                 </div>
@@ -587,11 +587,11 @@
             <div class="setting-item">
                 <div class="setting-info">
                     <div class="setting-label" data-i18n="过渡长度比率">过渡长度比率</div>
-                    <div class="setting-desc" data-i18n="过渡区长度比率说明">线宽过度区长度 = 线宽差 × 比率 (推荐 2.0)</div>
+                    <div class="setting-desc" data-i18n="过渡区长度比率说明">线宽过渡区长度 = 线宽差 × 比率（默认 5.0）</div>
                 </div>
                 <div class="setting-control">
                     <div class="input-group">
-                        <input type="text" id="widthTransitionRatio" data-min="1.0" data-max="5.0" data-step="0.1" value="2.0">
+                        <input type="text" id="widthTransitionRatio" data-min="1.0" data-max="5.0" data-step="0.1" value="5.0">
                         <span class="addon">X</span>
                     </div>
                 </div>
@@ -627,6 +627,19 @@
                             <span class="slider"></span>
                         </label>
                         <span class="switch-label" id="rebuildCopperPourLabel" data-i18n="启用">启用</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="自动重铺数量上限">自动重铺数量上限</div>
+                    <div class="setting-desc" data-i18n="超过上限时跳过并提示手动执行 Shift+B">超过上限时跳过并提示手动执行 Shift+B</div>
+                </div>
+                <div class="setting-control">
+                    <div class="input-group">
+                        <input type="text" id="copperPourRebuildLimit" data-min="1" data-max="100" data-step="1" value="10">
+                        <span class="addon" data-i18n="个">个</span>
                     </div>
                 </div>
             </div>
@@ -868,7 +881,7 @@
             <div class="setting-item">
                 <div class="setting-info">
                     <div class="setting-label" data-i18n="调试模式">调试模式</div>
-                    <div class="setting-desc" data-i18n="启用调试日志">在日志栏打印</div>
+                    <div class="setting-desc" data-i18n="启用调试日志">按需输出性能与诊断日志</div>
                 </div>
                 <div class="setting-control">
                     <div class="switch-container">
@@ -1125,6 +1138,7 @@
         const elEnableDRC = document.getElementById('enableDRC');
         const elDrcIgnoreCopperPour = document.getElementById('drcIgnoreCopperPour');
         const elRebuildCopperPour = document.getElementById('rebuildCopperPour');
+        const elCopperPourRebuildLimit = document.getElementById('copperPourRebuildLimit');
 
         // Shortcuts
         const elShortcutBeautifySelected = document.getElementById('shortcutBeautifySelected');
@@ -1225,6 +1239,10 @@
                 if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
                 if (elDrcIgnoreCopperPour) elDrcIgnoreCopperPour.checked = config.drcIgnoreCopperPour !== undefined ? config.drcIgnoreCopperPour : true;
                 if (elRebuildCopperPour) elRebuildCopperPour.checked = config.rebuildCopperPourAfterBeautify !== undefined ? config.rebuildCopperPourAfterBeautify : true;
+                if (elCopperPourRebuildLimit) {
+                    elCopperPourRebuildLimit.value = config.copperPourRebuildLimit !== undefined ? config.copperPourRebuildLimit : 10;
+                    elCopperPourRebuildLimit.setAttribute('data-last-valid', elCopperPourRebuildLimit.value);
+                }
 
                 // 快捷键
                 const fmt = (keys) => (keys || []).map(toFriendlyKey).filter(k => k).join(' + ');
@@ -1288,6 +1306,10 @@
             if (Number.isNaN(ratio))
                 ratio = DEFAULT_CONFIG.widthTransitionRatio;
 
+            let copperPourRebuildLimit = Number.parseInt(elCopperPourRebuildLimit.value);
+            if (Number.isNaN(copperPourRebuildLimit) || copperPourRebuildLimit < 1)
+                copperPourRebuildLimit = DEFAULT_CONFIG.copperPourRebuildLimit || 10;
+
             // 获取当前卡片顺序和折叠状态
             const container = document.getElementById('cardContainer');
             const cardOrder = container ? [...container.querySelectorAll('.card')].map(c => c.id) : [];
@@ -1312,6 +1334,7 @@
                 enableDRC: elEnableDRC.checked,
                 drcIgnoreCopperPour: elDrcIgnoreCopperPour.checked,
                 rebuildCopperPourAfterBeautify: elRebuildCopperPour.checked,
+                copperPourRebuildLimit: copperPourRebuildLimit,
                 cardOrder: cardOrder,
                 collapsedStates: collapsedStates,
                 shortcutKeys: {
@@ -1672,6 +1695,7 @@
         // Apply bindings
         bindSmartInput(elCornerRadiusRatio, false);
         bindSmartInput(elSegments, true);
+        bindSmartInput(elCopperPourRebuildLimit, true);
         bindSmartInput(elRatio, false);
         bindSmartInput(elDirection, true);
 

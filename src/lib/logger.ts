@@ -51,6 +51,13 @@ export function logInfo(message: string, scope?: string): void {
 	log(message, 'info', scope);
 }
 
+/** 性能日志仅在调试模式开启时输出。 */
+export function logPerformance(message: string): void {
+	if (!getCachedSettings().debug)
+		return;
+	log(message, 'info', 'Performance');
+}
+
 /**
  * 输出警告日志
  */

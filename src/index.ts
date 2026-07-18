@@ -13,7 +13,7 @@
 
 import { beautifyRouting as beautifyTask } from './lib/beautify';
 import { rebuildAllCopperPoursIfEnabled } from './lib/eda_utils';
-import { debugLog, debugWarn, logError, logInfo } from './lib/logger';
+import { debugLog, debugWarn, logError, logPerformance } from './lib/logger';
 import { getDefaultSettings, getSettings } from './lib/settings';
 import { clearAllExtensionShortcuts, diagnoseShortcuts, initShortcuts } from './lib/shortcuts';
 import { undoLastOperation as undoTask } from './lib/snapshot';
@@ -24,15 +24,17 @@ export async function activate(_status?: 'onStartupFinished', _arg?: string): Pr
 	// 初始化设置（加载到缓存）
 	await getSettings();
 
+	let shortcutRefresh = Promise.resolve();
 	const refreshShortcuts = async () => {
-		await initShortcuts({
+		shortcutRefresh = shortcutRefresh.catch(() => undefined).then(() => initShortcuts({
 			beautifySelected,
 			beautifyAll,
 			widthTransitionSelected,
 			widthTransitionAll,
 			undoOperation,
 			createManualSnapshot,
-		});
+		}));
+		await shortcutRefresh;
 	};
 
 	// 将功能挂载到 eda 全局对象，供 settings.html 调用
@@ -113,9 +115,8 @@ export async function beautifyAll() {
 				? 'disabled'
 				: result.copperViolation !== undefined ? 'reused' : 'fresh';
 		}
-		logInfo(
+		logPerformance(
 			`[Perf][BeautifyAll] core=${coreFinishedAt - perfStartedAt}ms copper=${Date.now() - coreFinishedAt}ms total=${Date.now() - perfStartedAt}ms copper-drc=${copperDrcSource}`,
-			'Performance',
 		);
 	}
 	catch (e: any) {
@@ -144,7 +145,7 @@ export async function undoOperation() {
 	const perfStartedAt = Date.now();
 	try {
 		await undoTask();
-		logInfo(`[Perf][Undo] total=${Date.now() - perfStartedAt}ms`, 'Performance');
+		logPerformance(`[Perf][Undo] total=${Date.now() - perfStartedAt}ms`);
 	}
 	catch (e: any) {
 		logError(`Undo Error: ${e.message || e}`);

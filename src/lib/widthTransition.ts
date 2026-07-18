@@ -331,7 +331,7 @@ async function processWidthTransitions(
 				// 计算理想过渡长度
 				const widthDiff = Math.abs(w1 - w2);
 				// 默认 3 倍线宽差
-				const idealLength = widthDiff * (settings.widthTransitionRatio || 3.0);
+				const idealLength = widthDiff * (settings.widthTransitionRatio || 5.0);
 
 				// === 平衡模式: 0% = 全部向窄线, 100% = 全部向宽线 ===
 				const balance = Math.max(0, Math.min(100, Number(settings.widthTransitionBalance) || 50));
@@ -585,7 +585,7 @@ async function createWidthTransition(
 	const widthDiff = wideWidth - narrowWidth;
 
 	// 过渡长度（向窄线方向延伸）
-	const idealLength = widthDiff * (settings.widthTransitionRatio || 1.5);
+	const idealLength = widthDiff * (settings.widthTransitionRatio || 5.0);
 	let transitionLength: number;
 
 	if (forceExactLength) {

@@ -5,7 +5,7 @@ import { buildConcentricOverrides, computeCornerArcCandidate } from './arcGeomet
 import { mapWithConcurrency } from './asyncPool';
 import { runDrcCheckAndParse } from './drc';
 import { getSafeSelectedTracks } from './eda_utils';
-import { debugLog, debugWarn, logError, logInfo } from './logger';
+import { debugLog, debugWarn, logError, logPerformance } from './logger';
 import { dist, getAngleBetween, lerp } from './math';
 import { buildNodeDegreeIndex, isProtectedRouteNode, isRouteJunction, loadBoardTopologySegments, loadElectricalAnchorIndex, makePointKey } from './routeTopology';
 import { getSettings } from './settings';
@@ -1113,9 +1113,8 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 		eda.sys_Message?.showToastMessage(`美化失败: ${e.message}`, 'error' as any, 4);
 	}
 	finally {
-		logInfo(
+		logPerformance(
 			`[Perf][Beautify:${scope}] result=${perfResult} tracks=${tracks.length} total=${Date.now() - perfStartedAt}ms line-deleted=${perfDeletedLines} line-created=${perfCreatedLines} arc-created=${perfCreatedArcs} ${perfStages.join(' ')}`,
-			'Performance',
 		);
 		eda.sys_LoadingAndProgressBar?.destroyLoading?.();
 	}

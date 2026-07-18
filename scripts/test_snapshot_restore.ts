@@ -22,6 +22,7 @@ async function main() {
 	const {
 		applySnapshotFullRestore,
 		applySnapshotStateDiff,
+		canReuseIdenticalSnapshot,
 		deleteStateDiffPrimitives,
 		getSnapshotGeometryDiff,
 		getSnapshotRestoreStrategy,
@@ -212,6 +213,18 @@ async function main() {
 	assert.equal(getSnapshotRestoreStrategy({ ...quantizedTarget, name: 'Beautify (All) Before' }), 'full');
 	assert.equal(getSnapshotRestoreStrategy({ ...quantizedTarget, name: 'Beautify (Selected) Before' }), 'incremental');
 	assert.equal(getSnapshotRestoreStrategy({ ...quantizedTarget, restoreStrategy: 'full' }), 'full');
+	const fullBefore = { ...quantizedTarget, name: 'Beautify (All) Before', restoreStrategy: 'full' as const };
+	const selectedBefore = { ...quantizedTarget, name: 'Beautify (Selected) Before', restoreStrategy: 'incremental' as const };
+	assert.equal(
+		canReuseIdenticalSnapshot(fullBefore, selectedBefore),
+		false,
+		'选中操作不能复用几何相同的全量 Before 快照',
+	);
+	assert.equal(
+		canReuseIdenticalSnapshot(selectedBefore, { ...selectedBefore }),
+		true,
+		'同一选中操作的相同 Before 快照仍可去重',
+	);
 
 	const fullRestoreEvents: string[] = [];
 	const fullRestoreLiveIds = new Set(['current-a', 'current-b']);

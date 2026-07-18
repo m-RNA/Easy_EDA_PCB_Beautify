@@ -22,23 +22,23 @@ async function main() {
 		assert.equal(html.includes(removedName), false, `已移除的设置变量仍被引用: ${removedName}`);
 
 	let storedSettings: Record<string, any> = {};
-	let saveCalls = 0;
 	let refreshCalls = 0;
 	let diagnoseCalls = 0;
 	const runtimeErrors: unknown[] = [];
 	const defaults = {
-		cornerRadiusRatio: 3,
+		cornerRadiusRatio: 5,
 		protectPadAndViaNodes: true,
 		protectDifferentialAndEqualLength: true,
 		syncWidthTransition: false,
 		widthTransitionSegments: 3,
-		widthTransitionRatio: 3,
+		widthTransitionRatio: 5,
 		widthTransitionBalance: 50,
 		debug: false,
 		forceArc: true,
 		enableDRC: true,
 		drcIgnoreCopperPour: true,
 		rebuildCopperPourAfterBeautify: true,
+		copperPourRebuildLimit: 10,
 		cardOrder: ['card-transition', 'card-drc', 'card-shortcut', 'card-advanced', 'card-snapshot'],
 		collapsedStates: { 'card-advanced': true },
 		shortcutKeys: {},
@@ -68,7 +68,6 @@ async function main() {
 			getExtensionAllUserConfigs: async () => ({ ...storedSettings }),
 			setExtensionAllUserConfigs: async (settings: Record<string, any>) => {
 				storedSettings = structuredClone(settings);
-				saveCalls++;
 				return true;
 			},
 			getExtensionUserConfig: async () => undefined,
@@ -97,6 +96,13 @@ async function main() {
 		);
 		await delay(30);
 		assert.deepEqual(runtimeErrors, [], '设置页初始化不应产生运行时异常');
+		assert.equal((dom.window.document.getElementById('cornerRadiusRatio') as HTMLInputElement).value, '5', '圆角半径默认值应为 5x');
+		assert.equal((dom.window.document.getElementById('widthTransitionRatio') as HTMLInputElement).value, '5', '线宽过渡默认值应为 5x');
+		assert.equal((dom.window.document.getElementById('copperPourRebuildLimit') as HTMLInputElement).value, '10', '自动重铺数量上限默认应为 10');
+		const copperPourRebuildLimit = dom.window.document.getElementById('copperPourRebuildLimit') as HTMLInputElement;
+		copperPourRebuildLimit.value = '12';
+		copperPourRebuildLimit.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+		await waitFor(() => storedSettings.copperPourRebuildLimit === 12, '自动重铺数量上限应能保存');
 
 		const advancedCard = dom.window.document.getElementById('card-advanced');
 		const advancedHeader = advancedCard?.querySelector('.card-header') as HTMLElement | null;
@@ -105,8 +111,7 @@ async function main() {
 
 		advancedHeader.click();
 		assert.equal(advancedCard.classList.contains('collapsed'), false, '点击卡片标题应展开高级设置');
-		await waitFor(() => saveCalls >= 1, '点击折叠卡片后未调用设置保存 API');
-		assert.equal(storedSettings.collapsedStates?.['card-advanced'], false, '折叠状态应写入存储');
+		await waitFor(() => storedSettings.collapsedStates?.['card-advanced'] === false, '折叠状态应写入存储');
 
 		const debugSwitch = dom.window.document.getElementById('debug') as HTMLInputElement | null;
 		assert.ok(debugSwitch, '调试开关应存在');

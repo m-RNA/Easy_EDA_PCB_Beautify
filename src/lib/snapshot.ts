@@ -1,6 +1,6 @@
 import { mapWithConcurrency } from './asyncPool';
 import { getArcWidthByGeoMap, makeArcWidthGeoKey } from './beautify';
-import { debugLog, logError, logInfo, logWarn } from './logger';
+import { debugLog, debugWarn, logError, logInfo, logPerformance, logWarn } from './logger';
 import { isClose } from './math';
 
 const RESTORE_CREATE_CONCURRENCY = 8;
@@ -39,6 +39,18 @@ export function getSnapshotRestoreStrategy(snapshot: RoutingSnapshot): 'full' | 
 	if (snapshot.restoreStrategy)
 		return snapshot.restoreStrategy;
 	return /\(All\) Before$/.test(snapshot.name) ? 'full' : 'incremental';
+}
+
+/**
+ * 几何相同不代表属于同一次操作。显式的 Before 快照只有在名称和恢复策略
+ * 都一致时才能复用，防止 Selected 操作误用此前 All 操作的 full 快照。
+ */
+export function canReuseIdenticalSnapshot(latest: RoutingSnapshot, candidate: RoutingSnapshot): boolean {
+	if (!isSnapshotGeometryIdentical(latest, candidate))
+		return false;
+	if (!candidate.restoreStrategy)
+		return true;
+	return latest.name === candidate.name && latest.restoreStrategy === candidate.restoreStrategy;
 }
 
 interface PcbSnapshotStorage {
@@ -698,10 +710,15 @@ export function getSnapshotGeometryDiff(target: RoutingSnapshot, actual: Routing
 
 function logSnapshotGeometryDiff(stage: string, target: RoutingSnapshot, actual: RoutingSnapshot) {
 	const diff = getSnapshotGeometryDiff(target, actual);
-	logWarn(
-		`[SnapshotDiff] stage=${stage} extra-lines=${diff.extraLines.reduce((count, item) => count + item.count, 0)} missing-lines=${diff.missingLines.reduce((count, item) => count + item.count, 0)} extra-arcs=${diff.extraArcs.reduce((count, item) => count + item.count, 0)} missing-arcs=${diff.missingArcs.reduce((count, item) => count + item.count, 0)} extra-line-sample=${JSON.stringify(diff.extraLines.slice(0, 5))} missing-line-sample=${JSON.stringify(diff.missingLines.slice(0, 5))}`,
-		'Snapshot',
-	);
+	const extraLines = diff.extraLines.reduce((count, item) => count + item.count, 0);
+	const missingLines = diff.missingLines.reduce((count, item) => count + item.count, 0);
+	const extraArcs = diff.extraArcs.reduce((count, item) => count + item.count, 0);
+	const missingArcs = diff.missingArcs.reduce((count, item) => count + item.count, 0);
+	const message = `[SnapshotDiff] stage=${stage} extra-lines=${extraLines} missing-lines=${missingLines} extra-arcs=${extraArcs} missing-arcs=${missingArcs} extra-line-sample=${JSON.stringify(diff.extraLines.slice(0, 5))} missing-line-sample=${JSON.stringify(diff.missingLines.slice(0, 5))}`;
+	if (extraLines + missingLines + extraArcs + missingArcs === 0)
+		logInfo(message, 'Snapshot');
+	else
+		logWarn(message, 'Snapshot');
 }
 
 export async function diagnoseSnapshotDiff(snapshotId: number) {
@@ -1015,7 +1032,7 @@ export async function createSnapshot(
 		// 之前版本扫描全列表会导致：(1) 恢复旧快照后因与历史匹配而无法创建新的 Before 记录 (2) 达到上限后因状态重复导致列表不再更新
 		if (targetList.length > 0) {
 			const latest = targetList[0];
-			if (isSnapshotGeometryIdentical(latest, snapshot)) {
+			if (canReuseIdenticalSnapshot(latest, snapshot)) {
 				debugLog(`Snapshot skipped: Geometry identical to latest "${latest.name}" (id: ${latest.id})`, 'Snapshot');
 				if (isManual && eda.sys_Message) {
 					eda.sys_Message.showToastMessage('当前布线状态与最新快照一致，无需重复创建', 'info' as any, 2);
@@ -1053,9 +1070,8 @@ export async function createSnapshot(
 		return null;
 	}
 	finally {
-		logInfo(
+		logPerformance(
 			`[Perf][Snapshot] result=${perfResult} type=${isManual ? 'manual' : 'auto'} name="${name}" lines=${perfLineCount} arcs=${perfArcCount} total=${Date.now() - perfStartedAt}ms ${perfStages.join(' ')}`,
-			'Performance',
 		);
 		if (eda.sys_LoadingAndProgressBar) {
 			eda.sys_LoadingAndProgressBar.destroyLoading();
@@ -1259,12 +1275,15 @@ export async function applySnapshotStateDiff(snapshot: RoutingSnapshot, currentS
 }
 
 export async function applySnapshotFullRestore(snapshot: RoutingSnapshot, currentState: RoutingSnapshot) {
+	const startedAt = Date.now();
 	const arcIds = currentState.arcs.map(arc => arc.i || arc.id).filter((id): id is string => typeof id === 'string');
 	const lineIds = currentState.lines.map(line => line.i || line.id).filter((id): id is string => typeof id === 'string');
 	if (arcIds.length > 0)
 		await deleteStateDiffPrimitives('arc', eda.pcb_PrimitiveArc, arcIds);
+	const arcsDeletedAt = Date.now();
 	if (lineIds.length > 0)
 		await deleteStateDiffPrimitives('line', eda.pcb_PrimitiveLine, lineIds);
+	const linesDeletedAt = Date.now();
 	const emptyState: RoutingSnapshot = {
 		id: 0,
 		name: 'Empty Full Restore State',
@@ -1273,10 +1292,20 @@ export async function applySnapshotFullRestore(snapshot: RoutingSnapshot, curren
 		lines: [],
 		arcs: [],
 	};
-	const result = await applySnapshotStateDiff(snapshot, emptyState);
+	const lineResult = await applyStateDiff('line', snapshot.lines, emptyState.lines);
+	const linesCreatedAt = Date.now();
+	resolveArcWidths(snapshot.lines, snapshot.arcs);
+	const arcResult = await applyStateDiff('arc', snapshot.arcs, emptyState.arcs);
+	const arcsCreatedAt = Date.now();
 	return {
-		lineRes: { ...result.lineRes, deleted: lineIds.length },
-		arcRes: { ...result.arcRes, deleted: arcIds.length },
+		lineRes: { ...lineResult, deleted: lineIds.length },
+		arcRes: { ...arcResult, deleted: arcIds.length },
+		phaseTimings: {
+			deleteArcs: arcsDeletedAt - startedAt,
+			deleteLines: linesDeletedAt - arcsDeletedAt,
+			createLines: linesCreatedAt - linesDeletedAt,
+			createArcs: arcsCreatedAt - linesCreatedAt,
+		},
 	};
 }
 
@@ -1331,11 +1360,11 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		if (eda.sys_LoadingAndProgressBar)
 			eda.sys_LoadingAndProgressBar.showLoading();
 
+		const restoreStartedAt = Date.now();
 		const currentState = await readCurrentRoutingState(currentPcb.id);
 		const restoreStrategy = getSnapshotRestoreStrategy(snapshot);
-		logInfo(
+		logPerformance(
 			`[SnapshotRestore] strategy=${restoreStrategy} target=${snapshot.lines.length}/${snapshot.arcs.length} current=${currentState.lines.length}/${currentState.arcs.length}`,
-			'Performance',
 		);
 		const initialResult = restoreStrategy === 'full'
 			? await applySnapshotFullRestore(snapshot, currentState)
@@ -1343,6 +1372,10 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		const lineRes = initialResult.lineRes;
 		const arcRes = initialResult.arcRes;
 		const restoreMode = restoreStrategy;
+		const phaseTimings = 'phaseTimings' in initialResult
+			? initialResult.phaseTimings as { deleteArcs: number; deleteLines: number; createLines: number; createArcs: number }
+			: undefined;
+		const mutationFinishedAt = Date.now();
 
 		// 恢复策略在第一次执行前就由快照范围决定；失败时只诊断，不再自动执行第二轮变更。
 		const verification = await verifySnapshotStateStable(snapshot, currentPcb.id);
@@ -1365,14 +1398,13 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 			);
 		}
 		if (normalizedEquivalent) {
-			logWarn(
+			debugWarn(
 				`[SnapshotRestore] result=verified-normalized mode=${restoreMode} target=${snapshot.lines.length}/${snapshot.arcs.length} actual=${verifiedState.lines.length}/${verifiedState.arcs.length}`,
 				'Snapshot',
 			);
 		}
-		logInfo(
-			`[SnapshotRestore] result=${normalizedEquivalent ? 'verified-normalized' : 'verified'} mode=${restoreMode} lines-created=${lineRes.created} lines-deleted=${lineRes.deleted} arcs-created=${arcRes.created} arcs-deleted=${arcRes.deleted}`,
-			'Performance',
+		logPerformance(
+			`[SnapshotRestore] result=${normalizedEquivalent ? 'verified-normalized' : 'verified'} mode=${restoreMode} lines-created=${lineRes.created} lines-deleted=${lineRes.deleted} arcs-created=${arcRes.created} arcs-deleted=${arcRes.deleted} mutation=${mutationFinishedAt - restoreStartedAt}ms verify=${Date.now() - mutationFinishedAt}ms${phaseTimings ? ` delete-arcs=${phaseTimings.deleteArcs}ms delete-lines=${phaseTimings.deleteLines}ms create-lines=${phaseTimings.createLines}ms create-arcs=${phaseTimings.createArcs}ms` : ''}`,
 		);
 
 		if (showToast && eda.sys_Message) {

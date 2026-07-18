@@ -11,6 +11,7 @@ export interface BeautifySettings {
 	enableDRC: boolean; // 启用 DRC 检查
 	drcIgnoreCopperPour: boolean; // DRC 忽略覆铜相关规则
 	rebuildCopperPourAfterBeautify: boolean; // 执行全部操作后重铺所有覆铜
+	copperPourRebuildLimit: number; // 自动重铺覆铜区域数量上限
 	drcRetryCount: number; // DRC 失败最大重试次数 (控制二分法的深度)
 	cardOrder: string[]; // 设置界面的卡片排序顺序
 	collapsedStates: Record<string, boolean>; // 卡片折叠状态
@@ -26,10 +27,10 @@ export interface BeautifySettings {
 
 const DEFAULT_SETTINGS: BeautifySettings = {
 	syncWidthTransition: false,
-	widthTransitionRatio: 3.0, // 过渡长度 = 线宽差 * 3
+	widthTransitionRatio: 5.0, // 过渡长度 = 线宽差 * 5
 	widthTransitionSegments: 25,
 	widthTransitionBalance: 50, // 中间位置= 50%
-	cornerRadiusRatio: 3.0, // 默认半径是线宽的3倍
+	cornerRadiusRatio: 5.0, // 默认半径是线宽的5倍
 	protectPadAndViaNodes: true,
 	protectDifferentialAndEqualLength: true,
 	debug: false,
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	enableDRC: true,
 	drcIgnoreCopperPour: true, // 默认忽略覆铜规则（覆铜重铺后通常会自动解决）
 	rebuildCopperPourAfterBeautify: true, // 默认执行全部操作后重铺覆铜
+	copperPourRebuildLimit: 10,
 	drcRetryCount: 4, // 4次二分法 (100% -> 50% -> 25% -> 12.5% -> 直角)
 	cardOrder: ['card-transition', 'card-drc', 'card-shortcut', 'card-advanced', 'card-snapshot'],
 	collapsedStates: {
@@ -45,11 +47,11 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 		'card-advanced': true, // 默认收起高级设置
 	},
 	shortcutKeys: {
-		beautifySelected: ['SHIFT', 'Q'],
-		beautifyAll: ['CONTROL', 'SHIFT', 'Q'],
+		beautifySelected: ['F6'],
+		beautifyAll: ['F9'],
 		widthTransitionSelected: [],
 		widthTransitionAll: [],
-		undo: ['CONTROL', 'SHIFT', 'Z'],
+		undo: ['Ctrl', 'Shift', 'Z'],
 		createSnapshot: [],
 	},
 };
@@ -69,6 +71,25 @@ export function getDefaultSettings(): BeautifySettings {
 export async function getSettings(): Promise<BeautifySettings> {
 	try {
 		const configs = await eda.sys_Storage.getExtensionAllUserConfigs();
+		const shortcutKeys = configs?.shortcutKeys;
+		const keySignature = (keys: unknown) => Array.isArray(keys)
+			? keys.map(key => String(key).trim().toUpperCase().replace('CONTROL', 'CTRL')).sort().join('+')
+			: '';
+		const usesLegacyQDefaults = shortcutKeys
+			&& keySignature(shortcutKeys.beautifySelected) === 'Q+SHIFT'
+			&& keySignature(shortcutKeys.beautifyAll) === 'CTRL+Q+SHIFT';
+		const previousSelectedSignature = shortcutKeys && keySignature(shortcutKeys.beautifySelected);
+		const usesPreviousFKeyDefaults = shortcutKeys
+			&& (previousSelectedSignature === 'F9+SHIFT' || previousSelectedSignature === 'F6+SHIFT')
+			&& keySignature(shortcutKeys.beautifyAll) === 'F9';
+		if (usesLegacyQDefaults || usesPreviousFKeyDefaults) {
+			configs.shortcutKeys = {
+				...shortcutKeys,
+				beautifySelected: ['F6'],
+				beautifyAll: ['F9'],
+			};
+			await eda.sys_Storage.setExtensionAllUserConfigs(configs);
+		}
 		const newSettings = { ...DEFAULT_SETTINGS, ...configs };
 		(eda as any)[SETTINGS_CACHE_KEY] = newSettings;
 		return newSettings;

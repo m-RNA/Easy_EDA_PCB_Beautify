@@ -14,6 +14,17 @@ interface ShortcutHandlers {
 	createManualSnapshot: ShortcutCallback;
 }
 
+type ShortcutHandlerKey = keyof ShortcutHandlers;
+
+interface ShortcutRuntimeState {
+	signature: string;
+	handlers: ShortcutHandlers;
+	callbacks: Record<string, (shortcutKey: any) => Promise<void>>;
+	blockedKeys: string[];
+}
+
+const SHORTCUT_RUNTIME_KEY = '_jlc_beautify_shortcut_runtime';
+
 // 本扩展注册的所有快捷键标题（用于精确识别自身快捷键）
 const OUR_SHORTCUT_TITLES = new Set([
 	'圆滑布线（选中）',
@@ -36,7 +47,7 @@ const OUR_SHORTCUT_TITLES = new Set([
  * 全大写的修饰键（'SHIFT', 'CONTROL'）注册时返回 OK，但回调永远不会触发。
  * 此函数的输出必须与 settings.html 中 toFriendlyKey() 的输出保持一致。
  */
-function normalizeKeyToken(key: string): string {
+export function normalizeKeyToken(key: string): string {
 	const token = (key || '').trim();
 	if (!token)
 		return '';
@@ -83,7 +94,7 @@ function normalizeKeyToken(key: string): string {
 	}
 }
 
-function normalizeShortcutKeys(keys: string[]): string[] {
+export function normalizeShortcutKeys(keys: string[]): string[] {
 	return (keys || []).map((k: string) => normalizeKeyToken(k)).filter((k: string) => !!k);
 }
 
@@ -139,28 +150,83 @@ export async function clearAllExtensionShortcuts(): Promise<number> {
 }
 
 export async function initShortcuts(handlers: ShortcutHandlers): Promise<void> {
-	// 1. 反注册本扩展此前注册的所有快捷键
-	await unregisterOurShortcuts();
-
-	// 2. 读取快捷键配置
+	// 1. 读取快捷键配置
 	const settings = getCachedSettings();
 	const rawShortcutConfigs = (settings as any).shortcutKeys || {};
 	const shortcutConfigs = {
-		beautifySelected: rawShortcutConfigs.beautifySelected ?? ['Shift', 'Q'],
-		beautifyAll: rawShortcutConfigs.beautifyAll ?? ['Ctrl', 'Shift', 'Q'],
+		beautifySelected: rawShortcutConfigs.beautifySelected ?? ['F6'],
+		beautifyAll: rawShortcutConfigs.beautifyAll ?? ['F9'],
 		widthTransitionSelected: rawShortcutConfigs.widthTransitionSelected ?? [],
 		widthTransitionAll: rawShortcutConfigs.widthTransitionAll ?? [],
 		undo: rawShortcutConfigs.undo ?? ['Ctrl', 'Shift', 'Z'],
 		createSnapshot: rawShortcutConfigs.createSnapshot ?? [],
 	};
+	const items: Array<{ key: string; title: string; handlerKey: ShortcutHandlerKey }> = [
+		{ key: 'beautifySelected', title: '圆滑布线（选中）', handlerKey: 'beautifySelected' },
+		{ key: 'beautifyAll', title: '圆滑布线（全部）', handlerKey: 'beautifyAll' },
+		{ key: 'widthTransitionSelected', title: '过渡线宽（选中）', handlerKey: 'widthTransitionSelected' },
+		{ key: 'widthTransitionAll', title: '过渡线宽（全部）', handlerKey: 'widthTransitionAll' },
+		{ key: 'undo', title: '撤销', handlerKey: 'undoOperation' },
+		{ key: 'createSnapshot', title: '创建手动快照', handlerKey: 'createManualSnapshot' },
+	];
+	const desiredBindings = items
+		.map(item => ({ ...item, keys: normalizeShortcutKeys((shortcutConfigs as any)[item.key]) }))
+		.filter(item => item.keys.length > 0);
+	const desiredSignature = JSON.stringify(desiredBindings.map(item => [item.key, toKeySignature(item.keys)]));
+	let runtimeState = (eda as any)[SHORTCUT_RUNTIME_KEY] as ShortcutRuntimeState | undefined;
+	if (!runtimeState) {
+		runtimeState = { signature: '', handlers, callbacks: {}, blockedKeys: [] };
+		(eda as any)[SHORTCUT_RUNTIME_KEY] = runtimeState;
+	}
+	runtimeState.blockedKeys ||= [];
+	runtimeState.handlers = handlers;
 
-	// 3. 查询所有已注册快捷键（含系统），检测冲突
+	// 配置未变化且宿主仍持有全部绑定时，保留原回调，避免设置保存导致回调失效。
+	const currentExtensionShortcuts = await eda.sys_ShortcutKey.getShortcutKeys(false);
+	const currentSignatures = new Set(currentExtensionShortcuts.map(item => toKeySignature(item.shortcutKey as string[])));
+	if (
+		runtimeState.signature === desiredSignature
+		&& desiredBindings
+			.filter(item => !runtimeState.blockedKeys.includes(item.key))
+			.every(item => currentSignatures.has(toKeySignature(item.keys)))
+	) {
+		debugLog(`Shortcut bindings unchanged; keeping ${currentExtensionShortcuts.length} active callbacks`, SCOPE);
+		return;
+	}
+
+	// 配置变化或宿主丢失绑定时，清理后重新注册。
+	await unregisterOurShortcuts();
+	runtimeState.callbacks = {};
+
+	// 2. 查询所有已注册快捷键（含系统），检测冲突
 	const existingShortcuts = await eda.sys_ShortcutKey.getShortcutKeys(true);
 
 	const conflicts: string[] = [];
 	const conflictItemKeys = new Set<string>();
-	const conflictShortcutKeys = new Map<string, any[]>();
-	let hasConflict = false;
+	const modifierKeys = new Set(['Ctrl', 'Shift', 'Alt', 'Cmd', 'Win']);
+	for (const binding of desiredBindings) {
+		if (binding.keys.includes('Shift') && binding.keys.some(key => /^F(?:[1-9]|1\d|20)$/.test(key))) {
+			conflicts.push(`“${binding.title}”使用 ${binding.keys.join('+')}，当前宿主不会向扩展分发 Shift+F键组合`);
+			conflictItemKeys.add(binding.key);
+		}
+	}
+	for (let index = 0; index < desiredBindings.length; index++) {
+		for (let otherIndex = index + 1; otherIndex < desiredBindings.length; otherIndex++) {
+			const first = desiredBindings[index];
+			const second = desiredBindings[otherIndex];
+			const firstBase = first.keys.filter(key => !modifierKeys.has(key));
+			const secondBase = second.keys.filter(key => !modifierKeys.has(key));
+			if (firstBase.join('+') !== secondBase.join('+'))
+				continue;
+			const firstSet = new Set(first.keys);
+			const secondSet = new Set(second.keys);
+			const overlaps = [...firstSet].every(key => secondSet.has(key)) || [...secondSet].every(key => firstSet.has(key));
+			if (!overlaps)
+				continue;
+			conflicts.push(`“${first.title}”与“${second.title}”共享基础键 ${firstBase.join('+')}，宿主无法区分`);
+			conflictItemKeys.add(first.keys.length > second.keys.length ? first.key : second.key);
+		}
+	}
 
 	const checkConflict = (keys: string[]) => {
 		if (!keys || keys.length === 0 || (keys.length === 1 && !keys[0]))
@@ -177,15 +243,6 @@ export async function initShortcuts(handlers: ShortcutHandlers): Promise<void> {
 		});
 	};
 
-	const items = [
-		{ key: 'beautifySelected', title: '圆滑布线（选中）', callback: handlers.beautifySelected },
-		{ key: 'beautifyAll', title: '圆滑布线（全部）', callback: handlers.beautifyAll },
-		{ key: 'widthTransitionSelected', title: '过渡线宽（选中）', callback: handlers.widthTransitionSelected },
-		{ key: 'widthTransitionAll', title: '过渡线宽（全部）', callback: handlers.widthTransitionAll },
-		{ key: 'undo', title: '撤销', callback: handlers.undoOperation },
-		{ key: 'createSnapshot', title: '创建手动快照', callback: handlers.createManualSnapshot },
-	];
-
 	for (const item of items) {
 		const keys = normalizeShortcutKeys((shortcutConfigs as any)[item.key]);
 		if (!keys || keys.length === 0 || (keys.length === 1 && !keys[0]))
@@ -196,82 +253,42 @@ export async function initShortcuts(handlers: ShortcutHandlers): Promise<void> {
 		const conflict = checkConflict(keys);
 		if (conflict) {
 			const conflictName = conflict.title || '系统功能';
-			conflicts.push(`「${keys.join('+')}」与 "${conflictName}" 冲突`);
+			conflicts.push(`「${item.title}」的 ${keys.join('+')} 已被“${conflictName}”占用`);
 			conflictItemKeys.add(item.key);
-			conflictShortcutKeys.set(item.key, conflict.shortcutKey as any);
-			hasConflict = true;
 		}
 	}
 
-	// 4. 如果有冲突，询问用户是否继续绑定
-	let bindConflicts = true;
-	if (hasConflict) {
-		if (eda.sys_Dialog && typeof eda.sys_Dialog.showConfirmationMessage === 'function') {
-			const msg = `${conflicts.join('\n')}\n\n是否继续绑定？`;
-			bindConflicts = await new Promise<boolean>((resolve) => {
-				eda.sys_Dialog.showConfirmationMessage(
-					msg,
-					'检测到快捷键冲突',
-					undefined,
-					undefined,
-					(ok: boolean) => resolve(ok),
-				);
-			});
-		}
-		else {
-			bindConflicts = false;
-		}
-
-		if (!bindConflicts) {
-			// 用户选择取消：清空冲突项配置
-			for (const item of items) {
-				if (conflictItemKeys.has(item.key))
-					(shortcutConfigs as any)[item.key] = [];
-			}
-			try {
-				const existingConfigs = await eda.sys_Storage.getExtensionAllUserConfigs() || {};
-				await eda.sys_Storage.setExtensionAllUserConfigs({
-					...existingConfigs,
-					shortcutKeys: shortcutConfigs,
-				});
-			}
-			catch { /* ignore */ }
-			debugLog('Conflicting shortcuts cleared by user choice', SCOPE);
-		}
-		else {
-			// 用户选择继续绑定：先反注册冲突方的快捷键
-			for (const [, conflictKeys] of conflictShortcutKeys) {
-				try {
-					await eda.sys_ShortcutKey.unregisterShortcutKey(conflictKeys as any);
-				}
-				catch { /* ignore */ }
-			}
-		}
+	// 3. 冲突项不覆盖宿主绑定，保留配置并明确提示用户修改。
+	if (conflicts.length > 0) {
+		const message = `${conflicts.join('\n')}\n\n冲突项未注册，请在“美化PCB → 高级菜单 → 快捷键设置”中修改。`;
+		logWarn(message, SCOPE);
+		eda.sys_Dialog?.showInformationMessage?.(message, '快捷键冲突');
 	}
+	runtimeState.blockedKeys = [...conflictItemKeys];
 
-	// 5. 注册快捷键
+	// 4. 注册快捷键
 	let registered = 0;
 	for (const item of items) {
 		const keys = normalizeShortcutKeys((shortcutConfigs as any)[item.key]);
 		if (!keys || keys.length === 0 || (keys.length === 1 && !keys[0]))
 			continue;
 
-		if (!bindConflicts && conflictItemKeys.has(item.key))
+		if (conflictItemKeys.has(item.key))
 			continue;
 
-		const currentCallback = item.callback;
 		const currentTitle = item.title;
 		const currentKeys = [...keys];
 
 		const callbackFn = async (_shortcutKey: any) => {
 			debugLog(`Shortcut triggered: [${currentKeys.join('+')}] "${currentTitle}"`, SCOPE);
 			try {
-				await currentCallback();
+				await runtimeState.handlers[item.handlerKey]();
 			}
 			catch (err: any) {
 				logWarn(`Callback error for "${currentTitle}": ${err?.message || err}`, SCOPE);
 			}
 		};
+		runtimeState.callbacks[item.key] = callbackFn;
 
 		const success = await eda.sys_ShortcutKey.registerShortcutKey(
 			keys as any,
@@ -289,7 +306,9 @@ export async function initShortcuts(handlers: ShortcutHandlers): Promise<void> {
 		}
 	}
 
-	debugLog(`${registered} shortcuts registered`, SCOPE);
+	runtimeState.signature = desiredSignature;
+	const activeShortcuts = await eda.sys_ShortcutKey.getShortcutKeys(false);
+	debugLog(`${registered} shortcuts registered; host reports ${activeShortcuts.length} active: ${activeShortcuts.map(item => `[${(item.shortcutKey as string[]).join('+')}]`).join(', ')}`, SCOPE);
 }
 
 /**
@@ -323,8 +342,8 @@ export async function diagnoseShortcuts(): Promise<string> {
 	// 3. 规范化后的键
 	const rawConfigs = (settings as any).shortcutKeys || {};
 	const configMap: Record<string, string[]> = {
-		beautifySelected: rawConfigs.beautifySelected ?? ['Shift', 'Q'],
-		beautifyAll: rawConfigs.beautifyAll ?? ['Ctrl', 'Shift', 'Q'],
+		beautifySelected: rawConfigs.beautifySelected ?? ['F6'],
+		beautifyAll: rawConfigs.beautifyAll ?? ['F9'],
 		widthTransitionSelected: rawConfigs.widthTransitionSelected ?? [],
 		widthTransitionAll: rawConfigs.widthTransitionAll ?? [],
 		undo: rawConfigs.undo ?? ['Ctrl', 'Shift', 'Z'],

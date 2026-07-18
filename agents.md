@@ -276,6 +276,7 @@ Both `beautifyAll()` and `widthTransitionAll()` in `index.ts` call the high-leve
 - The method triggers an asynchronous pour calculation in the EDA worker. The canvas updates after the worker completes.
 - Each pour is rebuilt independently. For boards with many copper zones, this may take noticeable time.
 - The API is marked `@beta`, so host behavior and performance should still be checked after EDA updates.
+- Automatic per-pour rebuilding is intentionally capped by the user setting `copperPourRebuildLimit` (default `10`) because `rebuildCopperRegion()` recalculates regions one at a time. When the affected count exceeds the limit, preserve responsiveness and prompt the user to run the host's full-board `Shift + B` command manually.
 
 ## Copper Pour ID Spaces: Three Non-Overlapping Systems
 
@@ -421,9 +422,15 @@ To match user muscle memory from other EDA tools, we register the following by d
 
 | Shortcut | Action |
 | --- | --- |
-| `Shift + Q` | Beautify Selected |
-| `Ctrl + Shift + Q` | Beautify All |
+| `F6` | Beautify Selected |
+| `F9` | Beautify All |
 | `Ctrl + Shift + Z` | Undo Operation |
+
+> Host V3.2.148 can report Q-based extension shortcuts as registered while consuming them before the extension callback. Use the verified F-key defaults above; migrate only the exact legacy Q defaults and preserve user-customized bindings.
+>
+> The same host cannot reliably dispatch both a base key and its modifier superset (for example `F9` and `Shift + F9`) to two extension callbacks. Treat such pairs as conflicts and use different base keys.
+>
+> Host V3.2.148 also reports `Shift + F-key` bindings as registered without dispatching their callbacks, even when both left and right Shift are tested. Do not use Shift+F combinations for extension defaults; flag them as unsupported.
 
 ### Registration Context
 

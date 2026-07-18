@@ -66,6 +66,8 @@ export async function getSafeSelectedTracks(selectedIds: string[]): Promise<any[
  */
 export async function rebuildAllCopperPours(): Promise<number> {
 	try {
+		const settings = await getSettings();
+		const rebuildLimit = Math.max(1, Math.floor(Number(settings.copperPourRebuildLimit) || 10));
 		const pours = await eda.pcb_PrimitivePour.getAll();
 		if (!pours || pours.length === 0) {
 			debugLog('[CopperPour] No pours found, skipping rebuild');
@@ -73,9 +75,9 @@ export async function rebuildAllCopperPours(): Promise<number> {
 		}
 
 		// 检查数量限制：若覆铜区域过多，放弃自动重铺以免阻塞主线程
-		if (pours.length > 5) {
-			eda.sys_Message?.showToastMessage(`覆铜区域较多(${pours.length})，已跳过自动重铺，请手动执行`, 'warn' as any, 3);
-			debugLog(`[CopperPour] Too many pours (${pours.length}), skipping auto rebuild.`);
+		if (pours.length > rebuildLimit) {
+			eda.sys_Message?.showToastMessage(`覆铜区域较多(${pours.length})，超过自动重铺上限 ${rebuildLimit}，请手动执行 Shift+B`, 'warn' as any, 4);
+			debugLog(`[CopperPour] Too many pours (${pours.length}), limit=${rebuildLimit}, skipping auto rebuild.`);
 			return 0;
 		}
 
@@ -119,6 +121,8 @@ export async function rebuildAllCopperPours(): Promise<number> {
  */
 export async function rebuildViolatedCopperPours(cachedViolation?: CopperViolationInfo): Promise<number> {
 	try {
+		const settings = await getSettings();
+		const rebuildLimit = Math.max(1, Math.floor(Number(settings.copperPourRebuildLimit) || 10));
 		const violation = cachedViolation ?? await getViolatedCopperPours();
 		debugLog(`[CopperPour] DRC source: ${cachedViolation ? 'reused beautify result' : 'fresh check'}`);
 
@@ -154,9 +158,9 @@ export async function rebuildViolatedCopperPours(cachedViolation?: CopperViolati
 		}
 
 		// 检查数量限制
-		if (poursToRebuild.length > 5) {
-			eda.sys_Message?.showToastMessage(`涉及覆铜区域较多(${poursToRebuild.length})，已跳过自动重铺`, 'warn' as any, 3);
-			debugLog(`[CopperPour] Too many violated pours (${poursToRebuild.length}), skipping rebuild.`);
+		if (poursToRebuild.length > rebuildLimit) {
+			eda.sys_Message?.showToastMessage(`涉及覆铜区域 ${poursToRebuild.length} 个，超过自动重铺上限 ${rebuildLimit}，请手动执行 Shift+B`, 'warn' as any, 4);
+			debugLog(`[CopperPour] Too many violated pours (${poursToRebuild.length}), limit=${rebuildLimit}, skipping rebuild.`);
 			return 0;
 		}
 
@@ -180,7 +184,6 @@ export async function rebuildViolatedCopperPours(cachedViolation?: CopperViolati
 		if (successCount > 0) {
 			eda.sys_Message?.showToastMessage(`已自动修复 ${successCount} 个覆铜区域`, 'success' as any, 2);
 		}
-
 		return successCount;
 	}
 	catch (e: any) {
