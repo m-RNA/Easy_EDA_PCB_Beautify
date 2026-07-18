@@ -1154,7 +1154,6 @@
 
             elSyncWidthLabel.textContent = elSyncWidth.checked ? enabledText : disabledText;
             elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
-            elMergeTransitionSegmentsLabel.textContent = elMergeTransitionSegments.checked ? enabledText : disabledText;
             elProtectPadAndViaNodesLabel.textContent = elProtectPadAndViaNodes.checked ? enabledText : disabledText;
             elProtectDifferentialAndEqualLengthLabel.textContent = elProtectDifferentialAndEqualLength.checked ? enabledText : disabledText;
             elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
@@ -1165,7 +1164,6 @@
             // Visual feedback color for label
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
-            elMergeTransitionSegmentsLabel.style.color = elMergeTransitionSegments.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elProtectPadAndViaNodesLabel.style.color = elProtectPadAndViaNodes.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elProtectDifferentialAndEqualLengthLabel.style.color = elProtectDifferentialAndEqualLength.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
@@ -1685,7 +1683,7 @@
         bindShortcutInput(elShortcutUndoOperation);
         bindShortcutInput(elShortcutCreateSnapshot);
 
-        [elSyncWidth, elDebug, elMergeTransitionSegments, elProtectPadAndViaNodes, elProtectDifferentialAndEqualLength, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
+        [elSyncWidth, elDebug, elProtectPadAndViaNodes, elProtectDifferentialAndEqualLength, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
             if (el) el.addEventListener('change', () => saveSettings());
         });
 
@@ -1857,6 +1855,7 @@
                     }
 
                     const recoverText = api.sys_I18n ? api.sys_I18n.text('恢复') : 'Recover';
+                    const diagnoseText = api.sys_I18n ? api.sys_I18n.text('诊断') : 'Diagnose';
                     const deleteText = api.sys_I18n ? api.sys_I18n.text('删除') : 'Del';
                     const linesCount = snap.lines ? snap.lines.length : 0;
                     const arcsCount = snap.arcs ? snap.arcs.length : 0;
@@ -1868,10 +1867,22 @@
                             <div class="snapshot-details">${timeStr} · ${linesText}</div>
                         </div>
                         <div style="display:flex;gap:4px;align-items:center;">
+                            <button type="button" class="btn-run-shortcut btn-diagnose">${diagnoseText}</button>
                             <button type="button" class="btn-run-shortcut btn-recover">${recoverText}</button>
                             <div class="btn-clear-shortcut btn-delete" title="${deleteText}">✕</div>
                         </div>
                     `;
+
+                    // Diagnose Button (read-only)
+                    div.querySelector('.btn-diagnose').onclick = async () => {
+                        try {
+                            const result = await api.jlc_eda_beautify_snapshot.diagnoseSnapshotDiff(snap.id);
+                            showToast(`Target ${result.targetLines}/${result.targetArcs}, Actual ${result.actualLines}/${result.actualArcs}`);
+                        }
+                        catch (e) {
+                            console.error('Snapshot Diagnose Error:', e);
+                        }
+                    };
 
                     // Recover Button
                     div.querySelector('.btn-recover').onclick = async () => {

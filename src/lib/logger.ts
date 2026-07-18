@@ -1,3 +1,4 @@
+import extensionConfig from '../../extension.json';
 import { getCachedSettings } from './settings';
 
 /**
@@ -11,6 +12,7 @@ import { getCachedSettings } from './settings';
 type LogType = 'info' | 'warn' | 'error';
 
 const BASE_PREFIX = 'Beautify';
+const EXTENSION_VERSION = extensionConfig.version;
 
 /**
  * 格式化日志前缀
@@ -23,6 +25,7 @@ function getPrefix(scope?: string, level?: string): string {
 		prefix += `-${scope}`;
 	if (level)
 		prefix += ` ${level}`;
+	prefix += ` v${EXTENSION_VERSION}`;
 	prefix += ']';
 	return prefix;
 }

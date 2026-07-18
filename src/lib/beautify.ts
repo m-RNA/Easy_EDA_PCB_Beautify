@@ -657,7 +657,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 		// 创建快照
 		try {
 			const name = scope === 'all' ? 'Beautify (All) Before' : 'Beautify (Selected) Before';
-			const snapshot = await createSnapshot(name, false, true);
+			const snapshot = await createSnapshot(name, false, true, scope === 'all' ? 'full' : 'incremental');
 			if (!snapshot)
 				throw new Error('无法创建圆滑前快照，已取消操作');
 			rollbackSnapshotId = snapshot.id;

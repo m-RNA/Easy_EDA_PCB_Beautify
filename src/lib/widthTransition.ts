@@ -77,7 +77,7 @@ export async function addWidthTransitionsSelected() {
 
 		// 创建快照 (Undo 支持)
 		try {
-			await createSnapshot('Width (Selected) Before');
+			await createSnapshot('Width (Selected) Before', false, false, 'incremental');
 		}
 		catch (e: any) {
 			logError(`Failed to create snapshot: ${e.message || e}`);
@@ -137,7 +137,7 @@ export async function addWidthTransitionsAll(createBackup: boolean = true) {
 
 	if (createBackup) {
 		try {
-			await createSnapshot('Width (All) Before');
+			await createSnapshot('Width (All) Before', false, false, 'full');
 		}
 		catch (e: any) {
 			logError(`Failed to create snapshot: ${e.message || e}`);

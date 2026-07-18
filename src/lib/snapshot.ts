@@ -5,6 +5,11 @@ import { isClose } from './math';
 
 const RESTORE_CREATE_CONCURRENCY = 8;
 const RESTORE_CREATE_RETRIES = 3;
+const RESTORE_DELETE_BATCH_SIZES = [200, 50, 1] as const;
+const RESTORE_STABILITY_DELAYS = [100, 250, 500] as const;
+const SNAPSHOT_GEOMETRY_EPSILON = 0.002;
+const SNAPSHOT_GEOMETRY_BUCKET_SIZE = 0.01;
+const SNAPSHOT_LINE_COVERAGE_EPSILON = 0.003;
 
 const SNAPSHOT_STORAGE_KEY_V2 = 'jlc_eda_beautify_snapshots_v2';
 const SNAPSHOT_STORAGE_KEY_V3_PREFIX = 'jlc_eda_beautify_snapshots_v3_';
@@ -27,6 +32,13 @@ export interface RoutingSnapshot {
 	lines: any[];
 	arcs: any[];
 	isManual?: boolean;
+	restoreStrategy?: 'full' | 'incremental';
+}
+
+export function getSnapshotRestoreStrategy(snapshot: RoutingSnapshot): 'full' | 'incremental' {
+	if (snapshot.restoreStrategy)
+		return snapshot.restoreStrategy;
+	return /\(All\) Before$/.test(snapshot.name) ? 'full' : 'incremental';
 }
 
 interface PcbSnapshotStorage {
@@ -286,49 +298,326 @@ export async function diagnoseSnapshotStorage(): Promise<SnapshotStorageDiagnost
 	};
 }
 
-// 辅助函数：比较 Line 是否一致
-function isLineEqual(a: any, b: any) {
-	if ((a.i || a.id) !== (b.i || b.id))
-		return false; // ID must match
+function isLineGeometryEqual(a: any, b: any) {
+	if (!a || !b)
+		return false;
 	if ((a.l ?? a.layer) !== (b.l ?? b.layer) || (a.n ?? a.net) !== (b.n ?? b.net))
 		return false;
-	if (!isClose(a.sX ?? a.sx ?? a.startX, b.sX ?? b.sx ?? b.startX))
+	if (!isClose(a.w ?? a.lineWidth, b.w ?? b.lineWidth, SNAPSHOT_GEOMETRY_EPSILON))
 		return false;
-	if (!isClose(a.sY ?? a.sy ?? a.startY, b.sY ?? b.sy ?? b.startY))
+	const lockA = a.k ?? a.primitiveLock;
+	const lockB = b.k ?? b.primitiveLock;
+	if (lockA !== undefined && lockB !== undefined && lockA !== lockB)
 		return false;
-	if (!isClose(a.eX ?? a.ex ?? a.endX, b.eX ?? b.ex ?? b.endX))
+	const forward = isClose(a.sX ?? a.sx ?? a.startX, b.sX ?? b.sx ?? b.startX, SNAPSHOT_GEOMETRY_EPSILON)
+		&& isClose(a.sY ?? a.sy ?? a.startY, b.sY ?? b.sy ?? b.startY, SNAPSHOT_GEOMETRY_EPSILON)
+		&& isClose(a.eX ?? a.ex ?? a.endX, b.eX ?? b.ex ?? b.endX, SNAPSHOT_GEOMETRY_EPSILON)
+		&& isClose(a.eY ?? a.ey ?? a.endY, b.eY ?? b.ey ?? b.endY, SNAPSHOT_GEOMETRY_EPSILON);
+	const reversed = isClose(a.sX ?? a.sx ?? a.startX, b.eX ?? b.ex ?? b.endX, SNAPSHOT_GEOMETRY_EPSILON)
+		&& isClose(a.sY ?? a.sy ?? a.startY, b.eY ?? b.ey ?? b.endY, SNAPSHOT_GEOMETRY_EPSILON)
+		&& isClose(a.eX ?? a.ex ?? a.endX, b.sX ?? b.sx ?? b.startX, SNAPSHOT_GEOMETRY_EPSILON)
+		&& isClose(a.eY ?? a.ey ?? a.endY, b.sY ?? b.sy ?? b.startY, SNAPSHOT_GEOMETRY_EPSILON);
+	return forward || reversed;
+}
+
+// 辅助函数：比较 Line 是否一致
+function isLineEqual(a: any, b: any) {
+	if (!a || !b || (a.i || a.id) !== (b.i || b.id))
 		return false;
-	if (!isClose(a.eY ?? a.ey ?? a.endY, b.eY ?? b.ey ?? b.endY))
+	return isLineGeometryEqual(a, b);
+}
+
+function isArcGeometryEqual(a: any, b: any) {
+	if (!a || !b)
 		return false;
-	if (!isClose(a.w ?? a.lineWidth, b.w ?? b.lineWidth))
+	if ((a.l ?? a.layer) !== (b.l ?? b.layer) || (a.n ?? a.net) !== (b.n ?? b.net))
+		return false;
+	if (!isClose(a.sX ?? a.sx ?? a.startX, b.sX ?? b.sx ?? b.startX, SNAPSHOT_GEOMETRY_EPSILON))
+		return false;
+	if (!isClose(a.sY ?? a.sy ?? a.startY, b.sY ?? b.sy ?? b.startY, SNAPSHOT_GEOMETRY_EPSILON))
+		return false;
+	if (!isClose(a.eX ?? a.ex ?? a.endX, b.eX ?? b.ex ?? b.endX, SNAPSHOT_GEOMETRY_EPSILON))
+		return false;
+	if (!isClose(a.eY ?? a.ey ?? a.endY, b.eY ?? b.ey ?? b.endY, SNAPSHOT_GEOMETRY_EPSILON))
+		return false;
+	if (!isClose(a.a ?? a.arcAngle, b.a ?? b.arcAngle, SNAPSHOT_GEOMETRY_EPSILON))
+		return false;
+	if (!isClose(a.w ?? a.lineWidth, b.w ?? b.lineWidth, SNAPSHOT_GEOMETRY_EPSILON))
 		return false;
 	return true;
 }
 
 // 辅助函数：比较 Arc 是否一致
 function isArcEqual(a: any, b: any) {
-	if ((a.i || a.id) !== (b.i || b.id))
-		return false; // ID must match
-	if ((a.l ?? a.layer) !== (b.l ?? b.layer) || (a.n ?? a.net) !== (b.n ?? b.net))
+	if (!a || !b || (a.i || a.id) !== (b.i || b.id))
 		return false;
-	if (!isClose(a.sX ?? a.sx ?? a.startX, b.sX ?? b.sx ?? b.startX))
+	return isArcGeometryEqual(a, b);
+}
+
+function getPrimitiveCoordinate(p: any, key: 'sx' | 'sy' | 'ex' | 'ey'): number {
+	if (key === 'sx')
+		return p.sX ?? p.sx ?? p.startX ?? 0;
+	if (key === 'sy')
+		return p.sY ?? p.sy ?? p.startY ?? 0;
+	if (key === 'ex')
+		return p.eX ?? p.ex ?? p.endX ?? 0;
+	return p.eY ?? p.ey ?? p.endY ?? 0;
+}
+
+function geometryBucketKey(type: 'line' | 'arc', p: any, offsets: [number, number, number, number] = [0, 0, 0, 0]): string {
+	const net = p.n ?? p.net ?? '';
+	const layer = p.l ?? p.layer ?? 0;
+	let startX = getPrimitiveCoordinate(p, 'sx');
+	let startY = getPrimitiveCoordinate(p, 'sy');
+	let endX = getPrimitiveCoordinate(p, 'ex');
+	let endY = getPrimitiveCoordinate(p, 'ey');
+	if (type === 'line' && (startX > endX || (startX === endX && startY > endY))) {
+		[startX, endX] = [endX, startX];
+		[startY, endY] = [endY, startY];
+	}
+	const sx = Math.floor(startX / SNAPSHOT_GEOMETRY_BUCKET_SIZE) + offsets[0];
+	const sy = Math.floor(startY / SNAPSHOT_GEOMETRY_BUCKET_SIZE) + offsets[1];
+	const ex = Math.floor(endX / SNAPSHOT_GEOMETRY_BUCKET_SIZE) + offsets[2];
+	const ey = Math.floor(endY / SNAPSHOT_GEOMETRY_BUCKET_SIZE) + offsets[3];
+	return `${net}|${layer}|${sx}|${sy}|${ex}|${ey}`;
+}
+
+function buildRestoreGeometryBuckets(type: 'line' | 'arc', primitives: any[]) {
+	const buckets = new Map<string, any[]>();
+	for (const primitive of primitives) {
+		const key = geometryBucketKey(type, primitive);
+		const bucket = buckets.get(key) || [];
+		bucket.push(primitive);
+		buckets.set(key, bucket);
+	}
+	return buckets;
+}
+
+function takeRestoreGeometryMatch(type: 'line' | 'arc', target: any, buckets: Map<string, any[]>): any | undefined {
+	const equals = type === 'line' ? isLineGeometryEqual : isArcGeometryEqual;
+	for (let sx = -1; sx <= 1; sx++) {
+		for (let sy = -1; sy <= 1; sy++) {
+			for (let ex = -1; ex <= 1; ex++) {
+				for (let ey = -1; ey <= 1; ey++) {
+					const key = geometryBucketKey(type, target, [sx, sy, ex, ey]);
+					const candidates = buckets.get(key);
+					if (!candidates)
+						continue;
+					const index = candidates.findIndex(candidate => equals(target, candidate));
+					if (index >= 0)
+						return candidates.splice(index, 1)[0];
+				}
+			}
+		}
+	}
+	return undefined;
+}
+
+function isPrimitiveGeometryMultisetEqual(type: 'line' | 'arc', target: any[], actual: any[]): boolean {
+	if (target.length !== actual.length)
 		return false;
-	if (!isClose(a.sY ?? a.sy ?? a.startY, b.sY ?? b.sy ?? b.startY))
-		return false;
-	if (!isClose(a.eX ?? a.ex ?? a.endX, b.eX ?? b.ex ?? b.endX))
-		return false;
-	if (!isClose(a.eY ?? a.ey ?? a.endY, b.eY ?? b.ey ?? b.endY))
-		return false;
-	if (!isClose(a.a ?? a.arcAngle, b.a ?? b.arcAngle))
-		return false;
-	if (!isClose(a.w ?? a.lineWidth, b.w ?? b.lineWidth))
-		return false;
+	const buckets = buildRestoreGeometryBuckets(type, actual);
+	return target.every(primitive => !!takeRestoreGeometryMatch(type, primitive, buckets));
+}
+
+function getLineAngleBucket(line: any): number {
+	let angle = Math.atan2(
+		getPrimitiveCoordinate(line, 'ey') - getPrimitiveCoordinate(line, 'sy'),
+		getPrimitiveCoordinate(line, 'ex') - getPrimitiveCoordinate(line, 'sx'),
+	) * 180 / Math.PI;
+	while (angle < 0)
+		angle += 180;
+	while (angle >= 180)
+		angle -= 180;
+	return Math.round(angle) % 180;
+}
+
+function getLineCoverageBucketKey(line: any, angleBucket: number = getLineAngleBucket(line)): string {
+	const net = line.n ?? line.net ?? '';
+	const layer = line.l ?? line.layer ?? 0;
+	return `${net}|${layer}|${(angleBucket + 180) % 180}`;
+}
+
+function buildLineCoverageIndex(lines: any[]) {
+	const index = new Map<string, any[]>();
+	for (const line of lines) {
+		const key = getLineCoverageBucketKey(line);
+		const bucket = index.get(key) || [];
+		bucket.push(line);
+		index.set(key, bucket);
+	}
+	return index;
+}
+
+function isLineCoveredByIndex(line: any, coverageIndex: Map<string, any[]>): boolean {
+	const startX = getPrimitiveCoordinate(line, 'sx');
+	const startY = getPrimitiveCoordinate(line, 'sy');
+	const dx = getPrimitiveCoordinate(line, 'ex') - startX;
+	const dy = getPrimitiveCoordinate(line, 'ey') - startY;
+	const length = Math.hypot(dx, dy);
+	if (length < SNAPSHOT_LINE_COVERAGE_EPSILON)
+		return true; // 零长度/退化导线没有实际铜覆盖，宿主重建时可能直接丢弃。
+	const ux = dx / length;
+	const uy = dy / length;
+	const angleBucket = getLineAngleBucket(line);
+	const candidates: any[] = [];
+	for (let offset = -1; offset <= 1; offset++) {
+		const bucket = coverageIndex.get(getLineCoverageBucketKey(line, angleBucket + offset));
+		if (bucket)
+			candidates.push(...bucket);
+	}
+
+	const intervals: Array<[number, number]> = [];
+	for (const candidate of candidates) {
+		if (!isClose(line.w ?? line.lineWidth, candidate.w ?? candidate.lineWidth, SNAPSHOT_GEOMETRY_EPSILON))
+			continue;
+		const candidateStartX = getPrimitiveCoordinate(candidate, 'sx');
+		const candidateStartY = getPrimitiveCoordinate(candidate, 'sy');
+		const candidateEndX = getPrimitiveCoordinate(candidate, 'ex');
+		const candidateEndY = getPrimitiveCoordinate(candidate, 'ey');
+		const candidateDx = candidateEndX - candidateStartX;
+		const candidateDy = candidateEndY - candidateStartY;
+		const candidateLength = Math.hypot(candidateDx, candidateDy);
+		if (candidateLength < SNAPSHOT_LINE_COVERAGE_EPSILON)
+			continue;
+		const directionCross = Math.abs(ux * candidateDy / candidateLength - uy * candidateDx / candidateLength);
+		if (directionCross > 0.01)
+			continue;
+		const startDistance = Math.abs(-uy * (candidateStartX - startX) + ux * (candidateStartY - startY));
+		const endDistance = Math.abs(-uy * (candidateEndX - startX) + ux * (candidateEndY - startY));
+		if (startDistance > SNAPSHOT_LINE_COVERAGE_EPSILON || endDistance > SNAPSHOT_LINE_COVERAGE_EPSILON)
+			continue;
+		const startProjection = ux * (candidateStartX - startX) + uy * (candidateStartY - startY);
+		const endProjection = ux * (candidateEndX - startX) + uy * (candidateEndY - startY);
+		const intervalStart = Math.min(startProjection, endProjection);
+		const intervalEnd = Math.max(startProjection, endProjection);
+		if (intervalEnd >= -SNAPSHOT_LINE_COVERAGE_EPSILON && intervalStart <= length + SNAPSHOT_LINE_COVERAGE_EPSILON)
+			intervals.push([intervalStart, intervalEnd]);
+	}
+	intervals.sort((a, b) => a[0] - b[0]);
+	let coveredUntil = 0;
+	for (const [intervalStart, intervalEnd] of intervals) {
+		if (intervalStart > coveredUntil + SNAPSHOT_LINE_COVERAGE_EPSILON)
+			break;
+		coveredUntil = Math.max(coveredUntil, intervalEnd);
+		if (coveredUntil >= length - SNAPSHOT_LINE_COVERAGE_EPSILON)
+			return true;
+	}
+	return false;
+}
+
+function logLineCoverageDiagnostic(stage: string, target: any[], actual: any[]) {
+	const targetIndex = buildLineCoverageIndex(target);
+	const actualIndex = buildLineCoverageIndex(actual);
+	const targetUncovered = target.filter(line => !isLineCoveredByIndex(line, actualIndex));
+	const actualUncovered = actual.filter(line => !isLineCoveredByIndex(line, targetIndex));
+	const getDegenerateCount = (lines: any[]) => lines.filter((line) => {
+		return Math.hypot(
+			getPrimitiveCoordinate(line, 'ex') - getPrimitiveCoordinate(line, 'sx'),
+			getPrimitiveCoordinate(line, 'ey') - getPrimitiveCoordinate(line, 'sy'),
+		) < SNAPSHOT_LINE_COVERAGE_EPSILON;
+	}).length;
+	logWarn(
+		`[SnapshotCoverage] stage=${stage} length-totals-match=${hasEquivalentLineLengthTotals(target, actual)} target-degenerate=${getDegenerateCount(target)} actual-degenerate=${getDegenerateCount(actual)} target-uncovered=${targetUncovered.length} actual-uncovered=${actualUncovered.length} target-uncovered-sample=${JSON.stringify(targetUncovered.slice(0, 5).map(geometrySortKey))} actual-uncovered-sample=${JSON.stringify(actualUncovered.slice(0, 5).map(geometrySortKey))}`,
+		'Snapshot',
+	);
+}
+
+function getLineLengthTotals(lines: any[]) {
+	const totals = new Map<string, { length: number; count: number }>();
+	for (const line of lines) {
+		const net = line.n ?? line.net ?? '';
+		const layer = line.l ?? line.layer ?? 0;
+		const width = (line.w ?? line.lineWidth ?? 0).toFixed(3);
+		const key = `${net}|${layer}|${width}`;
+		const total = totals.get(key) || { length: 0, count: 0 };
+		total.length += Math.hypot(
+			getPrimitiveCoordinate(line, 'ex') - getPrimitiveCoordinate(line, 'sx'),
+			getPrimitiveCoordinate(line, 'ey') - getPrimitiveCoordinate(line, 'sy'),
+		);
+		total.count++;
+		totals.set(key, total);
+	}
+	return totals;
+}
+
+function hasEquivalentLineLengthTotals(target: any[], actual: any[]): boolean {
+	const targetTotals = getLineLengthTotals(target);
+	const actualTotals = getLineLengthTotals(actual);
+	const keys = new Set([...targetTotals.keys(), ...actualTotals.keys()]);
+	for (const key of keys) {
+		const targetTotal = targetTotals.get(key);
+		const actualTotal = actualTotals.get(key);
+		if (!targetTotal || !actualTotal)
+			return false;
+		const accumulatedTolerance = SNAPSHOT_LINE_COVERAGE_EPSILON * Math.max(targetTotal.count, actualTotal.count, 1);
+		if (Math.abs(targetTotal.length - actualTotal.length) > accumulatedTolerance)
+			return false;
+	}
 	return true;
+}
+
+interface HostNormalizedEvaluation {
+	equivalent: boolean;
+	reason: string;
+}
+
+function evaluateSnapshotHostNormalizedEquivalent(target: RoutingSnapshot, actual: RoutingSnapshot): HostNormalizedEvaluation {
+	if (!isPrimitiveGeometryMultisetEqual('arc', target.arcs, actual.arcs))
+		return { equivalent: false, reason: `arc-geometry-mismatch target=${target.arcs.length} actual=${actual.arcs.length}` };
+
+	const maxLineCountDelta = Math.max(10, Math.ceil(target.lines.length * 0.01));
+	const lineCountDelta = Math.abs(target.lines.length - actual.lines.length);
+	if (lineCountDelta > maxLineCountDelta)
+		return { equivalent: false, reason: `line-count-delta delta=${lineCountDelta} allowed=${maxLineCountDelta}` };
+
+	const targetTotals = getLineLengthTotals(target.lines);
+	const actualTotals = getLineLengthTotals(actual.lines);
+	const keys = new Set([...targetTotals.keys(), ...actualTotals.keys()]);
+	for (const key of keys) {
+		const targetTotal = targetTotals.get(key);
+		const actualTotal = actualTotals.get(key);
+		if (!targetTotal || !actualTotal)
+			return { equivalent: false, reason: `line-group-missing key="${key}" side=${targetTotal ? 'actual' : 'target'}` };
+		const width = Number(key.slice(key.lastIndexOf('|') + 1)) || 0;
+		const lengthDelta = Math.abs(targetTotal.length - actualTotal.length);
+		const lengthTolerance = Math.max(
+			SNAPSHOT_LINE_COVERAGE_EPSILON * Math.max(targetTotal.count, actualTotal.count, 1),
+			Math.max(targetTotal.length, actualTotal.length) * 0.01,
+			width * 2,
+		);
+		if (lengthDelta > lengthTolerance) {
+			return {
+				equivalent: false,
+				reason: `line-length-delta key="${key}" target=${targetTotal.length.toFixed(3)} actual=${actualTotal.length.toFixed(3)} delta=${lengthDelta.toFixed(3)} allowed=${lengthTolerance.toFixed(3)}`,
+			};
+		}
+	}
+
+	const targetIndex = buildLineCoverageIndex(target.lines);
+	const actualIndex = buildLineCoverageIndex(actual.lines);
+	const targetUncovered = target.lines.filter(line => !isLineCoveredByIndex(line, actualIndex)).length;
+	const actualUncovered = actual.lines.filter(line => !isLineCoveredByIndex(line, targetIndex)).length;
+	const maxUncovered = Math.max(10, Math.ceil(target.lines.length * 0.002));
+	if (targetUncovered > maxUncovered || actualUncovered > maxUncovered) {
+		return {
+			equivalent: false,
+			reason: `uncovered-lines target=${targetUncovered} actual=${actualUncovered} allowed=${maxUncovered}`,
+		};
+	}
+	return {
+		equivalent: true,
+		reason: `accepted line-count-delta=${lineCountDelta} uncovered=${targetUncovered}/${actualUncovered}`,
+	};
+}
+
+export function isSnapshotHostNormalizedEquivalent(target: RoutingSnapshot, actual: RoutingSnapshot): boolean {
+	return evaluateSnapshotHostNormalizedEquivalent(target, actual).equivalent;
 }
 
 /**
  * 几何排序键：忽略图元 ID，仅包含坐标、网络、层、线宽、角度
- * 用于在 undo/restore 后 ID 变化时仍能检测实际相同的布线状态
+ * 仅用于高精度诊断输出，不参与恢复判断。
  */
 function geometrySortKey(p: any): string {
 	const net = p.n ?? p.net ?? '';
@@ -342,29 +631,129 @@ function geometrySortKey(p: any): string {
 	return `${net}|${layer}|${sx}|${sy}|${ex}|${ey}|${w}|${a}`;
 }
 
+interface PrimitiveGeometryDiff {
+	key: string;
+	count: number;
+	ids: string[];
+}
+
+export interface SnapshotGeometryDiff {
+	extraLines: PrimitiveGeometryDiff[];
+	missingLines: PrimitiveGeometryDiff[];
+	extraArcs: PrimitiveGeometryDiff[];
+	missingArcs: PrimitiveGeometryDiff[];
+}
+
+function buildGeometryBuckets(primitives: any[]) {
+	const buckets = new Map<string, { count: number; ids: string[] }>();
+	for (const primitive of primitives) {
+		const key = geometrySortKey(primitive);
+		const bucket = buckets.get(key) || { count: 0, ids: [] };
+		bucket.count++;
+		const id = primitive.i || primitive.id;
+		if (typeof id === 'string' && bucket.ids.length < 5)
+			bucket.ids.push(id);
+		buckets.set(key, bucket);
+	}
+	return buckets;
+}
+
+function diffPrimitiveGeometry(target: any[], actual: any[]) {
+	const targetBuckets = buildGeometryBuckets(target);
+	const actualBuckets = buildGeometryBuckets(actual);
+	const extra: PrimitiveGeometryDiff[] = [];
+	const missing: PrimitiveGeometryDiff[] = [];
+	const keys = new Set([...targetBuckets.keys(), ...actualBuckets.keys()]);
+	for (const key of keys) {
+		const targetBucket = targetBuckets.get(key) || { count: 0, ids: [] };
+		const actualBucket = actualBuckets.get(key) || { count: 0, ids: [] };
+		if (actualBucket.count > targetBucket.count) {
+			extra.push({
+				key,
+				count: actualBucket.count - targetBucket.count,
+				ids: actualBucket.ids,
+			});
+		}
+		else if (targetBucket.count > actualBucket.count) {
+			missing.push({
+				key,
+				count: targetBucket.count - actualBucket.count,
+				ids: targetBucket.ids,
+			});
+		}
+	}
+	return { extra, missing };
+}
+
+export function getSnapshotGeometryDiff(target: RoutingSnapshot, actual: RoutingSnapshot): SnapshotGeometryDiff {
+	const lineDiff = diffPrimitiveGeometry(target.lines, actual.lines);
+	const arcDiff = diffPrimitiveGeometry(target.arcs, actual.arcs);
+	return {
+		extraLines: lineDiff.extra,
+		missingLines: lineDiff.missing,
+		extraArcs: arcDiff.extra,
+		missingArcs: arcDiff.missing,
+	};
+}
+
+function logSnapshotGeometryDiff(stage: string, target: RoutingSnapshot, actual: RoutingSnapshot) {
+	const diff = getSnapshotGeometryDiff(target, actual);
+	logWarn(
+		`[SnapshotDiff] stage=${stage} extra-lines=${diff.extraLines.reduce((count, item) => count + item.count, 0)} missing-lines=${diff.missingLines.reduce((count, item) => count + item.count, 0)} extra-arcs=${diff.extraArcs.reduce((count, item) => count + item.count, 0)} missing-arcs=${diff.missingArcs.reduce((count, item) => count + item.count, 0)} extra-line-sample=${JSON.stringify(diff.extraLines.slice(0, 5))} missing-line-sample=${JSON.stringify(diff.missingLines.slice(0, 5))}`,
+		'Snapshot',
+	);
+}
+
+export async function diagnoseSnapshotDiff(snapshotId: number) {
+	const currentPcb = await getCurrentPcbInfoSafe();
+	if (!currentPcb)
+		throw new Error('未找到当前 PCB');
+
+	const pcbStore = await getPcbStorageData(currentPcb.id);
+	const snapshot = pcbStore.manual.find(item => item.id === snapshotId)
+		|| pcbStore.auto.find(item => item.id === snapshotId);
+	if (!snapshot)
+		throw new Error('未找到指定快照');
+
+	const currentState = await readCurrentRoutingState(currentPcb.id);
+	const diff = getSnapshotGeometryDiff(snapshot, currentState);
+	logSnapshotGeometryDiff('manual-diagnostic', snapshot, currentState);
+	return {
+		targetLines: snapshot.lines.length,
+		targetArcs: snapshot.arcs.length,
+		actualLines: currentState.lines.length,
+		actualArcs: currentState.arcs.length,
+		diff,
+	};
+}
+
 /**
  * 仅比较几何数据的快照一致性检查（忽略图元 ID）
  * 解决 undo/restore 循环后图元 ID 变化导致 isSnapshotDataIdentical 去重失败的问题
  */
-function isSnapshotGeometryIdentical(a: RoutingSnapshot, b: RoutingSnapshot): boolean {
+export function isSnapshotGeometryIdentical(a: RoutingSnapshot, b: RoutingSnapshot): boolean {
 	if (a.lines.length !== b.lines.length || a.arcs.length !== b.arcs.length)
 		return false;
 
-	const linesA = a.lines.map(geometrySortKey).sort();
-	const linesB = b.lines.map(geometrySortKey).sort();
-	for (let i = 0; i < linesA.length; i++) {
-		if (linesA[i] !== linesB[i])
-			return false;
-	}
+	// 宿主重新读取图元时会在保留 primitive ID 的同时产生约 0.001 的坐标量化漂移。
+	// 优先按 ID 使用容差比较，避免把同一个图元误判为“缺失 + 新增”。
+	const linesById = new Map(b.lines.map(line => [line.i || line.id, line]));
+	const arcsById = new Map(b.arcs.map(arc => [arc.i || arc.id, arc]));
+	const allLineIdsMatch = a.lines.every((line) => {
+		const id = line.i || line.id;
+		return typeof id === 'string' && isLineEqual(line, linesById.get(id));
+	});
+	const allArcIdsMatch = a.arcs.every((arc) => {
+		const id = arc.i || arc.id;
+		return typeof id === 'string' && isArcEqual(arc, arcsById.get(id));
+	});
+	if (allLineIdsMatch && allArcIdsMatch)
+		return true;
 
-	const arcsA = a.arcs.map(geometrySortKey).sort();
-	const arcsB = b.arcs.map(geometrySortKey).sort();
-	for (let i = 0; i < arcsA.length; i++) {
-		if (arcsA[i] !== arcsB[i])
-			return false;
-	}
-
-	return true;
+	const arcsMatch = isPrimitiveGeometryMultisetEqual('arc', a.arcs, b.arcs);
+	if (!arcsMatch)
+		return false;
+	return isPrimitiveGeometryMultisetEqual('line', a.lines, b.lines);
 }
 
 // 辅助函数：提取图元数据 (使用短 Key 减少存储体积)
@@ -382,6 +771,7 @@ function extractPrimitiveData(items: any[], type: 'line' | 'arc') {
 				eX: p.getState_EndX ? p.getState_EndX() : p.endX,
 				eY: p.getState_EndY ? p.getState_EndY() : p.endY,
 				w: lineWidth,
+				k: p.getState_PrimitiveLock ? p.getState_PrimitiveLock() : (p.primitiveLock ?? false),
 			};
 		});
 	}
@@ -537,6 +927,7 @@ export async function createSnapshot(
 	name: string = 'Auto Save',
 	isManual: boolean = false,
 	returnLatestIfIdentical: boolean = false,
+	restoreStrategy?: 'full' | 'incremental',
 ): Promise<RoutingSnapshot | null> {
 	const perfStartedAt = Date.now();
 	let perfLastAt = perfStartedAt;
@@ -586,6 +977,7 @@ export async function createSnapshot(
 			timestamp: Date.now(),
 			pcbId,
 			isManual,
+			restoreStrategy,
 			lines: extractPrimitiveData(lines || [], 'line'),
 			arcs: extractPrimitiveData(arcs || [], 'arc'),
 		};
@@ -675,6 +1067,42 @@ export async function createSnapshot(
  * 核心引擎：对比并应用差异
  * 将快照状态与当前 PCB 状态进行对比，执行增删改操作
  */
+export async function deleteStateDiffPrimitives(
+	type: 'line' | 'arc',
+	api: any,
+	primitiveIds: string[],
+): Promise<number> {
+	const requestedIds = Array.from(new Set(primitiveIds.filter(id => typeof id === 'string' && id.length > 0)));
+	let pendingIds = requestedIds;
+
+	for (const batchSize of RESTORE_DELETE_BATCH_SIZES) {
+		for (let start = 0; start < pendingIds.length; start += batchSize) {
+			const chunk = pendingIds.slice(start, start + batchSize);
+			try {
+				const result = await api.delete(chunk);
+				if (result === false)
+					logWarn(`${type} restore delete returned false for ${chunk.length} primitives`, 'Snapshot');
+			}
+			catch (e) {
+				logWarn(`${type} restore delete error: ${e}`, 'Snapshot');
+			}
+		}
+
+		const livePrimitives = extractPrimitiveData(await api.getAll() || [], type);
+		const liveIds = new Set(livePrimitives.map((p: any) => p.i || p.id));
+		pendingIds = pendingIds.filter(id => liveIds.has(id));
+		if (pendingIds.length === 0)
+			return requestedIds.length;
+
+		logWarn(
+			`${type} restore delete incomplete after batch size ${batchSize}: ${pendingIds.length} primitives remain`,
+			'Snapshot',
+		);
+	}
+
+	throw new Error(`${type} 恢复删除失败：仍有 ${pendingIds.length} 个图元未删除`);
+}
+
 async function applyStateDiff(type: 'line' | 'arc', snapPrims: any[], currentPrims: any[]) {
 	const api = type === 'line' ? eda.pcb_PrimitiveLine : eda.pcb_PrimitiveArc;
 	if (!api)
@@ -701,20 +1129,12 @@ async function applyStateDiff(type: 'line' | 'arc', snapPrims: any[], currentPri
 
 	// 2. 第二轮：模糊几何匹配 (解决 ID 变更但内容相同的场景)
 	if (snapRemaining.length > 0 && currentPrimsMap.size > 0) {
-		const geoMap = new Map<string, any[]>();
-		for (const [_id, p] of currentPrimsMap.entries()) {
-			const key = geometrySortKey(p);
-			if (!geoMap.has(key))
-				geoMap.set(key, []);
-			geoMap.get(key)!.push(p);
-		}
+		const geoMap = buildRestoreGeometryBuckets(type, Array.from(currentPrimsMap.values()));
 
 		const finalSnapRemaining: any[] = [];
 		for (const snap of snapRemaining) {
-			const key = geometrySortKey(snap);
-			const matches = geoMap.get(key);
-			if (matches && matches.length > 0) {
-				const match = matches.shift()!;
+			const match = takeRestoreGeometryMatch(type, snap, geoMap);
+			if (match) {
 				matchedOnPcbIds.add(match.i || match.id);
 				currentPrimsMap.delete(match.i || match.id);
 			}
@@ -726,10 +1146,10 @@ async function applyStateDiff(type: 'line' | 'arc', snapPrims: any[], currentPri
 	}
 
 	// 3. 执行删除：没被匹配上的当前图元
-	const finalToDelete = Array.from(currentPrimsMap.keys());
-	if (finalToDelete.length > 0) {
-		await api.delete(finalToDelete);
-	}
+	const finalToDelete = Array.from(currentPrimsMap.keys()).filter((id): id is string => typeof id === 'string');
+	const deletedCount = finalToDelete.length > 0
+		? await deleteStateDiffPrimitives(type, api, finalToDelete)
+		: 0;
 
 	// 4. 执行创建：有限并发重建，并对 API 返回 undefined/异常的图元降并发重试。
 	// 大型 PCB 逐条等待非常慢；同时旧实现把失败也计为成功，可能留下不完整恢复状态。
@@ -741,7 +1161,7 @@ async function applyStateDiff(type: 'line' | 'arc', snapPrims: any[], currentPri
 			try {
 				let result: any;
 				if (type === 'line') {
-					result = await api.create(
+					result = await (api as any).create(
 						p.n ?? p.net,
 						p.l ?? p.layer,
 						p.sX ?? p.sx ?? p.startX,
@@ -749,6 +1169,7 @@ async function applyStateDiff(type: 'line' | 'arc', snapPrims: any[], currentPri
 						p.eX ?? p.ex ?? p.endX,
 						p.eY ?? p.ey ?? p.endY,
 						p.w ?? p.lineWidth ?? 10,
+						p.k ?? p.primitiveLock ?? false,
 					);
 				}
 				else {
@@ -778,13 +1199,84 @@ async function applyStateDiff(type: 'line' | 'arc', snapPrims: any[], currentPri
 			await new Promise(resolve => setTimeout(resolve, 50 * (attempt + 1)));
 	}
 	if (pendingCreates.length > 0)
-		logWarn(`${type} restore incomplete: ${pendingCreates.length} primitives could not be recreated`, 'Snapshot');
+		throw new Error(`${type} 恢复创建失败：仍有 ${pendingCreates.length} 个图元未创建`);
 
 	return {
 		created: createdCount,
-		deleted: finalToDelete.length,
+		deleted: deletedCount,
 		kept: matchedOnPcbIds.size,
-		failed: pendingCreates.length,
+		failed: 0,
+	};
+}
+
+async function readCurrentRoutingState(pcbId: string): Promise<RoutingSnapshot> {
+	const state: RoutingSnapshot = {
+		id: 0,
+		name: 'Restore Verification',
+		timestamp: Date.now(),
+		pcbId,
+		lines: extractPrimitiveData(await eda.pcb_PrimitiveLine.getAll() || [], 'line'),
+		arcs: extractPrimitiveData(await eda.pcb_PrimitiveArc.getAll() || [], 'arc'),
+	};
+	resolveArcWidths(state.lines, state.arcs);
+	return state;
+}
+
+export async function verifySnapshotStateStable(snapshot: RoutingSnapshot, pcbId: string) {
+	let state = await readCurrentRoutingState(pcbId);
+	if (!isSnapshotGeometryIdentical(snapshot, state))
+		return { identical: false, state };
+
+	for (const delayMilliseconds of RESTORE_STABILITY_DELAYS) {
+		await new Promise(resolve => setTimeout(resolve, delayMilliseconds));
+		state = await readCurrentRoutingState(pcbId);
+		if (!isSnapshotGeometryIdentical(snapshot, state))
+			return { identical: false, state };
+	}
+	return { identical: true, state };
+}
+
+async function verifyHostNormalizedStateStable(snapshot: RoutingSnapshot, pcbId: string, initialState: RoutingSnapshot) {
+	let state = initialState;
+	let evaluation = evaluateSnapshotHostNormalizedEquivalent(snapshot, state);
+	if (!evaluation.equivalent)
+		return { ...evaluation, state };
+	for (const delayMilliseconds of RESTORE_STABILITY_DELAYS) {
+		await new Promise(resolve => setTimeout(resolve, delayMilliseconds));
+		state = await readCurrentRoutingState(pcbId);
+		evaluation = evaluateSnapshotHostNormalizedEquivalent(snapshot, state);
+		if (!evaluation.equivalent)
+			return { ...evaluation, state };
+	}
+	return { ...evaluation, state };
+}
+
+export async function applySnapshotStateDiff(snapshot: RoutingSnapshot, currentState: RoutingSnapshot) {
+	const lineRes = await applyStateDiff('line', snapshot.lines, currentState.lines);
+	resolveArcWidths(snapshot.lines, snapshot.arcs);
+	const arcRes = await applyStateDiff('arc', snapshot.arcs, currentState.arcs);
+	return { lineRes, arcRes };
+}
+
+export async function applySnapshotFullRestore(snapshot: RoutingSnapshot, currentState: RoutingSnapshot) {
+	const arcIds = currentState.arcs.map(arc => arc.i || arc.id).filter((id): id is string => typeof id === 'string');
+	const lineIds = currentState.lines.map(line => line.i || line.id).filter((id): id is string => typeof id === 'string');
+	if (arcIds.length > 0)
+		await deleteStateDiffPrimitives('arc', eda.pcb_PrimitiveArc, arcIds);
+	if (lineIds.length > 0)
+		await deleteStateDiffPrimitives('line', eda.pcb_PrimitiveLine, lineIds);
+	const emptyState: RoutingSnapshot = {
+		id: 0,
+		name: 'Empty Full Restore State',
+		timestamp: Date.now(),
+		pcbId: currentState.pcbId,
+		lines: [],
+		arcs: [],
+	};
+	const result = await applySnapshotStateDiff(snapshot, emptyState);
+	return {
+		lineRes: { ...result.lineRes, deleted: lineIds.length },
+		arcRes: { ...result.arcRes, deleted: arcIds.length },
 	};
 }
 
@@ -839,15 +1331,49 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		if (eda.sys_LoadingAndProgressBar)
 			eda.sys_LoadingAndProgressBar.showLoading();
 
-		const currentLines = extractPrimitiveData(await eda.pcb_PrimitiveLine.getAll() || [], 'line');
-		const currentArcs = extractPrimitiveData(await eda.pcb_PrimitiveArc.getAll() || [], 'arc');
+		const currentState = await readCurrentRoutingState(currentPcb.id);
+		const restoreStrategy = getSnapshotRestoreStrategy(snapshot);
+		logInfo(
+			`[SnapshotRestore] strategy=${restoreStrategy} target=${snapshot.lines.length}/${snapshot.arcs.length} current=${currentState.lines.length}/${currentState.arcs.length}`,
+			'Performance',
+		);
+		const initialResult = restoreStrategy === 'full'
+			? await applySnapshotFullRestore(snapshot, currentState)
+			: await applySnapshotStateDiff(snapshot, currentState);
+		const lineRes = initialResult.lineRes;
+		const arcRes = initialResult.arcRes;
+		const restoreMode = restoreStrategy;
 
-		// 应用导线差异
-		const lineRes = await applyStateDiff('line', snapshot.lines, currentLines);
-
-		// 预校准圆弧线宽并应用差异
-		resolveArcWidths(snapshot.lines, snapshot.arcs);
-		const arcRes = await applyStateDiff('arc', snapshot.arcs, currentArcs);
+		// 恢复策略在第一次执行前就由快照范围决定；失败时只诊断，不再自动执行第二轮变更。
+		const verification = await verifySnapshotStateStable(snapshot, currentPcb.id);
+		let verifiedState = verification.state;
+		let normalizedEquivalent = false;
+		let normalizedReason = '';
+		if (!verification.identical && restoreStrategy === 'full') {
+			const normalizedVerification = await verifyHostNormalizedStateStable(snapshot, currentPcb.id, verifiedState);
+			normalizedEquivalent = normalizedVerification.equivalent;
+			normalizedReason = normalizedVerification.reason;
+			verifiedState = normalizedVerification.state;
+		}
+		if (!verification.identical && !normalizedEquivalent) {
+			if (restoreStrategy === 'full')
+				logWarn(`[SnapshotNormalized] rejected reason=${normalizedReason}`, 'Snapshot');
+			logSnapshotGeometryDiff('failed', snapshot, verifiedState);
+			logLineCoverageDiagnostic('failed', snapshot.lines, verifiedState.lines);
+			throw new Error(
+				`恢复后校验失败：目标 ${snapshot.lines.length} 条导线/${snapshot.arcs.length} 条圆弧，实际 ${verifiedState.lines.length} 条导线/${verifiedState.arcs.length} 条圆弧`,
+			);
+		}
+		if (normalizedEquivalent) {
+			logWarn(
+				`[SnapshotRestore] result=verified-normalized mode=${restoreMode} target=${snapshot.lines.length}/${snapshot.arcs.length} actual=${verifiedState.lines.length}/${verifiedState.arcs.length}`,
+				'Snapshot',
+			);
+		}
+		logInfo(
+			`[SnapshotRestore] result=${normalizedEquivalent ? 'verified-normalized' : 'verified'} mode=${restoreMode} lines-created=${lineRes.created} lines-deleted=${lineRes.deleted} arcs-created=${arcRes.created} arcs-deleted=${arcRes.deleted}`,
+			'Performance',
+		);
 
 		if (showToast && eda.sys_Message) {
 			const totalKept = lineRes.kept + arcRes.kept;
@@ -872,6 +1398,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 	}
 	catch (e: any) {
 		logError(`Restore failed: ${e.message || e}`);
+		eda.sys_Message?.showToastMessage(`恢复失败: ${e.message || e}`, 'error' as any, 4);
 		return false;
 	}
 	finally {
