@@ -1053,6 +1053,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 		}
 
 		// 防止宿主 API 静默保留已删除的原线，造成新旧导线重叠。
+		// 全板导线数可能被宿主后台任务改变，只能作为诊断信息，不能据此回滚。
 		const expectedLineCount = lineCountBefore
 			- pendingLineIdsToDelete.size
 			+ activePaths.reduce((count, ctx) => count + ctx.orderedSegs.length, 0);
@@ -1060,13 +1061,15 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 		const staleOriginalIds = verifiedLines
 			.map(line => line.getState_PrimitiveId?.())
 			.filter((id): id is string => typeof id === 'string' && pendingLineIdsToDelete.has(id));
-		if (verifiedLines.length > expectedLineCount || staleOriginalIds.length > 0) {
+		if (staleOriginalIds.length > 0) {
 			throw new Error(
-				`圆滑结果校验失败：导线上限 ${expectedLineCount} 条，实际 ${verifiedLines.length} 条，残留原线 ${staleOriginalIds.length} 条`,
+				`圆滑结果校验失败：检测到 ${staleOriginalIds.length} 条原线残留`,
 			);
 		}
-		if (verifiedLines.length < expectedLineCount) {
-			debugWarn(`[BeautifyVerify] 宿主将导线从预期 ${expectedLineCount} 条归一化为 ${verifiedLines.length} 条，未发现原线残留`);
+		if (verifiedLines.length !== expectedLineCount) {
+			debugWarn(
+				`[BeautifyVerify] 全板导线计数发生漂移：参考 ${expectedLineCount} 条，实际 ${verifiedLines.length} 条；未发现原线残留，继续完成`,
+			);
 		}
 		markPerf('verify-output');
 
