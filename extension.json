@@ -3,7 +3,7 @@
 	"uuid": "3911cc55444d4833b5762da1521fe616",
 	"displayName": "熔化/优化/美化PCB",
 	"description": "一键：拐角圆弧美化、差分/等长保护、贝塞尔线宽过渡、DRC检查、自动重铺铜、多步撤销、快照管理、自定义快捷键等高级功能",
-	"version": "1.0.37",
+	"version": "1.0.38",
 	"publisher": "m-RNA",
 	"engines": {
 		"eda": "^3.0.0"
