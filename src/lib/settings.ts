@@ -12,7 +12,7 @@ export interface BeautifySettings {
 	drcIgnoreCopperPour: boolean; // DRC 忽略覆铜相关规则
 	rebuildCopperPourAfterBeautify: boolean; // 操作完成后智能重铺相关覆铜区域
 	copperPourRebuildLimit: number; // 自动重铺覆铜区域数量上限
-	drcRetryCount: number; // DRC 失败最大重试次数 (控制二分法的深度)
+	drcRetryCount: number; // DRC 最大调整轮数
 	cardOrder: string[]; // 设置界面的卡片排序顺序
 	collapsedStates: Record<string, boolean>; // 卡片折叠状态
 	shortcutKeys: {
@@ -39,7 +39,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	drcIgnoreCopperPour: true, // 默认忽略覆铜规则（覆铜重铺后通常会自动解决）
 	rebuildCopperPourAfterBeautify: true, // 默认在操作完成后智能重铺相关覆铜区域
 	copperPourRebuildLimit: 10,
-	drcRetryCount: 4, // 4次二分法 (100% -> 50% -> 25% -> 12.5% -> 直角)
+	drcRetryCount: 10, // 中型板可能分批暴露违规，允许更多轮收敛
 	cardOrder: ['card-transition', 'card-drc', 'card-shortcut', 'card-advanced', 'card-snapshot'],
 	collapsedStates: {
 		'card-drc': true, // 默认收起DRC设置
@@ -82,14 +82,22 @@ export async function getSettings(): Promise<BeautifySettings> {
 		const usesPreviousFKeyDefaults = shortcutKeys
 			&& (previousSelectedSignature === 'F9+SHIFT' || previousSelectedSignature === 'F6+SHIFT')
 			&& keySignature(shortcutKeys.beautifyAll) === 'F9';
+		let shouldPersistMigration = false;
 		if (usesLegacyQDefaults || usesPreviousFKeyDefaults) {
 			configs.shortcutKeys = {
 				...shortcutKeys,
 				beautifySelected: ['F6'],
 				beautifyAll: ['F9'],
 			};
-			await eda.sys_Storage.setExtensionAllUserConfigs(configs);
+			shouldPersistMigration = true;
 		}
+		// 4 是旧版未开放 UI 时的固定默认值，可以安全迁移到新的 10 轮默认值。
+		if (configs?.drcRetryCount === 4) {
+			configs.drcRetryCount = 10;
+			shouldPersistMigration = true;
+		}
+		if (shouldPersistMigration)
+			await eda.sys_Storage.setExtensionAllUserConfigs(configs);
 		const newSettings = { ...DEFAULT_SETTINGS, ...configs };
 		(eda as any)[SETTINGS_CACHE_KEY] = newSettings;
 		return newSettings;

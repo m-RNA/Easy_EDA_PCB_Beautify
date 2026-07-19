@@ -213,6 +213,14 @@ For DRC-based auto-rollback, we extract object IDs from the remaining (non-coppe
 
 These IDs are matched against the primitives being modified to determine which corners need radius reduction.
 
+### DRC Repair Convergence
+
+- Treat `drcRetryCount` as the maximum number of actual geometry adjustments. Run one additional DRC check after the last adjustment to verify convergence.
+- Medium and large boards can reveal violations in batches after earlier corners are repaired, so the production default is `10` adjustment rounds and the settings UI allows `1` to `20`.
+- A Line and Arc generated for the same corner can both appear in one DRC result. Deduplicate by path and corner so each corner advances at most once per round.
+- Do not redraw a path when every matched corner is already straight or otherwise unchanged. Stop early instead of consuming more rounds.
+- A failed DRC API call is not a pass. Report that convergence could not be confirmed, and distinguish it from a valid check with zero remaining violations.
+
 ## Copper Pour Rebuild API
 
 ### Discovery

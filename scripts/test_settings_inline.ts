@@ -37,6 +37,7 @@ async function main() {
 		forceArc: true,
 		enableDRC: true,
 		drcIgnoreCopperPour: true,
+		drcRetryCount: 10,
 		rebuildCopperPourAfterBeautify: true,
 		copperPourRebuildLimit: 10,
 		cardOrder: ['card-transition', 'card-drc', 'card-shortcut', 'card-advanced', 'card-snapshot'],
@@ -99,6 +100,11 @@ async function main() {
 		assert.equal((dom.window.document.getElementById('cornerRadiusRatio') as HTMLInputElement).value, '5', '圆角半径默认值应为 5x');
 		assert.equal((dom.window.document.getElementById('widthTransitionRatio') as HTMLInputElement).value, '5', '线宽过渡默认值应为 5x');
 		assert.equal((dom.window.document.getElementById('copperPourRebuildLimit') as HTMLInputElement).value, '10', '自动重铺上限默认应为 10 块覆铜区域');
+		assert.equal((dom.window.document.getElementById('drcRetryCount') as HTMLInputElement).value, '10', 'DRC 最大调整轮数默认应为 10');
+		const drcRetryCount = dom.window.document.getElementById('drcRetryCount') as HTMLInputElement;
+		drcRetryCount.value = '12';
+		drcRetryCount.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+		await waitFor(() => storedSettings.drcRetryCount === 12, 'DRC 最大调整轮数应能保存');
 		const copperPourRebuildLimit = dom.window.document.getElementById('copperPourRebuildLimit') as HTMLInputElement;
 		copperPourRebuildLimit.value = '12';
 		copperPourRebuildLimit.dispatchEvent(new dom.window.Event('change', { bubbles: true }));

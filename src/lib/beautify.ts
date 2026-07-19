@@ -530,6 +530,45 @@ function syncProtectedCornerRepair(
 	return changed.length > 0 ? changed : [sourceCtx];
 }
 
+export type DrcCornerRepairResult = 'scaled' | 'straight' | 'unchanged';
+
+/** 推进单个拐角的 DRC 修复状态，并报告参数是否真正发生变化。 */
+export function advanceDrcCornerRepair(
+	badCorners: Set<number>,
+	cornerScales: Map<number, number>,
+	cornerIndex: number,
+	forceStraight: boolean = false,
+): DrcCornerRepairResult {
+	if (badCorners.has(cornerIndex))
+		return 'unchanged';
+
+	const currentScale = cornerScales.get(cornerIndex) ?? 1.0;
+	const nextScale = currentScale * 0.5;
+	if (forceStraight || nextScale < 0.1) {
+		badCorners.add(cornerIndex);
+		cornerScales.delete(cornerIndex);
+		return 'straight';
+	}
+
+	cornerScales.set(cornerIndex, nextScale);
+	return 'scaled';
+}
+
+/** 保证同一个拐角在单轮 DRC 中只推进一次。 */
+export function advanceDrcCornerRepairOnce(
+	adjustedCorners: Set<string>,
+	repairKey: string,
+	badCorners: Set<number>,
+	cornerScales: Map<number, number>,
+	cornerIndex: number,
+	forceStraight: boolean = false,
+): DrcCornerRepairResult {
+	if (adjustedCorners.has(repairKey))
+		return 'unchanged';
+	adjustedCorners.add(repairKey);
+	return advanceDrcCornerRepair(badCorners, cornerScales, cornerIndex, forceStraight);
+}
+
 /**
  * 圆滑布线
  * @param scope 'selected' 只处理选中的导线, 'all' 处理所有导线
@@ -954,59 +993,80 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 
 		// 3. DRC 检查与二分法自动修复
 		if (settings.enableDRC && activePaths.length > 0) {
-			let drcAttempt = 0;
-			const maxDrcRetries = settings.drcRetryCount || 4; // 默认4次 (1 -> 0.5 -> 0.25 -> 0.125 -> 0)
+			let drcAdjustmentCount = 0;
+			let drcConverged = false;
+			let drcCheckFailed = false;
+			let remainingViolationCount = 0;
+			const maxDrcAdjustments = Math.max(1, Math.floor(Number(settings.drcRetryCount) || 10));
 
-			while (drcAttempt <= maxDrcRetries) {
-				const isFinalAttempt = drcAttempt === maxDrcRetries;
-				eda.sys_Message?.showToastMessage(`DRC 检查中... (${drcAttempt + 1}/${maxDrcRetries + 1})`, 'info' as any, 1);
+			while (drcAdjustmentCount <= maxDrcAdjustments) {
+				eda.sys_Message?.showToastMessage(`DRC 检查中... (${drcAdjustmentCount + 1}/${maxDrcAdjustments + 1})`, 'info' as any, 1);
 
 				// 运行全局检查
 				const drcAnalysis = await runDrcCheckAndParse();
+				if (!drcAnalysis.valid) {
+					drcCheckFailed = true;
+					latestCopperViolation = undefined;
+					debugWarn('[DRC] 检查调用失败，无法确认圆滑结果是否收敛。');
+					break;
+				}
 				const violatedIds = drcAnalysis.violatedIds;
-				latestCopperViolation = drcAnalysis.valid ? drcAnalysis.copperViolation : undefined;
-				markPerf(`drc-check-${drcAttempt + 1}`);
+				latestCopperViolation = drcAnalysis.copperViolation;
+				remainingViolationCount = violatedIds.size;
+				markPerf(`drc-check-${drcAdjustmentCount + 1}`);
 
 				if (violatedIds.size === 0) {
+					drcConverged = true;
 					debugLog('[DRC] 检查通过。');
 					break;
 				}
 
 				debugLog(`[DRC] 发现 ${violatedIds.size} 个违规对象`);
+				if (drcAdjustmentCount >= maxDrcAdjustments) {
+					debugWarn(`[DRC] 已达到最大调整轮数 ${maxDrcAdjustments}，停止修复。`);
+					break;
+				}
 
 				// 标记需要重绘的路径
 				const pathsToRepair = new Set<PathContext>();
-				let _repairedCorners = 0;
+				const repairTargets = new Map<string, { ctx: PathContext; cornerIndex: number }>();
+				const forceStraight = drcAdjustmentCount === maxDrcAdjustments - 1;
 
 				for (const ctx of activePaths) {
 					for (const id of ctx.createdIds) {
 						if (violatedIds.has(id)) {
 							const idx = ctx.idToCornerMap.get(id);
-							if (idx !== undefined) {
-								_repairedCorners++;
-
-								const changed = syncProtectedCornerRepair(activePaths, ctx, idx, (repairCtx, repairIdx) => {
-									const currentScale = repairCtx.cornerScales.get(repairIdx) ?? 1.0;
-									const nextScale = currentScale * 0.5;
-
-									if (isFinalAttempt || nextScale < 0.1) {
-										repairCtx.badCorners.add(repairIdx);
-										debugLog(`[DRC] Corner ${repairIdx} marked BAD (Straight)`);
-									}
-									else {
-										repairCtx.cornerScales.set(repairIdx, nextScale);
-										debugLog(`[DRC] Corner ${repairIdx} reducing scale to ${nextScale.toFixed(3)}`);
-									}
-								});
-								for (const changedCtx of changed)
-									pathsToRepair.add(changedCtx);
-							}
+							if (idx !== undefined)
+								repairTargets.set(`${ctx.pathId}:${idx}`, { ctx, cornerIndex: idx });
 						}
 					}
 				}
 
+				const adjustedCorners = new Set<string>();
+				for (const { ctx, cornerIndex } of repairTargets.values()) {
+					syncProtectedCornerRepair(activePaths, ctx, cornerIndex, (repairCtx, repairIdx) => {
+						const repairKey = `${repairCtx.pathId}:${repairIdx}`;
+						const result = advanceDrcCornerRepairOnce(
+							adjustedCorners,
+							repairKey,
+							repairCtx.badCorners,
+							repairCtx.cornerScales,
+							repairIdx,
+							forceStraight,
+						);
+						if (result === 'straight') {
+							debugLog(`[DRC] Corner ${repairIdx} marked BAD (Straight)`);
+						}
+						else if (result === 'scaled') {
+							debugLog(`[DRC] Corner ${repairIdx} reducing scale to ${repairCtx.cornerScales.get(repairIdx)!.toFixed(3)}`);
+						}
+						if (result !== 'unchanged')
+							pathsToRepair.add(repairCtx);
+					});
+				}
+
 				if (pathsToRepair.size === 0) {
-					debugLog('[DRC] 违规对象不属于本插件生成的内容，停止修复。');
+					debugWarn('[DRC] 未找到仍可调整的插件拐角，停止修复。');
 					break;
 				}
 
@@ -1042,13 +1102,19 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 				// 3. 重新绘制
 				await commitOps(repairJobs);
 				latestCopperViolation = undefined;
-				markPerf(`drc-repair-${drcAttempt + 1}`);
+				markPerf(`drc-repair-${drcAdjustmentCount + 1}`);
 
-				drcAttempt++;
+				drcAdjustmentCount++;
 			}
 
-			if (drcAttempt > 0) {
-				eda.sys_Message?.showToastMessage(`自动优化完成，执行了 ${drcAttempt} 轮调整`, 'info' as any, 2);
+			if (drcCheckFailed) {
+				eda.sys_Message?.showToastMessage('DRC 检查失败，未能确认圆滑结果', 'warn' as any, 4);
+			}
+			else if (drcConverged && drcAdjustmentCount > 0) {
+				eda.sys_Message?.showToastMessage(`自动优化完成，执行了 ${drcAdjustmentCount} 轮调整`, 'success' as any, 2);
+			}
+			else if (!drcConverged && remainingViolationCount > 0) {
+				eda.sys_Message?.showToastMessage(`自动调整停止，仍有 ${remainingViolationCount} 个 DRC 违规对象，请检查 DRC 列表`, 'warn' as any, 4);
 			}
 		}
 

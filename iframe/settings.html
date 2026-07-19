@@ -692,6 +692,19 @@
                     </div>
                 </div>
             </div>
+
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label" data-i18n="最大 DRC 调整轮数">最大 DRC 调整轮数</div>
+                    <div class="setting-desc" data-i18n="中大型 PCB 可增加轮数，未发生实际变化时会提前停止">中大型 PCB 可增加轮数，未发生实际变化时会提前停止</div>
+                </div>
+                <div class="setting-control">
+                    <div class="input-group">
+                        <input type="text" id="drcRetryCount" data-min="1" data-max="20" data-step="1" value="10">
+                        <span class="addon" data-i18n="轮">轮</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1137,6 +1150,7 @@
         const elProtectDifferentialAndEqualLength = document.getElementById('protectDifferentialAndEqualLength');
         const elEnableDRC = document.getElementById('enableDRC');
         const elDrcIgnoreCopperPour = document.getElementById('drcIgnoreCopperPour');
+        const elDrcRetryCount = document.getElementById('drcRetryCount');
         const elRebuildCopperPour = document.getElementById('rebuildCopperPour');
         const elCopperPourRebuildLimit = document.getElementById('copperPourRebuildLimit');
 
@@ -1238,6 +1252,10 @@
                 if (elForceArc) elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
                 if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
                 if (elDrcIgnoreCopperPour) elDrcIgnoreCopperPour.checked = config.drcIgnoreCopperPour !== undefined ? config.drcIgnoreCopperPour : true;
+                if (elDrcRetryCount) {
+                    elDrcRetryCount.value = config.drcRetryCount !== undefined ? config.drcRetryCount : 10;
+                    elDrcRetryCount.setAttribute('data-last-valid', elDrcRetryCount.value);
+                }
                 if (elRebuildCopperPour) elRebuildCopperPour.checked = config.rebuildCopperPourAfterBeautify !== undefined ? config.rebuildCopperPourAfterBeautify : true;
                 if (elCopperPourRebuildLimit) {
                     elCopperPourRebuildLimit.value = config.copperPourRebuildLimit !== undefined ? config.copperPourRebuildLimit : 10;
@@ -1310,6 +1328,10 @@
             if (Number.isNaN(copperPourRebuildLimit) || copperPourRebuildLimit < 1)
                 copperPourRebuildLimit = DEFAULT_CONFIG.copperPourRebuildLimit || 10;
 
+            let drcRetryCount = Number.parseInt(elDrcRetryCount.value);
+            if (Number.isNaN(drcRetryCount) || drcRetryCount < 1)
+                drcRetryCount = DEFAULT_CONFIG.drcRetryCount || 10;
+
             // 获取当前卡片顺序和折叠状态
             const container = document.getElementById('cardContainer');
             const cardOrder = container ? [...container.querySelectorAll('.card')].map(c => c.id) : [];
@@ -1333,6 +1355,7 @@
                 forceArc: elForceArc.checked,
                 enableDRC: elEnableDRC.checked,
                 drcIgnoreCopperPour: elDrcIgnoreCopperPour.checked,
+                drcRetryCount: drcRetryCount,
                 rebuildCopperPourAfterBeautify: elRebuildCopperPour.checked,
                 copperPourRebuildLimit: copperPourRebuildLimit,
                 cardOrder: cardOrder,
@@ -1696,6 +1719,7 @@
         bindSmartInput(elCornerRadiusRatio, false);
         bindSmartInput(elSegments, true);
         bindSmartInput(elCopperPourRebuildLimit, true);
+        bindSmartInput(elDrcRetryCount, true);
         bindSmartInput(elRatio, false);
         bindSmartInput(elDirection, true);
 
