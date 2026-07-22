@@ -419,7 +419,7 @@ Before registering shortcuts, we use `eda.sys_ShortcutKey.getShortcutKeys(true)`
 
 ### Documentation Alignment: `TSYS_ShortcutKeys`
 
-Our shortcut registration logic references the [TSYS_ShortcutKeys](../EDA_EX_DOC/JLC_EDA_API/TSYS_ShortcutKeys%20type%20_%20嘉立创EDA专业版用户指南.html) definition for the list of supported keys.
+Our shortcut registration logic follows the `TSYS_ShortcutKeys` definition. The source checkout archives that reference under `EDA_EX_DOC/JLC_EDA_API/`; it is intentionally excluded from the packaged extension.
 
 - **Supported Keys ONLY**: The settings UI (`settings.html`) filters out keys NOT found in the `TSYS_ShortcutKeys` type (e.g., `Escape`, `Enter`, `Delete`, `Backspace` are forbidden for registry).
 - **Modifier Mapping** (runtime format, NOT type-definition format):
