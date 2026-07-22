@@ -69,11 +69,6 @@
 						"registerFn": "widthTransitionSelected"
 					},
 					{
-						"id": "WidthAll",
-						"title": "过渡线宽（全部）",
-						"registerFn": "widthTransitionAll"
-					},
-					{
 						"id": "Undo",
 						"title": "撤销",
 						"registerFn": "undoOperation"

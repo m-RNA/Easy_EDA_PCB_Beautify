@@ -9,7 +9,7 @@
 		"node": ">=20.17.0"
 	},
 	"scripts": {
-		"test": "npm run test:geometry && npm run test:topology && npm run test:async-pool && npm run test:drc-repair && npm run test:snapshot-restore && npm run test:settings-inline && npm run test:shortcuts",
+		"test": "npm run test:geometry && npm run test:topology && npm run test:async-pool && npm run test:drc-repair && npm run test:snapshot-restore && npm run test:settings-inline && npm run test:manifest && npm run test:shortcuts",
 		"compile": "rimraf ./dist/ && ts-node ./config/esbuild.prod.ts",
 		"lint": "eslint",
 		"test:geometry": "ts-node ./scripts/test_arc_geometry.ts",
@@ -18,6 +18,7 @@
 		"test:drc-repair": "ts-node --files ./scripts/test_drc_repair.ts",
 		"test:snapshot-restore": "ts-node --files ./scripts/test_snapshot_restore.ts",
 		"test:settings-inline": "ts-node ./scripts/test_settings_inline.ts",
+		"test:manifest": "ts-node ./scripts/test_manifest.ts",
 		"test:shortcuts": "ts-node --files ./scripts/test_shortcuts.ts",
 		"fix": "eslint --fix",
 		"build": "npm run compile && ts-node ./build/packaged.ts"

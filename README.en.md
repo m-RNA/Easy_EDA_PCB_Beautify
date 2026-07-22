@@ -24,7 +24,7 @@ Menu location: Advanced → Beautify PCB
 - Smooth Routing (Selected/All) – Process trace corners (arc-based beautification)
 - Connection Node Protection – Keeps pad/via centers and T/cross junctions unchanged by default to prevent disconnections after smoothing
 - Diff/Length Protection – Enabled by default for DRC differential pairs and equal-length net groups; uses concentric arcs when corners can be matched and keeps uncertain corners straight
-- Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment)
+- Width Transition (Selected) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment); only the Selected action remains in the top menu
 - DRC Rule Check – Apply optimistic routing first, then progressively reduce or revert non-compliant corners. The maximum adjustment count defaults to `30` and is configurable from `1` to `100`; copper-pour rules can be ignored
 - Automatic Copper Region Rebuild – Rebuild related regions with copper conflicts after an operation. The configurable automatic limit defaults to **30 copper regions**; above it, the extension prompts for the host's `Shift+B` command
 - Undo / Snapshot – Selected operations use incremental restore and update only changed primitives; All operations use full restore to prioritize whole-board integrity; switch between auto/manual snapshot views
