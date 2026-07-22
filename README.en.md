@@ -78,7 +78,7 @@ npm run build
 
 Build output: `.eext` extension package in the `build/dist/` directory
 
-Development note: Please read this file to avoid pitfalls: [agents.md](./agents.md)
+See [Developer Notes](./docs/DEVELOPER_NOTES.md) for verified JLC EDA API and runtime behavior.
 
 **Structure**
 

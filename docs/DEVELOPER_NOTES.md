@@ -419,7 +419,7 @@ Before registering shortcuts, we use `eda.sys_ShortcutKey.getShortcutKeys(true)`
 
 ### Documentation Alignment: `TSYS_ShortcutKeys`
 
-Our shortcut registration logic references the [TSYS_ShortcutKeys](EDA_EX_DOC/JLC_EDA_API/TSYS_ShortcutKeys%20type%20_%20嘉立创EDA专业版用户指南.html) definition for the list of supported keys.
+Our shortcut registration logic references the [TSYS_ShortcutKeys](../EDA_EX_DOC/JLC_EDA_API/TSYS_ShortcutKeys%20type%20_%20嘉立创EDA专业版用户指南.html) definition for the list of supported keys.
 
 - **Supported Keys ONLY**: The settings UI (`settings.html`) filters out keys NOT found in the `TSYS_ShortcutKeys` type (e.g., `Escape`, `Enter`, `Delete`, `Backspace` are forbidden for registry).
 - **Modifier Mapping** (runtime format, NOT type-definition format):
@@ -455,7 +455,7 @@ To match user muscle memory from other EDA tools, we register the following by d
 
 ### Automatic Translation Mechanism
 
-嘉立创 EDA Pro SDK 提供了自动翻译机制。只需在 `./locales/` 目录下创建对应的语言文件（如 `zh-Hans.json`, `en.json`），SDK 会在渲染 UI 时自动执行翻译。
+嘉立创 EDA Pro SDK 提供了自动翻译机制。只需在仓库 `locales/` 目录下创建对应的语言文件（如 `zh-Hans.json`, `en.json`），SDK 会在渲染 UI 时自动执行翻译。
 
 - **适用范围**：`headerMenus` 的 `title`、`sys_ShortcutKey` 注册时的 `title` 等。
 - **最佳实践**：

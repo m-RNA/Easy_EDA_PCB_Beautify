@@ -87,7 +87,7 @@ npm run build
 
 ### 开发注意
 
-劳请阅读此文件，不要踩坑： [agents.md](./agents.md)
+嘉立创 EDA API 与已验证运行时经验见 [开发技术笔记](./docs/DEVELOPER_NOTES.md)
 
 ## 结构
 
