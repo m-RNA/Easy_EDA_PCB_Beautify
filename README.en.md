@@ -25,8 +25,8 @@ Menu location: Advanced → Beautify PCB
 - Connection Node Protection – Keeps pad/via centers and T/cross junctions unchanged by default to prevent disconnections after smoothing
 - Diff/Length Protection – Enabled by default for DRC differential pairs and equal-length net groups; uses concentric arcs when corners can be matched and keeps uncertain corners straight
 - Width Transition (Selected/All) – Smooth gradient between varying trace widths (enhanced teardrops via Bezier curves, supports position adjustment)
-- DRC Rule Check – Apply optimistic routing first, then progressively reduce or revert non-compliant corners. The maximum adjustment count defaults to `10` and is configurable from `1` to `20`; copper-pour rules can be ignored
-- Automatic Copper Region Rebuild – Rebuild related regions with copper conflicts after an operation. The configurable automatic limit defaults to **10 copper regions**; above it, the extension prompts for the host's `Shift+B` command
+- DRC Rule Check – Apply optimistic routing first, then progressively reduce or revert non-compliant corners. The maximum adjustment count defaults to `30` and is configurable from `1` to `100`; copper-pour rules can be ignored
+- Automatic Copper Region Rebuild – Rebuild related regions with copper conflicts after an operation. The configurable automatic limit defaults to **30 copper regions**; above it, the extension prompts for the host's `Shift+B` command
 - Undo / Snapshot – Selected operations use incremental restore and update only changed primitives; All operations use full restore to prioritize whole-board integrity; switch between auto/manual snapshot views
 - Shortcuts – Defaults: `F6` for Smooth Selected, `F9` for Smooth All, and `Ctrl+Shift+Z` for Undo; includes customization, conflict detection, and runtime compatibility warnings
 - Advanced Settings – Configure radius, transition parameters, DRC adjustment rounds, copper-region limit, snapshots, and shortcuts; supports persistent card ordering/folding, with debug logs disabled by default and available on demand

@@ -216,7 +216,7 @@ These IDs are matched against the primitives being modified to determine which c
 ### DRC Repair Convergence
 
 - Treat `drcRetryCount` as the maximum number of actual geometry adjustments. Run one additional DRC check after the last adjustment to verify convergence.
-- Medium and large boards can reveal violations in batches after earlier corners are repaired, so the production default is `10` adjustment rounds and the settings UI allows `1` to `20`.
+- Medium and large boards can reveal violations in batches after earlier corners are repaired, so the production default is `30` adjustment rounds and the settings UI allows `1` to `100`.
 - A Line and Arc generated for the same corner can both appear in one DRC result. Deduplicate by path and corner so each corner advances at most once per round.
 - Do not redraw a path when every matched corner is already straight or otherwise unchanged. Stop early instead of consuming more rounds.
 - A failed DRC API call is not a pass. Report that convergence could not be confirmed, and distinguish it from a valid check with zero remaining violations.
@@ -284,7 +284,7 @@ Selected and All beautify/width-transition entry points call the high-level wrap
 - The method triggers an asynchronous pour calculation in the EDA worker. The canvas updates after the worker completes.
 - Each pour is rebuilt independently. For boards with many copper zones, this may take noticeable time.
 - The API is marked `@beta`, so host behavior and performance should still be checked after EDA updates.
-- Automatic per-pour rebuilding is intentionally capped by the user setting `copperPourRebuildLimit` (default `10`) because `rebuildCopperRegion()` recalculates regions one at a time. When the affected count exceeds the limit, preserve responsiveness and prompt the user to run the host's full-board `Shift + B` command manually.
+- Automatic per-pour rebuilding is intentionally capped by the user setting `copperPourRebuildLimit` (default `30`) because `rebuildCopperRegion()` recalculates regions one at a time. When the affected count exceeds the limit, preserve responsiveness and prompt the user to run the host's full-board `Shift + B` command manually.
 
 ## Snapshot Operation Boundaries
 

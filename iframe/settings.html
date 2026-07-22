@@ -638,7 +638,7 @@
                 </div>
                 <div class="setting-control">
                     <div class="input-group">
-                        <input type="text" id="copperPourRebuildLimit" data-min="1" data-max="100" data-step="1" value="10">
+                        <input type="text" id="copperPourRebuildLimit" data-min="1" data-max="100" data-step="1" value="30">
                         <span class="addon" data-i18n="块">块</span>
                     </div>
                 </div>
@@ -700,7 +700,7 @@
                 </div>
                 <div class="setting-control">
                     <div class="input-group">
-                        <input type="text" id="drcRetryCount" data-min="1" data-max="20" data-step="1" value="10">
+                        <input type="text" id="drcRetryCount" data-min="1" data-max="100" data-step="1" value="30">
                         <span class="addon" data-i18n="轮">轮</span>
                     </div>
                 </div>
@@ -1253,12 +1253,12 @@
                 if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
                 if (elDrcIgnoreCopperPour) elDrcIgnoreCopperPour.checked = config.drcIgnoreCopperPour !== undefined ? config.drcIgnoreCopperPour : true;
                 if (elDrcRetryCount) {
-                    elDrcRetryCount.value = config.drcRetryCount !== undefined ? config.drcRetryCount : 10;
+                    elDrcRetryCount.value = config.drcRetryCount !== undefined ? config.drcRetryCount : 30;
                     elDrcRetryCount.setAttribute('data-last-valid', elDrcRetryCount.value);
                 }
                 if (elRebuildCopperPour) elRebuildCopperPour.checked = config.rebuildCopperPourAfterBeautify !== undefined ? config.rebuildCopperPourAfterBeautify : true;
                 if (elCopperPourRebuildLimit) {
-                    elCopperPourRebuildLimit.value = config.copperPourRebuildLimit !== undefined ? config.copperPourRebuildLimit : 10;
+                    elCopperPourRebuildLimit.value = config.copperPourRebuildLimit !== undefined ? config.copperPourRebuildLimit : 30;
                     elCopperPourRebuildLimit.setAttribute('data-last-valid', elCopperPourRebuildLimit.value);
                 }
 
@@ -1326,11 +1326,11 @@
 
             let copperPourRebuildLimit = Number.parseInt(elCopperPourRebuildLimit.value);
             if (Number.isNaN(copperPourRebuildLimit) || copperPourRebuildLimit < 1)
-                copperPourRebuildLimit = DEFAULT_CONFIG.copperPourRebuildLimit || 10;
+                copperPourRebuildLimit = DEFAULT_CONFIG.copperPourRebuildLimit || 30;
 
             let drcRetryCount = Number.parseInt(elDrcRetryCount.value);
             if (Number.isNaN(drcRetryCount) || drcRetryCount < 1)
-                drcRetryCount = DEFAULT_CONFIG.drcRetryCount || 10;
+                drcRetryCount = DEFAULT_CONFIG.drcRetryCount || 30;
 
             // 获取当前卡片顺序和折叠状态
             const container = document.getElementById('cardContainer');

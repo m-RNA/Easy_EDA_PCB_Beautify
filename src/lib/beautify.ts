@@ -997,7 +997,7 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 			let drcConverged = false;
 			let drcCheckFailed = false;
 			let remainingViolationCount = 0;
-			const maxDrcAdjustments = Math.max(1, Math.floor(Number(settings.drcRetryCount) || 10));
+			const maxDrcAdjustments = Math.max(1, Math.floor(Number(settings.drcRetryCount) || 30));
 
 			while (drcAdjustmentCount <= maxDrcAdjustments) {
 				eda.sys_Message?.showToastMessage(`DRC 检查中... (${drcAdjustmentCount + 1}/${maxDrcAdjustments + 1})`, 'info' as any, 1);

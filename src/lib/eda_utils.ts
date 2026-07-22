@@ -67,7 +67,7 @@ export async function getSafeSelectedTracks(selectedIds: string[]): Promise<any[
 export async function rebuildAllCopperPours(): Promise<number> {
 	try {
 		const settings = await getSettings();
-		const rebuildLimit = Math.max(1, Math.floor(Number(settings.copperPourRebuildLimit) || 10));
+		const rebuildLimit = Math.max(1, Math.floor(Number(settings.copperPourRebuildLimit) || 30));
 		const pours = await eda.pcb_PrimitivePour.getAll();
 		if (!pours || pours.length === 0) {
 			debugLog('[CopperPour] No pours found, skipping rebuild');
@@ -122,7 +122,7 @@ export async function rebuildAllCopperPours(): Promise<number> {
 export async function rebuildViolatedCopperPours(cachedViolation?: CopperViolationInfo): Promise<number> {
 	try {
 		const settings = await getSettings();
-		const rebuildLimit = Math.max(1, Math.floor(Number(settings.copperPourRebuildLimit) || 10));
+		const rebuildLimit = Math.max(1, Math.floor(Number(settings.copperPourRebuildLimit) || 30));
 		const violation = cachedViolation ?? await getViolatedCopperPours();
 		debugLog(`[CopperPour] DRC source: ${cachedViolation ? 'reused beautify result' : 'fresh check'}`);
 

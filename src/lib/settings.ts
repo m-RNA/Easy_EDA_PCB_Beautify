@@ -38,8 +38,8 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	enableDRC: true,
 	drcIgnoreCopperPour: true, // 默认忽略覆铜规则（覆铜重铺后通常会自动解决）
 	rebuildCopperPourAfterBeautify: true, // 默认在操作完成后智能重铺相关覆铜区域
-	copperPourRebuildLimit: 10,
-	drcRetryCount: 10, // 中型板可能分批暴露违规，允许更多轮收敛
+	copperPourRebuildLimit: 30,
+	drcRetryCount: 30, // 中大型板可能分批暴露违规，允许更多轮收敛
 	cardOrder: ['card-transition', 'card-drc', 'card-shortcut', 'card-advanced', 'card-snapshot'],
 	collapsedStates: {
 		'card-drc': true, // 默认收起DRC设置
@@ -91,9 +91,14 @@ export async function getSettings(): Promise<BeautifySettings> {
 			};
 			shouldPersistMigration = true;
 		}
-		// 4 是旧版未开放 UI 时的固定默认值，可以安全迁移到新的 10 轮默认值。
-		if (configs?.drcRetryCount === 4) {
-			configs.drcRetryCount = 10;
+		// 4 和 10 均为历史默认值，迁移到新的 30 轮默认值。
+		if (configs?.drcRetryCount === 4 || configs?.drcRetryCount === 10) {
+			configs.drcRetryCount = 30;
+			shouldPersistMigration = true;
+		}
+		// 10 是旧版自动重铺覆铜上限的默认值。
+		if (configs?.copperPourRebuildLimit === 10) {
+			configs.copperPourRebuildLimit = 30;
 			shouldPersistMigration = true;
 		}
 		if (shouldPersistMigration)
