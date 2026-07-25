@@ -40,6 +40,8 @@ export interface RoutingSnapshot {
 }
 
 export function getSnapshotRestoreStrategy(snapshot: RoutingSnapshot): 'full' | 'incremental' {
+	if (snapshot.isManual)
+		return 'full';
 	if (snapshot.restoreStrategy)
 		return snapshot.restoreStrategy;
 	return /\(All\) Before$/.test(snapshot.name) ? 'full' : 'incremental';
@@ -1112,7 +1114,7 @@ export async function createSnapshot(
 			timestamp: Date.now(),
 			pcbId,
 			isManual,
-			restoreStrategy,
+			restoreStrategy: isManual ? 'full' : restoreStrategy,
 			lines: extractPrimitiveData(lines || [], 'line'),
 			arcs: extractPrimitiveData(arcs || [], 'arc'),
 		};
@@ -1532,7 +1534,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		// 触发 Before 备份（手动恢复或跨 PCB 恢复时）
 		if (snapshot.isManual || isMismatch) {
 			const snapName = snapshot.name.replace(/^\[.*?\]\s*/, '');
-			await createSnapshot(`恢复 [${snapName}] 之前`, false);
+			await createSnapshot(`恢复 [${snapName}] 之前`, false, false, 'full');
 		}
 
 		if (eda.sys_LoadingAndProgressBar)
@@ -1606,7 +1608,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		// 如果是手动或跨 PCB，恢复后存个 After
 		if (snapshot.isManual || isMismatch) {
 			const snapName = snapshot.name.replace(/^\[.*?\]\s*/, '');
-			await createSnapshot(`恢复 [${snapName}] 之后`, false);
+			await createSnapshot(`恢复 [${snapName}] 之后`, false, false, 'full');
 		}
 
 		setLastRestoredId(snapshot.id);

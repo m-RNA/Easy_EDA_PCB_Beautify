@@ -264,6 +264,16 @@ async function main() {
 	assert.equal(getSnapshotRestoreStrategy({ ...quantizedTarget, name: 'Beautify (All) Before' }), 'full');
 	assert.equal(getSnapshotRestoreStrategy({ ...quantizedTarget, name: 'Beautify (Selected) Before' }), 'incremental');
 	assert.equal(getSnapshotRestoreStrategy({ ...quantizedTarget, restoreStrategy: 'full' }), 'full');
+	assert.equal(
+		getSnapshotRestoreStrategy({ ...quantizedTarget, name: '手动快照', isManual: true }),
+		'full',
+		'旧版手动快照即使没有恢复策略，也必须先清空整板再重建',
+	);
+	assert.equal(
+		getSnapshotRestoreStrategy({ ...quantizedTarget, name: '手动快照', isManual: true, restoreStrategy: 'incremental' }),
+		'full',
+		'手动快照不能被历史增量标记降级为边删除边创建',
+	);
 	const fullBefore = { ...quantizedTarget, name: 'Beautify (All) Before', restoreStrategy: 'full' as const };
 	const selectedBefore = { ...quantizedTarget, name: 'Beautify (Selected) Before', restoreStrategy: 'incremental' as const };
 	assert.equal(

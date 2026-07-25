@@ -292,7 +292,7 @@ Selected and All beautify/width-transition entry points call the smart wrapper, 
 
 - Store `restoreStrategy: 'incremental'` on Selected-operation Before snapshots and `restoreStrategy: 'full'` on All-operation Before snapshots.
 - Snapshot geometry deduplication must not reuse an explicit Before snapshot across different operation names or restore strategies. Geometrically identical `Beautify (All) Before` and `Beautify (Selected) Before` states are different undo boundaries.
-- Selected operations use state-diff restore; All operations use authoritative full restore and may accept only verified host-normalized geometric equivalence.
+- Selected-operation Before snapshots use state-diff restore. All-operation Before snapshots, manual snapshots, and the automatic Before/After safety snapshots created around a manual restore use authoritative full restore and may accept only verified host-normalized geometric equivalence.
 - Full restore must repeatedly enumerate and delete every live Line and Arc until both APIs report a stable empty board before recreating the target snapshot. Do not rely only on IDs captured before deletion because the host may reassign or expose primitives during mutation.
 - Full-restore verification may accept an Arc count change only when bidirectional coverage proves the target and actual arcs occupy the same circles and angular intervals with matching net, layer, and width. Host splitting/merging is normalization; uncovered extra arcs remain a hard failure.
 - After any successful snapshot restore, rebuild every copper pour when automatic rebuilding is enabled. This applies to both manual restore and undo because undo delegates to `restoreSnapshot()`.
