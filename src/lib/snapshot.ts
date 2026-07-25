@@ -1,6 +1,6 @@
 import { mapWithConcurrency } from './asyncPool';
 import { getArcWidthByGeoMap, makeArcWidthGeoKey } from './beautify';
-import { debugLog, debugWarn, logError, logInfo, logPerformance, logWarn } from './logger';
+import { debugLog, debugWarn, logError, logPerformance, logWarn } from './logger';
 import { isClose } from './math';
 
 const RESTORE_CREATE_CONCURRENCY = 8;
@@ -530,7 +530,7 @@ function logLineCoverageDiagnostic(stage: string, target: any[], actual: any[]) 
 			getPrimitiveCoordinate(line, 'ey') - getPrimitiveCoordinate(line, 'sy'),
 		) < SNAPSHOT_LINE_COVERAGE_EPSILON;
 	}).length;
-	logWarn(
+	debugWarn(
 		`[SnapshotCoverage] stage=${stage} length-totals-match=${hasEquivalentLineLengthTotals(target, actual)} target-degenerate=${getDegenerateCount(target)} actual-degenerate=${getDegenerateCount(actual)} target-uncovered=${targetUncovered.length} actual-uncovered=${actualUncovered.length} target-uncovered-sample=${JSON.stringify(targetUncovered.slice(0, 5).map(geometrySortKey))} actual-uncovered-sample=${JSON.stringify(actualUncovered.slice(0, 5).map(geometrySortKey))}`,
 		'Snapshot',
 	);
@@ -717,9 +717,9 @@ function logSnapshotGeometryDiff(stage: string, target: RoutingSnapshot, actual:
 	const missingArcs = diff.missingArcs.reduce((count, item) => count + item.count, 0);
 	const message = `[SnapshotDiff] stage=${stage} extra-lines=${extraLines} missing-lines=${missingLines} extra-arcs=${extraArcs} missing-arcs=${missingArcs} extra-line-sample=${JSON.stringify(diff.extraLines.slice(0, 5))} missing-line-sample=${JSON.stringify(diff.missingLines.slice(0, 5))}`;
 	if (extraLines + missingLines + extraArcs + missingArcs === 0)
-		logInfo(message, 'Snapshot');
+		debugLog(message);
 	else
-		logWarn(message, 'Snapshot');
+		debugWarn(message, 'Snapshot');
 }
 
 export async function diagnoseSnapshotDiff(snapshotId: number) {

@@ -121,6 +121,7 @@ async function main() {
 
 		const debugSwitch = dom.window.document.getElementById('debug') as HTMLInputElement | null;
 		assert.ok(debugSwitch, '调试开关应存在');
+		assert.equal(dom.window.document.querySelector('.btn-diagnose'), null, '未开启调试时不应显示快照诊断按钮');
 		debugSwitch.checked = true;
 		debugSwitch.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 		await waitFor(() => storedSettings.debug === true && refreshCalls >= 1, '修改设置后未保存或未刷新运行时');
@@ -129,6 +130,9 @@ async function main() {
 		const diagnoseButton = dom.window.document.querySelector('.btn-diagnose') as HTMLButtonElement;
 		diagnoseButton.click();
 		await waitFor(() => diagnoseCalls === 1, '点击诊断按钮后未调用只读诊断 API');
+		debugSwitch.checked = false;
+		debugSwitch.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+		await waitFor(() => storedSettings.debug === false && !dom.window.document.querySelector('.btn-diagnose'), '关闭调试后应隐藏快照诊断按钮');
 		assert.deepEqual(runtimeErrors, [], '点击和保存设置不应产生运行时异常');
 	}
 	finally {
