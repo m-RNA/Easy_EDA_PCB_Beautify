@@ -9,7 +9,7 @@ import { debugLog, debugWarn, logError, logPerformance } from './logger';
 import { dist, getAngleBetween, lerp } from './math';
 import { buildNodeDegreeIndex, isProtectedRouteNode, isRouteJunction, loadBoardTopologySegments, loadElectricalAnchorIndex, makePointKey } from './routeTopology';
 import { getSettings } from './settings';
-import { createSnapshot, restoreSnapshot } from './snapshot';
+import { createSnapshot, restoreSnapshot, runWithPcbCalculationSuspension } from './snapshot';
 import { addWidthTransitionsAll } from './widthTransition';
 
 /**
@@ -892,260 +892,266 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 		}
 		markPerf('path-analysis');
 
-		// 提取完路径后统一分块删除原图元，避免逐条调用 Worker。
-		const pcbApi = eda as any;
-		if (pendingPolylineIdsToDelete.size > 0) {
-			const deletePolyline = typeof pcbApi.pcb_PrimitivePolyline?.delete === 'function'
-				? (ids: string[]) => pcbApi.pcb_PrimitivePolyline.delete(ids)
-				: (ids: string[]) => eda.pcb_PrimitiveLine.delete(ids);
-			await deletePrimitiveIdsInChunks(
-				Array.from(pendingPolylineIdsToDelete),
-				deletePolyline,
-				'Polyline',
-			);
-		}
-		await deletePrimitiveIdsInChunks(
-			Array.from(pendingLineIdsToDelete),
-			ids => eda.pcb_PrimitiveLine.delete(ids),
-			'Line',
-		);
-		perfDeletedLines += pendingLineIdsToDelete.size;
-		markPerf('delete-originals');
-
-		// 将所有路径的创建指令合并到同一个有限并发队列。
-		const commitOps = async (jobs: Array<{ ops: PathOp[]; ctx: PathContext }>) => {
-			for (const { ops, ctx } of jobs) {
-				const lineOps = ops.filter(op => op.type === 'line');
-				if (lineOps.length !== ctx.orderedSegs.length)
-					throw new Error(`路径 ${ctx.pathId} 的直线与原路径段无法一一对应`);
-				if (ops.some(op => dist(op.start, op.end) < 0.001))
-					throw new Error(`路径 ${ctx.pathId} 生成了过短图元`);
-				lineOps.forEach((op, index) => {
-					op.primitiveLock = ctx.orderedSegs[index]?.primitiveLock ?? false;
-				});
-				ctx.createdIds = [];
-				ctx.createdLineIds = [];
-				ctx.createdArcIds = [];
-				ctx.idToCornerMap.clear();
-			}
-
-			const pendingOps = jobs.flatMap(({ ops, ctx }) => ops.map(item => ({ item, ctx })));
-			await mapWithConcurrency(pendingOps, CREATE_CONCURRENCY, async ({ item, ctx }) => {
-				let result: any;
-				if (item.type === 'line') {
-					result = await eda.pcb_PrimitiveLine.create(
-						ctx.net,
-						ctx.layer as any,
-						item.start.x,
-						item.start.y,
-						item.end.x,
-						item.end.y,
-						item.width,
-						item.primitiveLock ?? false,
+		await runWithPcbCalculationSuspension(
+			settings.experimentalFastRestore,
+			`Beautify:${scope}`,
+			async () => {
+				// 提取完路径后统一分块删除原图元，避免逐条调用 Worker。
+				const pcbApi = eda as any;
+				if (pendingPolylineIdsToDelete.size > 0) {
+					const deletePolyline = typeof pcbApi.pcb_PrimitivePolyline?.delete === 'function'
+						? (ids: string[]) => pcbApi.pcb_PrimitivePolyline.delete(ids)
+						: (ids: string[]) => eda.pcb_PrimitiveLine.delete(ids);
+					await deletePrimitiveIdsInChunks(
+						Array.from(pendingPolylineIdsToDelete),
+						deletePolyline,
+						'Polyline',
 					);
 				}
-				else {
-					result = await eda.pcb_PrimitiveArc.create(
-						ctx.net,
-						ctx.layer as any,
-						item.start.x,
-						item.start.y,
-						item.end.x,
-						item.end.y,
-						item.angle!,
-						item.width,
-					);
-
-					// 几何键存储（单一数据源，不依赖图元 ID）
-					const geoKey = makeArcWidthGeoKey(ctx.net, ctx.layer, item.start.x, item.start.y, item.end.x, item.end.y);
-					getArcWidthByGeoMap().set(geoKey, item.width);
-				}
-
-				const outputId = getCreatedPrimitiveId(result);
-				if (!outputId)
-					throw new Error(`路径 ${ctx.pathId} 的图元提交失败`);
-				ctx.createdIds.push(outputId);
-				ctx.idToCornerMap.set(outputId, item.cornerIndex);
-				if (item.type === 'line') {
-					ctx.createdLineIds.push(outputId);
-					perfCreatedLines++;
-				}
-				else {
-					ctx.createdArcIds.push(outputId);
-					perfCreatedArcs++;
-				}
-			});
-		};
-
-		// 2. 第一次执行：生成所有路径 (Optimistic Pass)
-		refreshProtectedCornerOverrides(activePaths, protectedGroups, settings);
-		await commitOps(activePaths.map(ctx => ({
-			ctx,
-			ops: generatePathOps(
-				{ points: ctx.points, orderedSegs: ctx.orderedSegs },
-				settings,
-				ctx.badCorners,
-				ctx.cornerScales,
-				ctx.cornerOverrides,
-			),
-		})));
-		markPerf('initial-redraw');
-
-		// 3. DRC 检查与二分法自动修复
-		if (settings.enableDRC && activePaths.length > 0) {
-			let drcAdjustmentCount = 0;
-			let drcConverged = false;
-			let drcCheckFailed = false;
-			let remainingViolationCount = 0;
-			const maxDrcAdjustments = Math.max(1, Math.floor(Number(settings.drcRetryCount) || 60));
-
-			while (drcAdjustmentCount <= maxDrcAdjustments) {
-				eda.sys_Message?.showToastMessage(`DRC 检查中... (${drcAdjustmentCount + 1}/${maxDrcAdjustments + 1})`, 'info' as any, 1);
-
-				// 运行全局检查
-				const drcAnalysis = await runDrcCheckAndParse();
-				if (!drcAnalysis.valid) {
-					drcCheckFailed = true;
-					latestCopperViolation = undefined;
-					debugWarn('[DRC] 检查调用失败，无法确认圆滑结果是否收敛。');
-					break;
-				}
-				const violatedIds = drcAnalysis.violatedIds;
-				latestCopperViolation = drcAnalysis.copperViolation;
-				remainingViolationCount = violatedIds.size;
-				markPerf(`drc-check-${drcAdjustmentCount + 1}`);
-
-				if (violatedIds.size === 0) {
-					drcConverged = true;
-					debugLog('[DRC] 检查通过。');
-					break;
-				}
-
-				debugLog(`[DRC] 发现 ${violatedIds.size} 个违规对象`);
-				if (drcAdjustmentCount >= maxDrcAdjustments) {
-					debugWarn(`[DRC] 已达到最大调整轮数 ${maxDrcAdjustments}，停止修复。`);
-					break;
-				}
-
-				// 标记需要重绘的路径
-				const pathsToRepair = new Set<PathContext>();
-				const repairTargets = new Map<string, { ctx: PathContext; cornerIndex: number }>();
-				const forceStraight = drcAdjustmentCount === maxDrcAdjustments - 1;
-
-				for (const ctx of activePaths) {
-					for (const id of ctx.createdIds) {
-						if (violatedIds.has(id)) {
-							const idx = ctx.idToCornerMap.get(id);
-							if (idx !== undefined)
-								repairTargets.set(`${ctx.pathId}:${idx}`, { ctx, cornerIndex: idx });
-						}
-					}
-				}
-
-				const adjustedCorners = new Set<string>();
-				for (const { ctx, cornerIndex } of repairTargets.values()) {
-					syncProtectedCornerRepair(activePaths, ctx, cornerIndex, (repairCtx, repairIdx) => {
-						const repairKey = `${repairCtx.pathId}:${repairIdx}`;
-						const result = advanceDrcCornerRepairOnce(
-							adjustedCorners,
-							repairKey,
-							repairCtx.badCorners,
-							repairCtx.cornerScales,
-							repairIdx,
-							forceStraight,
-						);
-						if (result === 'straight') {
-							debugLog(`[DRC] Corner ${repairIdx} marked BAD (Straight)`);
-						}
-						else if (result === 'scaled') {
-							debugLog(`[DRC] Corner ${repairIdx} reducing scale to ${repairCtx.cornerScales.get(repairIdx)!.toFixed(3)}`);
-						}
-						if (result !== 'unchanged')
-							pathsToRepair.add(repairCtx);
-					});
-				}
-
-				if (pathsToRepair.size === 0) {
-					debugWarn('[DRC] 未找到仍可调整的插件拐角，停止修复。');
-					break;
-				}
-
-				// 重绘
-				refreshProtectedCornerOverrides(activePaths, protectedGroups, settings);
-				const repairJobs: Array<{ ops: PathOp[]; ctx: PathContext }> = [];
-				const oldLineIds = Array.from(pathsToRepair).flatMap(ctx => ctx.createdLineIds);
-				const oldArcIds = Array.from(pathsToRepair).flatMap(ctx => ctx.createdArcIds);
 				await deletePrimitiveIdsInChunks(
-					oldLineIds,
+					Array.from(pendingLineIdsToDelete),
 					ids => eda.pcb_PrimitiveLine.delete(ids),
 					'Line',
 				);
-				await deletePrimitiveIdsInChunks(
-					oldArcIds,
-					ids => eda.pcb_PrimitiveArc.delete(ids),
-					'Arc',
-				);
-				perfDeletedLines += oldLineIds.length;
-				for (const ctx of pathsToRepair) {
-					// 使用新参数生成
-					repairJobs.push({
-						ctx,
-						ops: generatePathOps(
-							{ points: ctx.points, orderedSegs: ctx.orderedSegs },
-							settings,
-							ctx.badCorners,
-							ctx.cornerScales,
-							ctx.cornerOverrides,
-						),
+				perfDeletedLines += pendingLineIdsToDelete.size;
+				markPerf('delete-originals');
+
+				// 将所有路径的创建指令合并到同一个有限并发队列。
+				const commitOps = async (jobs: Array<{ ops: PathOp[]; ctx: PathContext }>) => {
+					for (const { ops, ctx } of jobs) {
+						const lineOps = ops.filter(op => op.type === 'line');
+						if (lineOps.length !== ctx.orderedSegs.length)
+							throw new Error(`路径 ${ctx.pathId} 的直线与原路径段无法一一对应`);
+						if (ops.some(op => dist(op.start, op.end) < 0.001))
+							throw new Error(`路径 ${ctx.pathId} 生成了过短图元`);
+						lineOps.forEach((op, index) => {
+							op.primitiveLock = ctx.orderedSegs[index]?.primitiveLock ?? false;
+						});
+						ctx.createdIds = [];
+						ctx.createdLineIds = [];
+						ctx.createdArcIds = [];
+						ctx.idToCornerMap.clear();
+					}
+
+					const pendingOps = jobs.flatMap(({ ops, ctx }) => ops.map(item => ({ item, ctx })));
+					await mapWithConcurrency(pendingOps, CREATE_CONCURRENCY, async ({ item, ctx }) => {
+						let result: any;
+						if (item.type === 'line') {
+							result = await eda.pcb_PrimitiveLine.create(
+								ctx.net,
+								ctx.layer as any,
+								item.start.x,
+								item.start.y,
+								item.end.x,
+								item.end.y,
+								item.width,
+								item.primitiveLock ?? false,
+							);
+						}
+						else {
+							result = await eda.pcb_PrimitiveArc.create(
+								ctx.net,
+								ctx.layer as any,
+								item.start.x,
+								item.start.y,
+								item.end.x,
+								item.end.y,
+								item.angle!,
+								item.width,
+							);
+
+							// 几何键存储（单一数据源，不依赖图元 ID）
+							const geoKey = makeArcWidthGeoKey(ctx.net, ctx.layer, item.start.x, item.start.y, item.end.x, item.end.y);
+							getArcWidthByGeoMap().set(geoKey, item.width);
+						}
+
+						const outputId = getCreatedPrimitiveId(result);
+						if (!outputId)
+							throw new Error(`路径 ${ctx.pathId} 的图元提交失败`);
+						ctx.createdIds.push(outputId);
+						ctx.idToCornerMap.set(outputId, item.cornerIndex);
+						if (item.type === 'line') {
+							ctx.createdLineIds.push(outputId);
+							perfCreatedLines++;
+						}
+						else {
+							ctx.createdArcIds.push(outputId);
+							perfCreatedArcs++;
+						}
 					});
+				};
+
+				// 2. 第一次执行：生成所有路径 (Optimistic Pass)
+				refreshProtectedCornerOverrides(activePaths, protectedGroups, settings);
+				await commitOps(activePaths.map(ctx => ({
+					ctx,
+					ops: generatePathOps(
+						{ points: ctx.points, orderedSegs: ctx.orderedSegs },
+						settings,
+						ctx.badCorners,
+						ctx.cornerScales,
+						ctx.cornerOverrides,
+					),
+				})));
+				markPerf('initial-redraw');
+
+				// 3. DRC 检查与二分法自动修复
+				if (settings.enableDRC && activePaths.length > 0) {
+					let drcAdjustmentCount = 0;
+					let drcConverged = false;
+					let drcCheckFailed = false;
+					let remainingViolationCount = 0;
+					const maxDrcAdjustments = Math.max(1, Math.floor(Number(settings.drcRetryCount) || 60));
+
+					while (drcAdjustmentCount <= maxDrcAdjustments) {
+						eda.sys_Message?.showToastMessage(`DRC 检查中... (${drcAdjustmentCount + 1}/${maxDrcAdjustments + 1})`, 'info' as any, 1);
+
+						// 运行全局检查
+						const drcAnalysis = await runDrcCheckAndParse();
+						if (!drcAnalysis.valid) {
+							drcCheckFailed = true;
+							latestCopperViolation = undefined;
+							debugWarn('[DRC] 检查调用失败，无法确认圆滑结果是否收敛。');
+							break;
+						}
+						const violatedIds = drcAnalysis.violatedIds;
+						latestCopperViolation = drcAnalysis.copperViolation;
+						remainingViolationCount = violatedIds.size;
+						markPerf(`drc-check-${drcAdjustmentCount + 1}`);
+
+						if (violatedIds.size === 0) {
+							drcConverged = true;
+							debugLog('[DRC] 检查通过。');
+							break;
+						}
+
+						debugLog(`[DRC] 发现 ${violatedIds.size} 个违规对象`);
+						if (drcAdjustmentCount >= maxDrcAdjustments) {
+							debugWarn(`[DRC] 已达到最大调整轮数 ${maxDrcAdjustments}，停止修复。`);
+							break;
+						}
+
+						// 标记需要重绘的路径
+						const pathsToRepair = new Set<PathContext>();
+						const repairTargets = new Map<string, { ctx: PathContext; cornerIndex: number }>();
+						const forceStraight = drcAdjustmentCount === maxDrcAdjustments - 1;
+
+						for (const ctx of activePaths) {
+							for (const id of ctx.createdIds) {
+								if (violatedIds.has(id)) {
+									const idx = ctx.idToCornerMap.get(id);
+									if (idx !== undefined)
+										repairTargets.set(`${ctx.pathId}:${idx}`, { ctx, cornerIndex: idx });
+								}
+							}
+						}
+
+						const adjustedCorners = new Set<string>();
+						for (const { ctx, cornerIndex } of repairTargets.values()) {
+							syncProtectedCornerRepair(activePaths, ctx, cornerIndex, (repairCtx, repairIdx) => {
+								const repairKey = `${repairCtx.pathId}:${repairIdx}`;
+								const result = advanceDrcCornerRepairOnce(
+									adjustedCorners,
+									repairKey,
+									repairCtx.badCorners,
+									repairCtx.cornerScales,
+									repairIdx,
+									forceStraight,
+								);
+								if (result === 'straight') {
+									debugLog(`[DRC] Corner ${repairIdx} marked BAD (Straight)`);
+								}
+								else if (result === 'scaled') {
+									debugLog(`[DRC] Corner ${repairIdx} reducing scale to ${repairCtx.cornerScales.get(repairIdx)!.toFixed(3)}`);
+								}
+								if (result !== 'unchanged')
+									pathsToRepair.add(repairCtx);
+							});
+						}
+
+						if (pathsToRepair.size === 0) {
+							debugWarn('[DRC] 未找到仍可调整的插件拐角，停止修复。');
+							break;
+						}
+
+						// 重绘
+						refreshProtectedCornerOverrides(activePaths, protectedGroups, settings);
+						const repairJobs: Array<{ ops: PathOp[]; ctx: PathContext }> = [];
+						const oldLineIds = Array.from(pathsToRepair).flatMap(ctx => ctx.createdLineIds);
+						const oldArcIds = Array.from(pathsToRepair).flatMap(ctx => ctx.createdArcIds);
+						await deletePrimitiveIdsInChunks(
+							oldLineIds,
+							ids => eda.pcb_PrimitiveLine.delete(ids),
+							'Line',
+						);
+						await deletePrimitiveIdsInChunks(
+							oldArcIds,
+							ids => eda.pcb_PrimitiveArc.delete(ids),
+							'Arc',
+						);
+						perfDeletedLines += oldLineIds.length;
+						for (const ctx of pathsToRepair) {
+							// 使用新参数生成
+							repairJobs.push({
+								ctx,
+								ops: generatePathOps(
+									{ points: ctx.points, orderedSegs: ctx.orderedSegs },
+									settings,
+									ctx.badCorners,
+									ctx.cornerScales,
+									ctx.cornerOverrides,
+								),
+							});
+						}
+						// 3. 重新绘制
+						await commitOps(repairJobs);
+						latestCopperViolation = undefined;
+						markPerf(`drc-repair-${drcAdjustmentCount + 1}`);
+
+						drcAdjustmentCount++;
+					}
+
+					if (drcCheckFailed) {
+						eda.sys_Message?.showToastMessage('DRC 检查失败，未能确认圆滑结果', 'warn' as any, 4);
+					}
+					else if (drcConverged && drcAdjustmentCount > 0) {
+						eda.sys_Message?.showToastMessage(`自动优化完成，执行了 ${drcAdjustmentCount} 轮调整`, 'success' as any, 2);
+					}
+					else if (!drcConverged && remainingViolationCount > 0) {
+						eda.sys_Message?.showToastMessage(`自动调整停止，仍有 ${remainingViolationCount} 个 DRC 违规对象，请检查 DRC 列表`, 'warn' as any, 4);
+					}
 				}
-				// 3. 重新绘制
-				await commitOps(repairJobs);
-				latestCopperViolation = undefined;
-				markPerf(`drc-repair-${drcAdjustmentCount + 1}`);
 
-				drcAdjustmentCount++;
-			}
+				// 防止宿主 API 静默保留已删除的原线，造成新旧导线重叠。
+				// 全板导线数可能被宿主后台任务改变，只能作为诊断信息，不能据此回滚。
+				const expectedLineCount = lineCountBefore
+					- pendingLineIdsToDelete.size
+					+ activePaths.reduce((count, ctx) => count + ctx.orderedSegs.length, 0);
+				const verifiedLines = await eda.pcb_PrimitiveLine.getAll() || [];
+				const staleOriginalIds = verifiedLines
+					.map(line => line.getState_PrimitiveId?.())
+					.filter((id): id is string => typeof id === 'string' && pendingLineIdsToDelete.has(id));
+				if (staleOriginalIds.length > 0) {
+					throw new Error(
+						`圆滑结果校验失败：检测到 ${staleOriginalIds.length} 条原线残留`,
+					);
+				}
+				if (verifiedLines.length !== expectedLineCount) {
+					debugWarn(
+						`[BeautifyVerify] 全板导线计数发生漂移：参考 ${expectedLineCount} 条，实际 ${verifiedLines.length} 条；未发现原线残留，继续完成`,
+					);
+				}
+				markPerf('verify-output');
 
-			if (drcCheckFailed) {
-				eda.sys_Message?.showToastMessage('DRC 检查失败，未能确认圆滑结果', 'warn' as any, 4);
-			}
-			else if (drcConverged && drcAdjustmentCount > 0) {
-				eda.sys_Message?.showToastMessage(`自动优化完成，执行了 ${drcAdjustmentCount} 轮调整`, 'success' as any, 2);
-			}
-			else if (!drcConverged && remainingViolationCount > 0) {
-				eda.sys_Message?.showToastMessage(`自动调整停止，仍有 ${remainingViolationCount} 个 DRC 违规对象，请检查 DRC 列表`, 'warn' as any, 4);
-			}
-		}
-
-		// 防止宿主 API 静默保留已删除的原线，造成新旧导线重叠。
-		// 全板导线数可能被宿主后台任务改变，只能作为诊断信息，不能据此回滚。
-		const expectedLineCount = lineCountBefore
-			- pendingLineIdsToDelete.size
-			+ activePaths.reduce((count, ctx) => count + ctx.orderedSegs.length, 0);
-		const verifiedLines = await eda.pcb_PrimitiveLine.getAll() || [];
-		const staleOriginalIds = verifiedLines
-			.map(line => line.getState_PrimitiveId?.())
-			.filter((id): id is string => typeof id === 'string' && pendingLineIdsToDelete.has(id));
-		if (staleOriginalIds.length > 0) {
-			throw new Error(
-				`圆滑结果校验失败：检测到 ${staleOriginalIds.length} 条原线残留`,
-			);
-		}
-		if (verifiedLines.length !== expectedLineCount) {
-			debugWarn(
-				`[BeautifyVerify] 全板导线计数发生漂移：参考 ${expectedLineCount} 条，实际 ${verifiedLines.length} 条；未发现原线残留，继续完成`,
-			);
-		}
-		markPerf('verify-output');
-
-		// 结束
-		if (settings.syncWidthTransition) {
-			// 在 Beautify 流程中调用，不需要额外快照（Beautify 已创建）
-			await addWidthTransitionsAll(false);
-			latestCopperViolation = undefined;
-			markPerf('width-transition');
-		}
+				// 结束
+				if (settings.syncWidthTransition) {
+					// 在 Beautify 流程中调用，不需要额外快照（Beautify 已创建）
+					await addWidthTransitionsAll(false);
+					latestCopperViolation = undefined;
+					markPerf('width-transition');
+				}
+			},
+		);
 
 		try {
 			const name = scope === 'all' ? 'Beautify (All) After' : 'Beautify (Selected) After';

@@ -297,6 +297,22 @@ Selected and All beautify/width-transition entry points call the smart wrapper, 
 - Full-restore verification may accept an Arc count change only when bidirectional coverage proves the target and actual arcs occupy the same circles and angular intervals with matching net, layer, and width. Host splitting/merging is normalization; uncovered extra arcs remain a hard failure.
 - After any successful snapshot restore, rebuild every copper pour when automatic rebuilding is enabled. This applies to both manual restore and undo because undo delegates to `restoreSnapshot()`.
 
+## Experimental Mutation Acceleration
+
+`@jlceda/pro-api-types` `0.3.11` exposes `PCB_Document.stopCanvasUpdateCalculation()`, `startCanvasUpdateCalculation()`, `getCanvasUpdateCalculationStatus()`, and `triggerCanvasUpdateCalculation()` as Alpha APIs. It also exposes `PCB_PrimitivePour.rebuildCopperRegions()` for rebuilding multiple or all copper regions in one call. The current host also exposes the ratline calculation status/start/stop APIs.
+
+Production safety rules:
+
+- Keep the experiment behind the default-off `experimentalFastRestore` setting. Alpha APIs may be unavailable to a production extension even when present in the type package.
+- Detect every required method at runtime. Unsupported or failed optional calls must fall back to the normal restore path rather than fail the geometry restore.
+- Read the current status before stopping either subsystem, and restart only a subsystem that this extension actually stopped.
+- Resume canvas and ratline calculation from `finally`, including when deletion, creation, or verification throws.
+- Beautify suspends calculations only after the Before snapshot and path analysis. Keep deletion, initial redraw, DRC repair redraws, output verification, and optional synchronized width transition inside the guard; resume before the After snapshot, copper post-processing, final DRC, or rollback.
+- `getAllPrimitiveId()` may accelerate deletion-loop enumeration, but a stable-empty decision must still be confirmed with full `getAll()` reads.
+- Restore may try `PCB_PrimitivePour.rebuildCopperRegions()` once after geometry verification. Keep the existing per-pour `rebuildCopperRegion()` loop as the runtime fallback and preserve the configured copper-region count limit.
+- Do not use `PCB_Document.clearRouting('all')` for snapshot restore. It can clear routing objects outside the Line/Arc snapshot model, including vias.
+- The experiment changes only calculation scheduling and ID enumeration. Full restore still clears all Line/Arc primitives, confirms a stable empty board, recreates the target, and performs the same geometry verification.
+
 ## Copper Pour ID Spaces: Three Non-Overlapping Systems
 
 ### Discovery (2026-02-12)
@@ -471,4 +487,4 @@ To match user muscle memory from other EDA tools, we register the following by d
 
 ---
 Created: 2026-01-31
-Updated: 2026-07-08
+Updated: 2026-07-25

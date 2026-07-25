@@ -4,6 +4,8 @@ import process from 'node:process';
 async function main() {
 	let enableDRC = true;
 	let rebuildCopper = true;
+	let experimentalFastRestore = false;
+	let batchShouldFail = false;
 	const events: string[] = [];
 	const pour = {
 		getState_Layer: () => 1,
@@ -20,6 +22,12 @@ async function main() {
 		},
 		pcb_PrimitivePour: {
 			getAll: async () => [pour],
+			rebuildCopperRegions: async () => {
+				events.push('batch-rebuild');
+				if (batchShouldFail)
+					throw new Error('expected batch failure');
+				return [{}];
+			},
 		},
 		sys_Log: { add: () => undefined },
 		sys_Message: { showToastMessage: () => undefined },
@@ -29,6 +37,7 @@ async function main() {
 				drcIgnoreCopperPour: true,
 				rebuildCopperPourAfterBeautify: rebuildCopper,
 				copperPourRebuildLimit: 30,
+				experimentalFastRestore,
 			}),
 		},
 	};
@@ -60,6 +69,16 @@ async function main() {
 	events.length = 0;
 	await rebuildAllCopperPoursAfterRestoreIfEnabled();
 	assert.deepEqual(events, ['rebuild'], '普通快照恢复只负责重新覆铜，不应触发美化完成后的最终 DRC');
+
+	experimentalFastRestore = true;
+	events.length = 0;
+	assert.equal(await rebuildAllCopperPoursAfterRestoreIfEnabled(), 1);
+	assert.deepEqual(events, ['batch-rebuild'], 'Alpha 快照恢复应优先调用批量覆铜接口');
+
+	batchShouldFail = true;
+	events.length = 0;
+	assert.equal(await rebuildAllCopperPoursAfterRestoreIfEnabled(), 1);
+	assert.deepEqual(events, ['batch-rebuild', 'rebuild'], 'Alpha 批量覆铜失败后应回退逐块重铺');
 
 	console.log('copper rebuild tests passed');
 }

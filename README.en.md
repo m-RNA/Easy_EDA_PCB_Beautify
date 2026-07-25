@@ -30,6 +30,7 @@ Menu location: Advanced → Beautify PCB
 - Undo / Snapshot – Selected operations use incremental restore and update only changed primitives; All operations use full restore to prioritize whole-board integrity; switch between auto/manual snapshot views
 - Shortcuts – Defaults: `F6` for Smooth Selected, `F9` for Smooth All, and `Ctrl+Shift+Z` for Undo; includes customization, conflict detection, and runtime compatibility warnings
 - Advanced Settings – Configure radius, transition parameters, DRC adjustment rounds, copper-region limit, snapshots, and shortcuts; supports persistent card ordering/folding, with debug logs disabled by default and available on demand
+- Alpha Performance Acceleration – Disabled by default. When enabled, it pauses ratline/canvas calculations during beautify and restore, then tries one batch rebuild for all copper regions after restore. Each unavailable API falls back automatically; back up the project before testing
 
 **Use Cases and Notes**
 

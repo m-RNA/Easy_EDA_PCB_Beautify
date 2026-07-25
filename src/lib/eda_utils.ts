@@ -60,11 +60,12 @@ export async function getSafeSelectedTracks(selectedIds: string[]): Promise<any[
 
 /**
  * 重铺所有覆铜区域
- * 遍历 PCB 中所有 Pour 边框，逐个调用 rebuildCopperRegion()
+ * 默认遍历 PCB 中所有 Pour 边框，逐个调用 rebuildCopperRegion()。
+ * 快照恢复的 Alpha 路径可优先尝试 rebuildCopperRegions()，不可用或失败时回退逐块重铺。
  * 注意: rebuildCopperRegion 是官方 @beta API，仍需兼容旧宿主的运行时差异
  * @returns 成功重铺的数量，失败时返回 -1
  */
-export async function rebuildAllCopperPours(): Promise<number> {
+export async function rebuildAllCopperPours(options: { experimentalBatch?: boolean } = {}): Promise<number> {
 	try {
 		const settings = await getSettings();
 		const rebuildLimit = Math.max(1, Math.floor(Number(settings.copperPourRebuildLimit) || 30));
@@ -82,6 +83,28 @@ export async function rebuildAllCopperPours(): Promise<number> {
 		}
 
 		eda.sys_Message?.showToastMessage(`正在重铺全部 ${pours.length} 块覆铜区域...`, 'info' as any, 2);
+
+		if (options.experimentalBatch) {
+			const batchRebuild = (eda.pcb_PrimitivePour as any).rebuildCopperRegions;
+			if (typeof batchRebuild === 'function') {
+				try {
+					const startedAt = Date.now();
+					const poured = await batchRebuild.call(eda.pcb_PrimitivePour);
+					if (Array.isArray(poured)) {
+						eda.sys_Message?.showToastMessage(`已完成 ${pours.length} 块覆铜区域重铺`, 'success' as any, 2);
+						debugLog(`[CopperPour] Alpha batch rebuilt ${pours.length} pours into ${poured.length} filled primitives in ${Date.now() - startedAt}ms`);
+						return pours.length;
+					}
+					debugWarn('[CopperPour] Alpha batch rebuild returned invalid data; falling back to per-pour rebuild');
+				}
+				catch (e: any) {
+					debugWarn(`[CopperPour] Alpha batch rebuild failed; falling back to per-pour rebuild: ${e.message || e}`);
+				}
+			}
+			else {
+				debugLog('[CopperPour] Alpha batch rebuild API unavailable; using per-pour rebuild');
+			}
+		}
 
 		let rebuilt = 0;
 		for (const pour of pours) {
@@ -223,5 +246,5 @@ export async function rebuildAllCopperPoursAfterRestoreIfEnabled(): Promise<numb
 	const settings = await getSettings();
 	if (!settings.rebuildCopperPourAfterBeautify)
 		return -2;
-	return rebuildAllCopperPours();
+	return rebuildAllCopperPours({ experimentalBatch: settings.experimentalFastRestore });
 }

@@ -3,6 +3,7 @@ import { getArcWidthByGeoMap, makeArcWidthGeoKey } from './beautify';
 import { rebuildAllCopperPoursAfterRestoreIfEnabled } from './eda_utils';
 import { debugLog, debugWarn, logError, logPerformance, logWarn } from './logger';
 import { isClose } from './math';
+import { getSettings } from './settings';
 
 const RESTORE_CREATE_CONCURRENCY = 8;
 const RESTORE_CREATE_RETRIES = 3;
@@ -14,6 +15,119 @@ const SNAPSHOT_GEOMETRY_BUCKET_SIZE = 0.01;
 const SNAPSHOT_LINE_COVERAGE_EPSILON = 0.003;
 const SNAPSHOT_ARC_CIRCLE_EPSILON = 0.01;
 const SNAPSHOT_ARC_ANGLE_EPSILON = 0.05;
+
+export interface RestoreCalculationGuardMetrics {
+	enabled: boolean;
+	ratlineSupported: boolean;
+	canvasSupported: boolean;
+	ratlineSuspended: boolean;
+	canvasSuspended: boolean;
+	setupMilliseconds: number;
+	resumeMilliseconds: number;
+}
+
+function createRestoreCalculationGuardMetrics(enabled: boolean): RestoreCalculationGuardMetrics {
+	return {
+		enabled,
+		ratlineSupported: false,
+		canvasSupported: false,
+		ratlineSuspended: false,
+		canvasSuspended: false,
+		setupMilliseconds: 0,
+		resumeMilliseconds: 0,
+	};
+}
+
+/**
+ * Alpha 图元变更计算保护器。
+ * 仅在用户显式开启时暂停宿主的飞线与画布更新计算，并始终在 finally 中恢复原状态。
+ * 任一可选 API 不可用或调用失败时继续执行原操作，不把性能优化失败升级为业务失败。
+ */
+export async function runWithPcbCalculationSuspension<T>(
+	enabled: boolean,
+	logScope: string,
+	operation: () => Promise<T>,
+	metrics: RestoreCalculationGuardMetrics = createRestoreCalculationGuardMetrics(enabled),
+): Promise<T> {
+	metrics.enabled = enabled;
+	if (!enabled)
+		return operation();
+
+	const documentApi = (eda as any).pcb_Document;
+	const setupStartedAt = Date.now();
+	metrics.ratlineSupported = !!documentApi
+		&& typeof documentApi.getCalculatingRatlineStatus === 'function'
+		&& typeof documentApi.stopCalculatingRatline === 'function'
+		&& typeof documentApi.startCalculatingRatline === 'function';
+	metrics.canvasSupported = !!documentApi
+		&& typeof documentApi.getCanvasUpdateCalculationStatus === 'function'
+		&& typeof documentApi.stopCanvasUpdateCalculation === 'function'
+		&& typeof documentApi.startCanvasUpdateCalculation === 'function'
+		&& typeof documentApi.triggerCanvasUpdateCalculation === 'function';
+
+	if (metrics.ratlineSupported) {
+		try {
+			const status = await documentApi.getCalculatingRatlineStatus();
+			if (status === 'active')
+				metrics.ratlineSuspended = await documentApi.stopCalculatingRatline() === true;
+		}
+		catch (e) {
+			debugWarn(`[${logScope}] ratline suspension unavailable, using normal calculation: ${e}`, 'Snapshot');
+		}
+	}
+	else {
+		debugLog(`[${logScope}] ratline suspension API unavailable; using normal calculation`);
+	}
+
+	if (metrics.canvasSupported) {
+		try {
+			const status = await documentApi.getCanvasUpdateCalculationStatus();
+			if (status === 'active')
+				metrics.canvasSuspended = await documentApi.stopCanvasUpdateCalculation() === true;
+		}
+		catch (e) {
+			debugWarn(`[${logScope}] Alpha canvas suspension unavailable, using normal canvas updates: ${e}`, 'Snapshot');
+		}
+	}
+	else {
+		debugLog(`[${logScope}] Alpha canvas suspension API unavailable; using normal canvas updates`);
+	}
+	metrics.setupMilliseconds = Date.now() - setupStartedAt;
+
+	try {
+		return await operation();
+	}
+	finally {
+		const resumeStartedAt = Date.now();
+		if (metrics.canvasSuspended) {
+			try {
+				const started = await documentApi.startCanvasUpdateCalculation();
+				if (started !== true)
+					debugWarn(`[${logScope}] Alpha canvas update resume returned false`, 'Snapshot');
+				const triggered = await documentApi.triggerCanvasUpdateCalculation();
+				if (triggered !== true)
+					debugWarn(`[${logScope}] Alpha canvas refresh trigger returned false`, 'Snapshot');
+			}
+			catch (e) {
+				debugWarn(`[${logScope}] Alpha canvas update resume failed: ${e}`, 'Snapshot');
+			}
+		}
+		if (metrics.ratlineSuspended) {
+			try {
+				const started = await documentApi.startCalculatingRatline();
+				if (started !== true)
+					debugWarn(`[${logScope}] ratline resume returned false`, 'Snapshot');
+			}
+			catch (e) {
+				debugWarn(`[${logScope}] ratline resume failed: ${e}`, 'Snapshot');
+			}
+		}
+		metrics.resumeMilliseconds = Date.now() - resumeStartedAt;
+		logPerformance(
+			`[${logScope}] calculation-guard enabled=true ratline-supported=${metrics.ratlineSupported} ratline-suspended=${metrics.ratlineSuspended} canvas-supported=${metrics.canvasSupported} canvas-suspended=${metrics.canvasSuspended} setup=${metrics.setupMilliseconds}ms resume=${metrics.resumeMilliseconds}ms`,
+		);
+	}
+}
 
 const SNAPSHOT_STORAGE_KEY_V2 = 'jlc_eda_beautify_snapshots_v2';
 const SNAPSHOT_STORAGE_KEY_V3_PREFIX = 'jlc_eda_beautify_snapshots_v3_';
@@ -1207,6 +1321,7 @@ export async function deleteStateDiffPrimitives(
 	type: 'line' | 'arc',
 	api: any,
 	primitiveIds: string[],
+	preferFastPrimitiveIds: boolean = false,
 ): Promise<number> {
 	const requestedIds = Array.from(new Set(primitiveIds.filter(id => typeof id === 'string' && id.length > 0)));
 	let pendingIds = requestedIds;
@@ -1224,8 +1339,7 @@ export async function deleteStateDiffPrimitives(
 			}
 		}
 
-		const livePrimitives = extractPrimitiveData(await api.getAll() || [], type);
-		const liveIds = new Set(livePrimitives.map((p: any) => p.i || p.id));
+		const liveIds = new Set((await readPrimitiveIds(type, api, preferFastPrimitiveIds)).ids);
 		pendingIds = pendingIds.filter(id => liveIds.has(id));
 		if (pendingIds.length === 0)
 			return requestedIds.length;
@@ -1358,44 +1472,75 @@ async function readCurrentRoutingState(pcbId: string): Promise<RoutingSnapshot> 
 	return state;
 }
 
-async function readLiveRoutingPrimitiveIds() {
-	const arcs = extractPrimitiveData(await eda.pcb_PrimitiveArc.getAll() || [], 'arc');
-	const lines = extractPrimitiveData(await eda.pcb_PrimitiveLine.getAll() || [], 'line');
-	const arcIds = Array.from(new Set(arcs.map(arc => arc.i).filter((id): id is string => typeof id === 'string' && id.length > 0)));
-	const lineIds = Array.from(new Set(lines.map(line => line.i).filter((id): id is string => typeof id === 'string' && id.length > 0)));
-	if (arcIds.length !== arcs.length || lineIds.length !== lines.length) {
+async function readPrimitiveIds(type: 'line' | 'arc', api: any, preferFastPrimitiveIds: boolean) {
+	if (preferFastPrimitiveIds && typeof api?.getAllPrimitiveId === 'function') {
+		try {
+			const rawIds = await api.getAllPrimitiveId();
+			if (Array.isArray(rawIds) && rawIds.every(id => typeof id === 'string' && id.length > 0)) {
+				return {
+					ids: Array.from(new Set(rawIds as string[])),
+					usedFastIdEnumeration: true,
+				};
+			}
+			debugWarn(`[SnapshotRestore] ${type} getAllPrimitiveId returned invalid data; falling back to getAll`, 'Snapshot');
+		}
+		catch (e) {
+			debugWarn(`[SnapshotRestore] ${type} getAllPrimitiveId failed; falling back to getAll: ${e}`, 'Snapshot');
+		}
+	}
+
+	const primitives = extractPrimitiveData(await api.getAll() || [], type);
+	const ids = Array.from(new Set(primitives.map(primitive => primitive.i || (primitive as any).id)
+		.filter((id): id is string => typeof id === 'string' && id.length > 0)));
+	if (ids.length !== primitives.length) {
 		throw new Error(
-			`全量恢复清空失败：${lines.length - lineIds.length} 条导线/${arcs.length - arcIds.length} 条圆弧缺少可删除的图元 ID`,
+			`全量恢复清空失败：${primitives.length - ids.length} 条${type === 'line' ? '导线' : '圆弧'}缺少可删除的图元 ID`,
 		);
 	}
-	return { arcIds, lineIds };
+	return { ids, usedFastIdEnumeration: false };
 }
 
-export async function clearAllRoutingPrimitivesForFullRestore() {
+async function readLiveRoutingPrimitiveIds(preferFastPrimitiveIds: boolean = false) {
+	const arcs = await readPrimitiveIds('arc', eda.pcb_PrimitiveArc, preferFastPrimitiveIds);
+	const lines = await readPrimitiveIds('line', eda.pcb_PrimitiveLine, preferFastPrimitiveIds);
+	return {
+		arcIds: arcs.ids,
+		lineIds: lines.ids,
+		usedFastIdEnumeration: arcs.usedFastIdEnumeration || lines.usedFastIdEnumeration,
+	};
+}
+
+export async function clearAllRoutingPrimitivesForFullRestore(preferFastPrimitiveIds: boolean = false) {
 	let arcsDeleted = 0;
 	let linesDeleted = 0;
 	let deleteArcsMilliseconds = 0;
 	let deleteLinesMilliseconds = 0;
-	let remaining = await readLiveRoutingPrimitiveIds();
+	let usedFastIdEnumeration = false;
+	let remaining = await readLiveRoutingPrimitiveIds(preferFastPrimitiveIds);
+	usedFastIdEnumeration ||= remaining.usedFastIdEnumeration;
 
 	for (let pass = 1; pass <= FULL_RESTORE_CLEAR_MAX_PASSES; pass++) {
 		if (remaining.arcIds.length > 0) {
 			const deleteStartedAt = Date.now();
-			arcsDeleted += await deleteStateDiffPrimitives('arc', eda.pcb_PrimitiveArc, remaining.arcIds);
+			arcsDeleted += await deleteStateDiffPrimitives('arc', eda.pcb_PrimitiveArc, remaining.arcIds, preferFastPrimitiveIds);
 			deleteArcsMilliseconds += Date.now() - deleteStartedAt;
 		}
 		if (remaining.lineIds.length > 0) {
 			const deleteStartedAt = Date.now();
-			linesDeleted += await deleteStateDiffPrimitives('line', eda.pcb_PrimitiveLine, remaining.lineIds);
+			linesDeleted += await deleteStateDiffPrimitives('line', eda.pcb_PrimitiveLine, remaining.lineIds, preferFastPrimitiveIds);
 			deleteLinesMilliseconds += Date.now() - deleteStartedAt;
 		}
 
-		remaining = await readLiveRoutingPrimitiveIds();
+		remaining = await readLiveRoutingPrimitiveIds(preferFastPrimitiveIds);
+		usedFastIdEnumeration ||= remaining.usedFastIdEnumeration;
 		if (remaining.lineIds.length === 0 && remaining.arcIds.length === 0) {
+			// Alpha 的快速 ID 枚举只用于缩短删除循环；进入空板判定前必须用完整对象 API 再确认一次。
+			if (remaining.usedFastIdEnumeration)
+				remaining = await readLiveRoutingPrimitiveIds(false);
 			let stable = true;
 			for (const delayMilliseconds of RESTORE_STABILITY_DELAYS) {
 				await new Promise(resolve => setTimeout(resolve, delayMilliseconds));
-				remaining = await readLiveRoutingPrimitiveIds();
+				remaining = await readLiveRoutingPrimitiveIds(false);
 				if (remaining.lineIds.length > 0 || remaining.arcIds.length > 0) {
 					stable = false;
 					break;
@@ -1408,6 +1553,7 @@ export async function clearAllRoutingPrimitivesForFullRestore() {
 					passes: pass,
 					deleteArcsMilliseconds,
 					deleteLinesMilliseconds,
+					usedFastIdEnumeration,
 				};
 			}
 		}
@@ -1459,34 +1605,43 @@ export async function applySnapshotStateDiff(snapshot: RoutingSnapshot, currentS
 	return { lineRes, arcRes };
 }
 
-export async function applySnapshotFullRestore(snapshot: RoutingSnapshot, currentState: RoutingSnapshot) {
-	const startedAt = Date.now();
-	const clearResult = await clearAllRoutingPrimitivesForFullRestore();
-	const clearedAt = Date.now();
-	const emptyState: RoutingSnapshot = {
-		id: 0,
-		name: 'Empty Full Restore State',
-		timestamp: Date.now(),
-		pcbId: currentState.pcbId,
-		lines: [],
-		arcs: [],
-	};
-	const lineResult = await applyStateDiff('line', snapshot.lines, emptyState.lines);
-	const linesCreatedAt = Date.now();
-	resolveArcWidths(snapshot.lines, snapshot.arcs);
-	const arcResult = await applyStateDiff('arc', snapshot.arcs, emptyState.arcs);
-	const arcsCreatedAt = Date.now();
-	return {
-		lineRes: { ...lineResult, deleted: clearResult.linesDeleted },
-		arcRes: { ...arcResult, deleted: clearResult.arcsDeleted },
-		phaseTimings: {
-			deleteArcs: clearResult.deleteArcsMilliseconds,
-			deleteLines: clearResult.deleteLinesMilliseconds,
-			verifyEmpty: clearedAt - startedAt - clearResult.deleteArcsMilliseconds - clearResult.deleteLinesMilliseconds,
-			createLines: linesCreatedAt - clearedAt,
-			createArcs: arcsCreatedAt - linesCreatedAt,
-		},
-	};
+export async function applySnapshotFullRestore(
+	snapshot: RoutingSnapshot,
+	currentState: RoutingSnapshot,
+	options: { experimentalFastRestore?: boolean } = {},
+) {
+	const guardMetrics = createRestoreCalculationGuardMetrics(options.experimentalFastRestore === true);
+	return runWithPcbCalculationSuspension(options.experimentalFastRestore === true, 'SnapshotRestore', async () => {
+		const startedAt = Date.now();
+		const clearResult = await clearAllRoutingPrimitivesForFullRestore(options.experimentalFastRestore === true);
+		const clearedAt = Date.now();
+		const emptyState: RoutingSnapshot = {
+			id: 0,
+			name: 'Empty Full Restore State',
+			timestamp: Date.now(),
+			pcbId: currentState.pcbId,
+			lines: [],
+			arcs: [],
+		};
+		const lineResult = await applyStateDiff('line', snapshot.lines, emptyState.lines);
+		const linesCreatedAt = Date.now();
+		resolveArcWidths(snapshot.lines, snapshot.arcs);
+		const arcResult = await applyStateDiff('arc', snapshot.arcs, emptyState.arcs);
+		const arcsCreatedAt = Date.now();
+		return {
+			lineRes: { ...lineResult, deleted: clearResult.linesDeleted },
+			arcRes: { ...arcResult, deleted: clearResult.arcsDeleted },
+			phaseTimings: {
+				deleteArcs: clearResult.deleteArcsMilliseconds,
+				deleteLines: clearResult.deleteLinesMilliseconds,
+				verifyEmpty: clearedAt - startedAt - clearResult.deleteArcsMilliseconds - clearResult.deleteLinesMilliseconds,
+				createLines: linesCreatedAt - clearedAt,
+				createArcs: arcsCreatedAt - linesCreatedAt,
+				fastIdEnumeration: clearResult.usedFastIdEnumeration,
+				calculationGuard: guardMetrics,
+			},
+		};
+	}, guardMetrics);
 }
 
 /**
@@ -1546,14 +1701,25 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		logPerformance(
 			`[SnapshotRestore] strategy=${restoreStrategy} target=${snapshot.lines.length}/${snapshot.arcs.length} current=${currentState.lines.length}/${currentState.arcs.length}`,
 		);
+		const restoreSettings = restoreStrategy === 'full' ? await getSettings() : undefined;
 		const initialResult = restoreStrategy === 'full'
-			? await applySnapshotFullRestore(snapshot, currentState)
+			? await applySnapshotFullRestore(snapshot, currentState, {
+					experimentalFastRestore: restoreSettings?.experimentalFastRestore === true,
+				})
 			: await applySnapshotStateDiff(snapshot, currentState);
 		const lineRes = initialResult.lineRes;
 		const arcRes = initialResult.arcRes;
 		const restoreMode = restoreStrategy;
 		const phaseTimings = 'phaseTimings' in initialResult
-			? initialResult.phaseTimings as { deleteArcs: number; deleteLines: number; verifyEmpty: number; createLines: number; createArcs: number }
+			? initialResult.phaseTimings as {
+				deleteArcs: number;
+				deleteLines: number;
+				verifyEmpty: number;
+				createLines: number;
+				createArcs: number;
+				fastIdEnumeration: boolean;
+				calculationGuard: RestoreCalculationGuardMetrics;
+			}
 			: undefined;
 		const mutationFinishedAt = Date.now();
 
@@ -1584,7 +1750,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 			);
 		}
 		logPerformance(
-			`[SnapshotRestore] result=${normalizedEquivalent ? 'verified-normalized' : 'verified'} mode=${restoreMode} lines-created=${lineRes.created} lines-deleted=${lineRes.deleted} arcs-created=${arcRes.created} arcs-deleted=${arcRes.deleted} mutation=${mutationFinishedAt - restoreStartedAt}ms verify=${Date.now() - mutationFinishedAt}ms${phaseTimings ? ` delete-arcs=${phaseTimings.deleteArcs}ms delete-lines=${phaseTimings.deleteLines}ms verify-empty=${phaseTimings.verifyEmpty}ms create-lines=${phaseTimings.createLines}ms create-arcs=${phaseTimings.createArcs}ms` : ''}`,
+			`[SnapshotRestore] result=${normalizedEquivalent ? 'verified-normalized' : 'verified'} mode=${restoreMode} lines-created=${lineRes.created} lines-deleted=${lineRes.deleted} arcs-created=${arcRes.created} arcs-deleted=${arcRes.deleted} mutation=${mutationFinishedAt - restoreStartedAt}ms verify=${Date.now() - mutationFinishedAt}ms${phaseTimings ? ` delete-arcs=${phaseTimings.deleteArcs}ms delete-lines=${phaseTimings.deleteLines}ms verify-empty=${phaseTimings.verifyEmpty}ms create-lines=${phaseTimings.createLines}ms create-arcs=${phaseTimings.createArcs}ms fast-ids=${phaseTimings.fastIdEnumeration} ratline-suspended=${phaseTimings.calculationGuard.ratlineSuspended} canvas-suspended=${phaseTimings.calculationGuard.canvasSuspended} guard-setup=${phaseTimings.calculationGuard.setupMilliseconds}ms guard-resume=${phaseTimings.calculationGuard.resumeMilliseconds}ms` : ''}`,
 		);
 
 		const copperStartedAt = Date.now();

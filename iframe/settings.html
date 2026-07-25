@@ -890,6 +890,26 @@
                 </div>
             </div>
 
+            <!-- Experimental Performance Acceleration -->
+            <div class="setting-item">
+                <div class="setting-info">
+                    <div class="setting-label">
+                        <span data-i18n="实验性性能加速">实验性性能加速</span>
+                        <span style="background:var(--bg);color:var(--primary);border:1px solid var(--primary);padding:1px 5px;border-radius:4px;font-size:10px;margin-left:6px;">Alpha</span>
+                    </div>
+                    <div class="setting-desc" data-i18n="美化和恢复时暂停飞线与画布更新；恢复后尝试批量覆铜，失败自动回退">美化和恢复时暂停飞线与画布更新；恢复后尝试批量覆铜，失败自动回退</div>
+                </div>
+                <div class="setting-control">
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="experimentalFastRestore">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="experimentalFastRestoreLabel" data-i18n="启用">启用</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Debug -->
             <div class="setting-item">
                 <div class="setting-info">
@@ -1145,6 +1165,7 @@
         const elRatio = document.getElementById('widthTransitionRatio');
         const elDirection = document.getElementById('widthTransitionBalance');
         const elDebug = document.getElementById('debug');
+        const elExperimentalFastRestore = document.getElementById('experimentalFastRestore');
         const elForceArc = document.getElementById('forceArc');
         const elProtectPadAndViaNodes = document.getElementById('protectPadAndViaNodes');
         const elProtectDifferentialAndEqualLength = document.getElementById('protectDifferentialAndEqualLength');
@@ -1165,6 +1186,7 @@
         // I18n labels update
         const elSyncWidthLabel = document.getElementById('syncWidthLabel');
         const elDebugLabel = document.getElementById('debugLabel');
+        const elExperimentalFastRestoreLabel = document.getElementById('experimentalFastRestoreLabel');
         const elForceArcLabel = document.getElementById('forceArcLabel');
         const elProtectPadAndViaNodesLabel = document.getElementById('protectPadAndViaNodesLabel');
         const elProtectDifferentialAndEqualLengthLabel = document.getElementById('protectDifferentialAndEqualLengthLabel');
@@ -1182,6 +1204,7 @@
 
             elSyncWidthLabel.textContent = elSyncWidth.checked ? enabledText : disabledText;
             elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
+            elExperimentalFastRestoreLabel.textContent = elExperimentalFastRestore.checked ? enabledText : disabledText;
             elProtectPadAndViaNodesLabel.textContent = elProtectPadAndViaNodes.checked ? enabledText : disabledText;
             elProtectDifferentialAndEqualLengthLabel.textContent = elProtectDifferentialAndEqualLength.checked ? enabledText : disabledText;
             elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
@@ -1192,6 +1215,7 @@
             // Visual feedback color for label
             elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
+            elExperimentalFastRestoreLabel.style.color = elExperimentalFastRestore.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elProtectPadAndViaNodesLabel.style.color = elProtectPadAndViaNodes.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elProtectDifferentialAndEqualLengthLabel.style.color = elProtectDifferentialAndEqualLength.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
@@ -1249,6 +1273,7 @@
                 }
 
                 if (elDebug) elDebug.checked = config.debug;
+                if (elExperimentalFastRestore) elExperimentalFastRestore.checked = config.experimentalFastRestore === true;
                 if (elForceArc) elForceArc.checked = config.forceArc !== undefined ? config.forceArc : true;
                 if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
                 if (elDrcIgnoreCopperPour) elDrcIgnoreCopperPour.checked = config.drcIgnoreCopperPour !== undefined ? config.drcIgnoreCopperPour : true;
@@ -1352,6 +1377,7 @@
                 widthTransitionRatio: ratio,
                 widthTransitionBalance: elDirection ? Number(elDirection.value) : 50,
                 debug: elDebug.checked,
+                experimentalFastRestore: elExperimentalFastRestore.checked,
                 forceArc: elForceArc.checked,
                 enableDRC: elEnableDRC.checked,
                 drcIgnoreCopperPour: elDrcIgnoreCopperPour.checked,
@@ -1731,7 +1757,7 @@
         bindShortcutInput(elShortcutUndoOperation);
         bindShortcutInput(elShortcutCreateSnapshot);
 
-        [elSyncWidth, elProtectPadAndViaNodes, elProtectDifferentialAndEqualLength, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
+        [elSyncWidth, elExperimentalFastRestore, elProtectPadAndViaNodes, elProtectDifferentialAndEqualLength, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
             if (el) el.addEventListener('change', () => saveSettings());
         });
         if (elDebug) {

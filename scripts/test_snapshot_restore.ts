@@ -45,6 +45,7 @@ async function main() {
 		isSnapshotHostNormalizedEquivalent,
 		isSnapshotGeometryIdentical,
 		restoreSnapshot,
+		runWithPcbCalculationSuspension,
 		verifySnapshotStateStable,
 	} = await import('../src/lib/snapshot');
 
@@ -291,6 +292,7 @@ async function main() {
 	const fullRestoreLiveIds = new Set(['current-a', 'current-b']);
 	const fullRestoreLiveArcIds = new Set(['current-arc']);
 	let injectedReassignedArc = false;
+	let fastIdReads = 0;
 	(globalThis as any).eda.pcb_PrimitiveLine = {
 		delete: async (ids: string[]) => {
 			fullRestoreEvents.push(`delete-lines:${ids.sort().join(',')}`);
@@ -301,6 +303,10 @@ async function main() {
 				fullRestoreLiveArcIds.add('reassigned-arc');
 			}
 			return true;
+		},
+		getAllPrimitiveId: async () => {
+			fastIdReads++;
+			return Array.from(fullRestoreLiveIds);
 		},
 		getAll: async () => Array.from(fullRestoreLiveIds, makeLine),
 		create: async () => {
@@ -315,6 +321,10 @@ async function main() {
 			for (const id of ids)
 				fullRestoreLiveArcIds.delete(id);
 			return true;
+		},
+		getAllPrimitiveId: async () => {
+			fastIdReads++;
+			return Array.from(fullRestoreLiveArcIds);
 		},
 		getAll: async () => Array.from(fullRestoreLiveArcIds, makeArc),
 		create: async () => undefined,
@@ -331,6 +341,7 @@ async function main() {
 			],
 			arcs: [{ i: 'current-arc' }],
 		},
+		{ experimentalFastRestore: true },
 	);
 	assert.deepEqual(
 		fullRestoreEvents,
@@ -344,6 +355,60 @@ async function main() {
 	);
 	assert.deepEqual(Array.from(fullRestoreLiveIds), ['restored-line'], '全量恢复必须先清空当前导线再创建目标状态');
 	assert.equal(fullRestoreLiveArcIds.size, 0, '全量恢复不能残留宿主重新编号的圆弧');
+	assert.ok(fastIdReads > 0, '实验性全量恢复应优先使用快速图元 ID 枚举');
+
+	const calculationEvents: string[] = [];
+	(globalThis as any).eda.pcb_Document = {
+		getCalculatingRatlineStatus: async () => {
+			calculationEvents.push('ratline-status');
+			return 'active';
+		},
+		stopCalculatingRatline: async () => {
+			calculationEvents.push('ratline-stop');
+			return true;
+		},
+		startCalculatingRatline: async () => {
+			calculationEvents.push('ratline-start');
+			return true;
+		},
+		getCanvasUpdateCalculationStatus: async () => {
+			calculationEvents.push('canvas-status');
+			return 'active';
+		},
+		stopCanvasUpdateCalculation: async () => {
+			calculationEvents.push('canvas-stop');
+			return true;
+		},
+		startCanvasUpdateCalculation: async () => {
+			calculationEvents.push('canvas-start');
+			return true;
+		},
+		triggerCanvasUpdateCalculation: async () => {
+			calculationEvents.push('canvas-trigger');
+			return true;
+		},
+	};
+	await assert.rejects(
+		runWithPcbCalculationSuspension(true, 'SnapshotRestoreTest', async () => {
+			calculationEvents.push('operation');
+			throw new Error('expected restore failure');
+		}),
+		/expected restore failure/,
+	);
+	assert.deepEqual(
+		calculationEvents,
+		[
+			'ratline-status',
+			'ratline-stop',
+			'canvas-status',
+			'canvas-stop',
+			'operation',
+			'canvas-start',
+			'canvas-trigger',
+			'ratline-start',
+		],
+		'Alpha 恢复即使中途失败也必须恢复画布与飞线计算',
+	);
 
 	let quantizedDeletes = 0;
 	let quantizedCreates = 0;

@@ -30,6 +30,8 @@
 	"段": "Segments",
 	"调试模式": "Debug Mode",
 	"启用调试日志": "Print to log panel",
+	"实验性性能加速": "Experimental Performance Acceleration",
+	"美化和恢复时暂停飞线与画布更新；恢复后尝试批量覆铜，失败自动回退": "Pause ratline/canvas updates during beautify and restore, then try batch copper rebuild after restore, with automatic fallback",
 	"布线状态管理": "Routing Status Management",
 	"手动快照": "Manual Snapshot",
 	"自动快照": "Auto Snapshot",
