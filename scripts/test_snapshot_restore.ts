@@ -15,6 +15,21 @@ function makeLine(id: string) {
 	};
 }
 
+function makeArc(id: string) {
+	return {
+		isAsync: () => false,
+		getState_Net: () => 'GND',
+		getState_Layer: () => 1,
+		getState_PrimitiveId: () => id,
+		getState_StartX: () => 0,
+		getState_StartY: () => 0,
+		getState_EndX: () => 10,
+		getState_EndY: () => 10,
+		getState_ArcAngle: () => 90,
+		getState_LineWidth: () => 1,
+	};
+}
+
 async function main() {
 	(globalThis as any).eda = {
 		sys_Log: { add: () => undefined },
@@ -228,11 +243,17 @@ async function main() {
 
 	const fullRestoreEvents: string[] = [];
 	const fullRestoreLiveIds = new Set(['current-a', 'current-b']);
+	const fullRestoreLiveArcIds = new Set(['current-arc']);
+	let injectedReassignedArc = false;
 	(globalThis as any).eda.pcb_PrimitiveLine = {
 		delete: async (ids: string[]) => {
 			fullRestoreEvents.push(`delete-lines:${ids.sort().join(',')}`);
 			for (const id of ids)
 				fullRestoreLiveIds.delete(id);
+			if (!injectedReassignedArc && fullRestoreLiveArcIds.size === 0) {
+				injectedReassignedArc = true;
+				fullRestoreLiveArcIds.add('reassigned-arc');
+			}
 			return true;
 		},
 		getAll: async () => Array.from(fullRestoreLiveIds, makeLine),
@@ -245,9 +266,11 @@ async function main() {
 	(globalThis as any).eda.pcb_PrimitiveArc = {
 		delete: async (ids: string[]) => {
 			fullRestoreEvents.push(`delete-arcs:${ids.join(',')}`);
+			for (const id of ids)
+				fullRestoreLiveArcIds.delete(id);
 			return true;
 		},
-		getAll: async () => [],
+		getAll: async () => Array.from(fullRestoreLiveArcIds, makeArc),
 		create: async () => undefined,
 	};
 	await applySnapshotFullRestore(
@@ -260,11 +283,21 @@ async function main() {
 				{ ...targetLine, i: 'current-a' },
 				{ ...targetLine, i: 'current-b' },
 			],
-			arcs: [],
+			arcs: [{ i: 'current-arc' }],
 		},
 	);
-	assert.deepEqual(fullRestoreEvents, ['delete-lines:current-a,current-b', 'create-line']);
+	assert.deepEqual(
+		fullRestoreEvents,
+		[
+			'delete-arcs:current-arc',
+			'delete-lines:current-a,current-b',
+			'delete-arcs:reassigned-arc',
+			'create-line',
+		],
+		'宿主删除过程中重新编号的圆弧必须在创建目标状态前再次清空',
+	);
 	assert.deepEqual(Array.from(fullRestoreLiveIds), ['restored-line'], '全量恢复必须先清空当前导线再创建目标状态');
+	assert.equal(fullRestoreLiveArcIds.size, 0, '全量恢复不能残留宿主重新编号的圆弧');
 
 	let quantizedDeletes = 0;
 	let quantizedCreates = 0;

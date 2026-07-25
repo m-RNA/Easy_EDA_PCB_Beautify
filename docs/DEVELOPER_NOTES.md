@@ -291,6 +291,7 @@ Selected and All beautify/width-transition entry points call the high-level wrap
 - Store `restoreStrategy: 'incremental'` on Selected-operation Before snapshots and `restoreStrategy: 'full'` on All-operation Before snapshots.
 - Snapshot geometry deduplication must not reuse an explicit Before snapshot across different operation names or restore strategies. Geometrically identical `Beautify (All) Before` and `Beautify (Selected) Before` states are different undo boundaries.
 - Selected operations use state-diff restore; All operations use authoritative full restore and may accept only verified host-normalized geometric equivalence.
+- Full restore must repeatedly enumerate and delete every live Line and Arc until both APIs report a stable empty board before recreating the target snapshot. Do not rely only on IDs captured before deletion because the host may reassign or expose primitives during mutation.
 
 ## Copper Pour ID Spaces: Three Non-Overlapping Systems
 

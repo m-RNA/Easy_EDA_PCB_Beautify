@@ -7,6 +7,7 @@ const RESTORE_CREATE_CONCURRENCY = 8;
 const RESTORE_CREATE_RETRIES = 3;
 const RESTORE_DELETE_BATCH_SIZES = [200, 50, 1] as const;
 const RESTORE_STABILITY_DELAYS = [100, 250, 500] as const;
+const FULL_RESTORE_CLEAR_MAX_PASSES = 5;
 const SNAPSHOT_GEOMETRY_EPSILON = 0.002;
 const SNAPSHOT_GEOMETRY_BUCKET_SIZE = 0.01;
 const SNAPSHOT_LINE_COVERAGE_EPSILON = 0.003;
@@ -1238,6 +1239,71 @@ async function readCurrentRoutingState(pcbId: string): Promise<RoutingSnapshot> 
 	return state;
 }
 
+async function readLiveRoutingPrimitiveIds() {
+	const arcs = extractPrimitiveData(await eda.pcb_PrimitiveArc.getAll() || [], 'arc');
+	const lines = extractPrimitiveData(await eda.pcb_PrimitiveLine.getAll() || [], 'line');
+	const arcIds = Array.from(new Set(arcs.map(arc => arc.i).filter((id): id is string => typeof id === 'string' && id.length > 0)));
+	const lineIds = Array.from(new Set(lines.map(line => line.i).filter((id): id is string => typeof id === 'string' && id.length > 0)));
+	if (arcIds.length !== arcs.length || lineIds.length !== lines.length) {
+		throw new Error(
+			`全量恢复清空失败：${lines.length - lineIds.length} 条导线/${arcs.length - arcIds.length} 条圆弧缺少可删除的图元 ID`,
+		);
+	}
+	return { arcIds, lineIds };
+}
+
+export async function clearAllRoutingPrimitivesForFullRestore() {
+	let arcsDeleted = 0;
+	let linesDeleted = 0;
+	let deleteArcsMilliseconds = 0;
+	let deleteLinesMilliseconds = 0;
+	let remaining = await readLiveRoutingPrimitiveIds();
+
+	for (let pass = 1; pass <= FULL_RESTORE_CLEAR_MAX_PASSES; pass++) {
+		if (remaining.arcIds.length > 0) {
+			const deleteStartedAt = Date.now();
+			arcsDeleted += await deleteStateDiffPrimitives('arc', eda.pcb_PrimitiveArc, remaining.arcIds);
+			deleteArcsMilliseconds += Date.now() - deleteStartedAt;
+		}
+		if (remaining.lineIds.length > 0) {
+			const deleteStartedAt = Date.now();
+			linesDeleted += await deleteStateDiffPrimitives('line', eda.pcb_PrimitiveLine, remaining.lineIds);
+			deleteLinesMilliseconds += Date.now() - deleteStartedAt;
+		}
+
+		remaining = await readLiveRoutingPrimitiveIds();
+		if (remaining.lineIds.length === 0 && remaining.arcIds.length === 0) {
+			let stable = true;
+			for (const delayMilliseconds of RESTORE_STABILITY_DELAYS) {
+				await new Promise(resolve => setTimeout(resolve, delayMilliseconds));
+				remaining = await readLiveRoutingPrimitiveIds();
+				if (remaining.lineIds.length > 0 || remaining.arcIds.length > 0) {
+					stable = false;
+					break;
+				}
+			}
+			if (stable) {
+				return {
+					arcsDeleted,
+					linesDeleted,
+					passes: pass,
+					deleteArcsMilliseconds,
+					deleteLinesMilliseconds,
+				};
+			}
+		}
+
+		debugWarn(
+			`[SnapshotRestore] full clear pass ${pass}: ${remaining.lineIds.length} lines/${remaining.arcIds.length} arcs remain`,
+			'Snapshot',
+		);
+	}
+
+	throw new Error(
+		`全量恢复清空失败：经过 ${FULL_RESTORE_CLEAR_MAX_PASSES} 轮后仍有 ${remaining.lineIds.length} 条导线/${remaining.arcIds.length} 条圆弧`,
+	);
+}
+
 export async function verifySnapshotStateStable(snapshot: RoutingSnapshot, pcbId: string) {
 	let state = await readCurrentRoutingState(pcbId);
 	if (!isSnapshotGeometryIdentical(snapshot, state))
@@ -1276,14 +1342,8 @@ export async function applySnapshotStateDiff(snapshot: RoutingSnapshot, currentS
 
 export async function applySnapshotFullRestore(snapshot: RoutingSnapshot, currentState: RoutingSnapshot) {
 	const startedAt = Date.now();
-	const arcIds = currentState.arcs.map(arc => arc.i || arc.id).filter((id): id is string => typeof id === 'string');
-	const lineIds = currentState.lines.map(line => line.i || line.id).filter((id): id is string => typeof id === 'string');
-	if (arcIds.length > 0)
-		await deleteStateDiffPrimitives('arc', eda.pcb_PrimitiveArc, arcIds);
-	const arcsDeletedAt = Date.now();
-	if (lineIds.length > 0)
-		await deleteStateDiffPrimitives('line', eda.pcb_PrimitiveLine, lineIds);
-	const linesDeletedAt = Date.now();
+	const clearResult = await clearAllRoutingPrimitivesForFullRestore();
+	const clearedAt = Date.now();
 	const emptyState: RoutingSnapshot = {
 		id: 0,
 		name: 'Empty Full Restore State',
@@ -1298,12 +1358,13 @@ export async function applySnapshotFullRestore(snapshot: RoutingSnapshot, curren
 	const arcResult = await applyStateDiff('arc', snapshot.arcs, emptyState.arcs);
 	const arcsCreatedAt = Date.now();
 	return {
-		lineRes: { ...lineResult, deleted: lineIds.length },
-		arcRes: { ...arcResult, deleted: arcIds.length },
+		lineRes: { ...lineResult, deleted: clearResult.linesDeleted },
+		arcRes: { ...arcResult, deleted: clearResult.arcsDeleted },
 		phaseTimings: {
-			deleteArcs: arcsDeletedAt - startedAt,
-			deleteLines: linesDeletedAt - arcsDeletedAt,
-			createLines: linesCreatedAt - linesDeletedAt,
+			deleteArcs: clearResult.deleteArcsMilliseconds,
+			deleteLines: clearResult.deleteLinesMilliseconds,
+			verifyEmpty: clearedAt - startedAt - clearResult.deleteArcsMilliseconds - clearResult.deleteLinesMilliseconds,
+			createLines: linesCreatedAt - clearedAt,
 			createArcs: arcsCreatedAt - linesCreatedAt,
 		},
 	};
@@ -1373,7 +1434,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		const arcRes = initialResult.arcRes;
 		const restoreMode = restoreStrategy;
 		const phaseTimings = 'phaseTimings' in initialResult
-			? initialResult.phaseTimings as { deleteArcs: number; deleteLines: number; createLines: number; createArcs: number }
+			? initialResult.phaseTimings as { deleteArcs: number; deleteLines: number; verifyEmpty: number; createLines: number; createArcs: number }
 			: undefined;
 		const mutationFinishedAt = Date.now();
 
@@ -1404,7 +1465,7 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 			);
 		}
 		logPerformance(
-			`[SnapshotRestore] result=${normalizedEquivalent ? 'verified-normalized' : 'verified'} mode=${restoreMode} lines-created=${lineRes.created} lines-deleted=${lineRes.deleted} arcs-created=${arcRes.created} arcs-deleted=${arcRes.deleted} mutation=${mutationFinishedAt - restoreStartedAt}ms verify=${Date.now() - mutationFinishedAt}ms${phaseTimings ? ` delete-arcs=${phaseTimings.deleteArcs}ms delete-lines=${phaseTimings.deleteLines}ms create-lines=${phaseTimings.createLines}ms create-arcs=${phaseTimings.createArcs}ms` : ''}`,
+			`[SnapshotRestore] result=${normalizedEquivalent ? 'verified-normalized' : 'verified'} mode=${restoreMode} lines-created=${lineRes.created} lines-deleted=${lineRes.deleted} arcs-created=${arcRes.created} arcs-deleted=${arcRes.deleted} mutation=${mutationFinishedAt - restoreStartedAt}ms verify=${Date.now() - mutationFinishedAt}ms${phaseTimings ? ` delete-arcs=${phaseTimings.deleteArcs}ms delete-lines=${phaseTimings.deleteLines}ms verify-empty=${phaseTimings.verifyEmpty}ms create-lines=${phaseTimings.createLines}ms create-arcs=${phaseTimings.createArcs}ms` : ''}`,
 		);
 
 		if (showToast && eda.sys_Message) {
