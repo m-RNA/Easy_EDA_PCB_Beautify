@@ -12,7 +12,7 @@ async function main() {
 	assert.equal(defaults.cornerRadiusRatio, 10, '圆角半径比率默认应为 10x');
 	assert.equal(defaults.drcRetryCount, 60, 'DRC 最大调整轮数默认应为 60');
 	assert.equal(defaults.copperPourRebuildLimit, 30, '自动重铺覆铜上限默认应为 30 块');
-	assert.equal(defaults.experimentalFastRestore, false, '实验性性能加速默认必须关闭');
+	assert.equal(defaults.experimentalFastRestore, true, '实验性性能加速默认必须开启');
 
 	assert.deepEqual(normalizeShortcutKeys(['SHIFT', 'q']), ['Shift', 'Q']);
 	assert.deepEqual(normalizeShortcutKeys(['CONTROL', 'SHIFT', 'q']), ['Ctrl', 'Shift', 'Q']);

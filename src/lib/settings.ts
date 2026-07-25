@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	protectPadAndViaNodes: true,
 	protectDifferentialAndEqualLength: true,
 	debug: false,
-	experimentalFastRestore: false,
+	experimentalFastRestore: true,
 	forceArc: true,
 	enableDRC: true,
 	drcIgnoreCopperPour: true, // 默认忽略覆铜规则（覆铜重铺后通常会自动解决）

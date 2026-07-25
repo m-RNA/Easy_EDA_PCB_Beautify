@@ -303,7 +303,7 @@ Selected and All beautify/width-transition entry points call the smart wrapper, 
 
 Production safety rules:
 
-- Keep the experiment behind the default-off `experimentalFastRestore` setting. Alpha APIs may be unavailable to a production extension even when present in the type package.
+- Keep the experiment behind the default-on `experimentalFastRestore` setting so users can still disable it. Alpha APIs may be unavailable to a production extension even when present in the type package.
 - Detect every required method at runtime. Unsupported or failed optional calls must fall back to the normal restore path rather than fail the geometry restore.
 - Read the current status before stopping either subsystem, and restart only a subsystem that this extension actually stopped.
 - Resume canvas and ratline calculation from `finally`, including when deletion, creation, or verification throws.

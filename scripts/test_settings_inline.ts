@@ -34,7 +34,7 @@ async function main() {
 		widthTransitionRatio: 5,
 		widthTransitionBalance: 50,
 		debug: false,
-		experimentalFastRestore: false,
+		experimentalFastRestore: true,
 		forceArc: true,
 		enableDRC: true,
 		drcIgnoreCopperPour: true,
@@ -104,10 +104,10 @@ async function main() {
 		assert.equal((dom.window.document.getElementById('drcRetryCount') as HTMLInputElement).value, '60', 'DRC 最大调整轮数默认应为 60');
 		const experimentalFastRestore = dom.window.document.getElementById('experimentalFastRestore') as HTMLInputElement | null;
 		assert.ok(experimentalFastRestore, '实验性性能加速开关应存在');
-		assert.equal(experimentalFastRestore.checked, false, '实验性性能加速默认必须关闭');
-		experimentalFastRestore.checked = true;
+		assert.equal(experimentalFastRestore.checked, true, '实验性性能加速默认必须开启');
+		experimentalFastRestore.checked = false;
 		experimentalFastRestore.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-		await waitFor(() => storedSettings.experimentalFastRestore === true, '实验性性能加速设置应能保存');
+		await waitFor(() => storedSettings.experimentalFastRestore === false, '实验性性能加速设置应能关闭并保存');
 		const drcRetryCount = dom.window.document.getElementById('drcRetryCount') as HTMLInputElement;
 		drcRetryCount.value = '12';
 		drcRetryCount.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
