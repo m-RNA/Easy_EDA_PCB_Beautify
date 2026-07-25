@@ -577,7 +577,7 @@
                 </div>
                 <div class="setting-control">
                     <div class="input-group">
-                        <input type="text" id="cornerRadiusRatio" data-min="1" data-max="20" data-step="0.5" value="5.0">
+                        <input type="text" id="cornerRadiusRatio" data-min="1" data-max="20" data-step="0.5" value="10.0">
                         <span class="addon">X</span>
                     </div>
                 </div>
@@ -700,7 +700,7 @@
                 </div>
                 <div class="setting-control">
                     <div class="input-group">
-                        <input type="text" id="drcRetryCount" data-min="1" data-max="100" data-step="1" value="30">
+                        <input type="text" id="drcRetryCount" data-min="1" data-max="100" data-step="1" value="60">
                         <span class="addon" data-i18n="轮">轮</span>
                     </div>
                 </div>
@@ -1253,7 +1253,7 @@
                 if (elEnableDRC) elEnableDRC.checked = config.enableDRC !== undefined ? config.enableDRC : false;
                 if (elDrcIgnoreCopperPour) elDrcIgnoreCopperPour.checked = config.drcIgnoreCopperPour !== undefined ? config.drcIgnoreCopperPour : true;
                 if (elDrcRetryCount) {
-                    elDrcRetryCount.value = config.drcRetryCount !== undefined ? config.drcRetryCount : 30;
+                    elDrcRetryCount.value = config.drcRetryCount !== undefined ? config.drcRetryCount : 60;
                     elDrcRetryCount.setAttribute('data-last-valid', elDrcRetryCount.value);
                 }
                 if (elRebuildCopperPour) elRebuildCopperPour.checked = config.rebuildCopperPourAfterBeautify !== undefined ? config.rebuildCopperPourAfterBeautify : true;
@@ -1330,7 +1330,7 @@
 
             let drcRetryCount = Number.parseInt(elDrcRetryCount.value);
             if (Number.isNaN(drcRetryCount) || drcRetryCount < 1)
-                drcRetryCount = DEFAULT_CONFIG.drcRetryCount || 30;
+                drcRetryCount = DEFAULT_CONFIG.drcRetryCount || 60;
 
             // 获取当前卡片顺序和折叠状态
             const container = document.getElementById('cardContainer');

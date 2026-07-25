@@ -36,7 +36,7 @@ Get-Content -Raw -Encoding UTF8 .\path\to\file.txt
 - Selected 操作使用增量恢复，All 操作使用全量恢复；几何相同但操作范围或恢复策略不同的 Before 快照不能互相复用。
 - DRC 结果只能按对象类型字段识别覆铜问题，不能通过 `ruleName` 中宽泛的 `copper` 关键字过滤。
 - DRC 修复每轮对同一路径圆角最多推进一次，最后一次实际调整后还要再执行一次验证检查；API 调用失败不能视为通过。
-- 当前生产默认值：DRC 最大调整 `30` 轮，自动重铺上限 `30` 块覆铜区域。设置页、后端回退值、迁移、测试和文档必须同步。
+- 当前生产默认值：圆角半径比率 `10x`、DRC 最大调整 `60` 轮、自动重铺上限 `30` 块覆铜区域。设置页、后端回退值、迁移、测试和文档必须同步。
 - 覆铜边界、生成填充和 DRC 内部对象属于不同 ID 空间。智能重铺按 DRC 层号筛选 Pour，不按对象 ID 强行关联。
 - 快捷键运行时修饰键格式为 `Ctrl`、`Shift`、`Alt`，普通键和 F 键使用大写。不要将类型声明中的全大写修饰键直接传给运行时。
 - 宿主 V3.2.148 不可靠支持 `Shift + F-key`，也不可靠区分基础键与其修饰键超集；默认使用已验证的 `F6`、`F9`、`Ctrl + Shift + Z`。
@@ -65,6 +65,7 @@ git diff --check
 npm run test:geometry
 npm run test:topology
 npm run test:drc-repair
+npm run test:copper-rebuild
 npm run test:snapshot-restore
 npm run test:settings-inline
 npm run test:manifest

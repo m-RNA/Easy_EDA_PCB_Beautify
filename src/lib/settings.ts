@@ -30,7 +30,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	widthTransitionRatio: 5.0, // 过渡长度 = 线宽差 * 5
 	widthTransitionSegments: 25,
 	widthTransitionBalance: 50, // 中间位置= 50%
-	cornerRadiusRatio: 5.0, // 默认半径是线宽的5倍
+	cornerRadiusRatio: 10.0, // 默认半径是线宽的10倍
 	protectPadAndViaNodes: true,
 	protectDifferentialAndEqualLength: true,
 	debug: false,
@@ -39,7 +39,7 @@ const DEFAULT_SETTINGS: BeautifySettings = {
 	drcIgnoreCopperPour: true, // 默认忽略覆铜规则（覆铜重铺后通常会自动解决）
 	rebuildCopperPourAfterBeautify: true, // 默认在操作完成后智能重铺相关覆铜区域
 	copperPourRebuildLimit: 30,
-	drcRetryCount: 30, // 中大型板可能分批暴露违规，允许更多轮收敛
+	drcRetryCount: 60, // 中大型板可能分批暴露违规，允许更多轮收敛
 	cardOrder: ['card-transition', 'card-drc', 'card-shortcut', 'card-advanced', 'card-snapshot'],
 	collapsedStates: {
 		'card-drc': true, // 默认收起DRC设置
@@ -91,9 +91,14 @@ export async function getSettings(): Promise<BeautifySettings> {
 			};
 			shouldPersistMigration = true;
 		}
-		// 4 和 10 均为历史默认值，迁移到新的 30 轮默认值。
-		if (configs?.drcRetryCount === 4 || configs?.drcRetryCount === 10) {
-			configs.drcRetryCount = 30;
+		// 4、10 和 30 均为历史默认值，迁移到新的 60 轮默认值。
+		if (configs?.drcRetryCount === 4 || configs?.drcRetryCount === 10 || configs?.drcRetryCount === 30) {
+			configs.drcRetryCount = 60;
+			shouldPersistMigration = true;
+		}
+		// 5 是历史圆角半径比率默认值。
+		if (configs?.cornerRadiusRatio === 5) {
+			configs.cornerRadiusRatio = 10;
 			shouldPersistMigration = true;
 		}
 		// 10 是旧版自动重铺覆铜上限的默认值。

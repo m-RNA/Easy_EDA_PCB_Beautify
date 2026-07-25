@@ -26,7 +26,7 @@ async function main() {
 	let diagnoseCalls = 0;
 	const runtimeErrors: unknown[] = [];
 	const defaults = {
-		cornerRadiusRatio: 5,
+		cornerRadiusRatio: 10,
 		protectPadAndViaNodes: true,
 		protectDifferentialAndEqualLength: true,
 		syncWidthTransition: false,
@@ -37,7 +37,7 @@ async function main() {
 		forceArc: true,
 		enableDRC: true,
 		drcIgnoreCopperPour: true,
-		drcRetryCount: 30,
+		drcRetryCount: 60,
 		rebuildCopperPourAfterBeautify: true,
 		copperPourRebuildLimit: 30,
 		cardOrder: ['card-transition', 'card-drc', 'card-shortcut', 'card-advanced', 'card-snapshot'],
@@ -97,10 +97,10 @@ async function main() {
 		);
 		await delay(30);
 		assert.deepEqual(runtimeErrors, [], '设置页初始化不应产生运行时异常');
-		assert.equal((dom.window.document.getElementById('cornerRadiusRatio') as HTMLInputElement).value, '5', '圆角半径默认值应为 5x');
+		assert.equal((dom.window.document.getElementById('cornerRadiusRatio') as HTMLInputElement).value, '10', '圆角半径默认值应为 10x');
 		assert.equal((dom.window.document.getElementById('widthTransitionRatio') as HTMLInputElement).value, '5', '线宽过渡默认值应为 5x');
 		assert.equal((dom.window.document.getElementById('copperPourRebuildLimit') as HTMLInputElement).value, '30', '自动重铺上限默认应为 30 块覆铜区域');
-		assert.equal((dom.window.document.getElementById('drcRetryCount') as HTMLInputElement).value, '30', 'DRC 最大调整轮数默认应为 30');
+		assert.equal((dom.window.document.getElementById('drcRetryCount') as HTMLInputElement).value, '60', 'DRC 最大调整轮数默认应为 60');
 		const drcRetryCount = dom.window.document.getElementById('drcRetryCount') as HTMLInputElement;
 		drcRetryCount.value = '12';
 		drcRetryCount.dispatchEvent(new dom.window.Event('change', { bubbles: true }));

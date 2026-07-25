@@ -9,7 +9,8 @@ async function main() {
 	assert.deepEqual(defaults.shortcutKeys.beautifySelected, ['F6']);
 	assert.deepEqual(defaults.shortcutKeys.beautifyAll, ['F9']);
 	assert.deepEqual(defaults.shortcutKeys.undo, ['Ctrl', 'Shift', 'Z']);
-	assert.equal(defaults.drcRetryCount, 30, 'DRC 最大调整轮数默认应为 30');
+	assert.equal(defaults.cornerRadiusRatio, 10, '圆角半径比率默认应为 10x');
+	assert.equal(defaults.drcRetryCount, 60, 'DRC 最大调整轮数默认应为 60');
 	assert.equal(defaults.copperPourRebuildLimit, 30, '自动重铺覆铜上限默认应为 30 块');
 
 	assert.deepEqual(normalizeShortcutKeys(['SHIFT', 'q']), ['Shift', 'Q']);
@@ -22,6 +23,7 @@ async function main() {
 	let unregisterCalls = 0;
 	let conflictMessages = 0;
 	let storedConfig: Record<string, any> = {
+		cornerRadiusRatio: 5,
 		drcRetryCount: 10,
 		copperPourRebuildLimit: 10,
 		shortcutKeys: {
@@ -65,11 +67,14 @@ async function main() {
 	assert.deepEqual(storedConfig.shortcutKeys.beautifySelected, ['F6'], '应迁移旧版选中圆滑默认键');
 	assert.deepEqual(storedConfig.shortcutKeys.beautifyAll, ['F9'], '应迁移旧版全部圆滑默认键');
 	assert.deepEqual(storedConfig.shortcutKeys.undo, ['Ctrl', 'Shift', 'Z'], '迁移不应改动撤销键');
-	assert.equal(storedConfig.drcRetryCount, 30, '应将旧版 DRC 默认值 10 迁移为 30');
+	assert.equal(storedConfig.cornerRadiusRatio, 10, '应将旧版圆角半径默认值 5x 迁移为 10x');
+	assert.equal(storedConfig.drcRetryCount, 60, '应将旧版 DRC 默认值 10 迁移为 60');
 	assert.equal(storedConfig.copperPourRebuildLimit, 30, '应将旧版覆铜上限默认值 10 迁移为 30');
+	storedConfig.cornerRadiusRatio = 7;
 	storedConfig.drcRetryCount = 12;
 	storedConfig.copperPourRebuildLimit = 12;
 	await getSettings();
+	assert.equal(storedConfig.cornerRadiusRatio, 7, '不应覆盖用户自定义的圆角半径比率');
 	assert.equal(storedConfig.drcRetryCount, 12, '不应覆盖用户自定义的 DRC 轮数');
 	assert.equal(storedConfig.copperPourRebuildLimit, 12, '不应覆盖用户自定义的覆铜上限');
 	storedConfig.shortcutKeys.beautifySelected = ['Shift', 'F9'];
