@@ -18,7 +18,16 @@ async function waitFor(predicate: () => boolean, message: string) {
 async function main() {
 	const settingsPath = path.resolve(process.cwd(), 'iframe/settings.html');
 	const html = fs.readFileSync(settingsPath, 'utf8');
-	for (const removedName of ['elMergeTransitionSegments', 'mergeTransitionSegments'])
+	for (const removedName of [
+		'elMergeTransitionSegments',
+		'mergeTransitionSegments',
+		'elSyncWidth',
+		'syncWidthLabel',
+		'syncWidthTransition',
+		'elProtectPadAndViaNodes',
+		'protectPadAndViaNodesLabel',
+		'protectPadAndViaNodes',
+	])
 		assert.equal(html.includes(removedName), false, `已移除的设置变量仍被引用: ${removedName}`);
 
 	let storedSettings: Record<string, any> = {};
@@ -27,9 +36,7 @@ async function main() {
 	const runtimeErrors: unknown[] = [];
 	const defaults = {
 		cornerRadiusRatio: 10,
-		protectPadAndViaNodes: true,
 		protectDifferentialAndEqualLength: true,
-		syncWidthTransition: false,
 		widthTransitionSegments: 3,
 		widthTransitionRatio: 5,
 		widthTransitionBalance: 50,

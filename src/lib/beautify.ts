@@ -10,7 +10,6 @@ import { dist, getAngleBetween, lerp } from './math';
 import { buildNodeDegreeIndex, isProtectedRouteNode, isRouteJunction, loadBoardTopologySegments, loadElectricalAnchorIndex, makePointKey } from './routeTopology';
 import { getSettings } from './settings';
 import { createSnapshot, restoreSnapshot, runWithPcbCalculationSuspension } from './snapshot';
-import { addWidthTransitionsAll } from './widthTransition';
 
 /**
  * 获取基于几何信息的圆弧线宽 Map（单一数据源）
@@ -676,15 +675,12 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 		for (const warning of topologyResult.warnings)
 			debugWarn(`[RouteTopology] ${warning}`);
 
-		let protectedAnchorKeys = new Set<string>();
-		if (settings.protectPadAndViaNodes) {
-			const anchorResult = await loadElectricalAnchorIndex(eda as any);
-			protectedAnchorKeys = anchorResult.anchorKeys;
-			if (anchorResult.warnings.length > 0) {
-				for (const warning of new Set(anchorResult.warnings))
-					debugWarn(`[RouteAnchor] ${warning}`);
-				eda.sys_Message?.showToastMessage('部分焊盘或过孔读取失败，已按现有拓扑继续圆滑', 'warn' as any, 3);
-			}
+		const anchorResult = await loadElectricalAnchorIndex(eda as any);
+		const protectedAnchorKeys = anchorResult.anchorKeys;
+		if (anchorResult.warnings.length > 0) {
+			for (const warning of new Set(anchorResult.warnings))
+				debugWarn(`[RouteAnchor] ${warning}`);
+			eda.sys_Message?.showToastMessage('部分焊盘或过孔读取失败，已按现有拓扑继续圆滑', 'warn' as any, 3);
 		}
 
 		const protectedGroups = await loadProtectedNetGroups(settings);
@@ -829,18 +825,16 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 
 				if (points.length >= 3) {
 					const protectedAnchorCorners = new Set<number>();
-					if (settings.protectPadAndViaNodes) {
-						for (let index = 1; index < points.length - 1; index++) {
-							if (isProtectedRouteNode(
-								net,
-								layer,
-								points[index],
-								nodeDegreeIndex,
-								protectedAnchorKeys,
-								true,
-							)) {
-								protectedAnchorCorners.add(index);
-							}
+					for (let index = 1; index < points.length - 1; index++) {
+						if (isProtectedRouteNode(
+							net,
+							layer,
+							points[index],
+							nodeDegreeIndex,
+							protectedAnchorKeys,
+							true,
+						)) {
+							protectedAnchorCorners.add(index);
 						}
 					}
 
@@ -1142,14 +1136,6 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 					);
 				}
 				markPerf('verify-output');
-
-				// 结束
-				if (settings.syncWidthTransition) {
-					// 在 Beautify 流程中调用，不需要额外快照（Beautify 已创建）
-					await addWidthTransitionsAll(false);
-					latestCopperViolation = undefined;
-					markPerf('width-transition');
-				}
 			},
 		);
 

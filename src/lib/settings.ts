@@ -1,10 +1,8 @@
 export interface BeautifySettings {
-	syncWidthTransition: boolean; // 平滑时同步处理线宽过渡
 	widthTransitionRatio: number; // 线宽过渡长度系数 (长度 = 线宽差值 * 比率)
 	widthTransitionSegments: number; // 线宽过渡分段数
 	widthTransitionBalance: number; // 过渡区位置平衡 0-100%: 0=全部向窄线, 100=全部向宽线
 	cornerRadiusRatio: number; // 圆角半径与线宽的比率 (半径 = 线宽 * 比率)
-	protectPadAndViaNodes: boolean; // 保护焊盘和过孔中心节点，避免圆滑后断连
 	protectDifferentialAndEqualLength: boolean; // 保护差分对/等长组，使用同心圆弧或保守跳过
 	debug: boolean; // 调试模式
 	experimentalFastRestore: boolean; // 实验性操作加速：暂停飞线/画布计算，并尝试批量覆铜
@@ -27,12 +25,10 @@ export interface BeautifySettings {
 }
 
 const DEFAULT_SETTINGS: BeautifySettings = {
-	syncWidthTransition: false,
 	widthTransitionRatio: 5.0, // 过渡长度 = 线宽差 * 5
 	widthTransitionSegments: 25,
 	widthTransitionBalance: 50, // 中间位置= 50%
 	cornerRadiusRatio: 10.0, // 默认半径是线宽的10倍
-	protectPadAndViaNodes: true,
 	protectDifferentialAndEqualLength: true,
 	debug: false,
 	experimentalFastRestore: true,

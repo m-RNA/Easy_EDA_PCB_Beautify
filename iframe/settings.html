@@ -802,23 +802,6 @@
         </div>
 
         <div class="card-content">
-            <!-- Pad / Via Node Protection -->
-            <div class="setting-item">
-                <div class="setting-info">
-                    <div class="setting-label" data-i18n="保护焊盘/过孔节点">保护焊盘/过孔节点</div>
-                    <div class="setting-desc" data-i18n="保持焊盘和过孔中心处的连接原样，避免圆滑后断连">保持焊盘和过孔中心处的连接原样，避免圆滑后断连</div>
-                </div>
-                <div class="setting-control">
-                    <div class="switch-container">
-                        <label class="switch">
-                            <input type="checkbox" id="protectPadAndViaNodes" checked>
-                            <span class="slider"></span>
-                        </label>
-                        <span class="switch-label" id="protectPadAndViaNodesLabel" data-i18n="启用">启用</span>
-                    </div>
-                </div>
-            </div>
-
             <!-- Protected Length Groups -->
             <div class="setting-item">
                 <div class="setting-info">
@@ -855,23 +838,6 @@
                             <span class="slider"></span>
                         </label>
                         <span class="switch-label" id="forceArcLabel" data-i18n="启用">启用</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Sync Width -->
-            <div class="setting-item">
-                <div class="setting-info">
-                    <div class="setting-label" data-i18n="同步线宽过渡">同步线宽过渡</div>
-                    <div class="setting-desc" data-i18n="圆滑后处理线宽突变处">圆滑后处理线宽突变处</div>
-                </div>
-                <div class="setting-control">
-                    <div class="switch-container">
-                        <label class="switch">
-                            <input type="checkbox" id="syncWidthTransition">
-                            <span class="slider"></span>
-                        </label>
-                        <span class="switch-label" id="syncWidthLabel" data-i18n="启用">启用</span>
                     </div>
                 </div>
             </div>
@@ -1160,14 +1126,12 @@
 
         // Elements
         const elCornerRadiusRatio = document.getElementById('cornerRadiusRatio');
-        const elSyncWidth = document.getElementById('syncWidthTransition');
         const elSegments = document.getElementById('widthTransitionSegments');
         const elRatio = document.getElementById('widthTransitionRatio');
         const elDirection = document.getElementById('widthTransitionBalance');
         const elDebug = document.getElementById('debug');
         const elExperimentalFastRestore = document.getElementById('experimentalFastRestore');
         const elForceArc = document.getElementById('forceArc');
-        const elProtectPadAndViaNodes = document.getElementById('protectPadAndViaNodes');
         const elProtectDifferentialAndEqualLength = document.getElementById('protectDifferentialAndEqualLength');
         const elEnableDRC = document.getElementById('enableDRC');
         const elDrcIgnoreCopperPour = document.getElementById('drcIgnoreCopperPour');
@@ -1184,11 +1148,9 @@
         const elShortcutCreateSnapshot = document.getElementById('shortcutCreateSnapshot');
 
         // I18n labels update
-        const elSyncWidthLabel = document.getElementById('syncWidthLabel');
         const elDebugLabel = document.getElementById('debugLabel');
         const elExperimentalFastRestoreLabel = document.getElementById('experimentalFastRestoreLabel');
         const elForceArcLabel = document.getElementById('forceArcLabel');
-        const elProtectPadAndViaNodesLabel = document.getElementById('protectPadAndViaNodesLabel');
         const elProtectDifferentialAndEqualLengthLabel = document.getElementById('protectDifferentialAndEqualLengthLabel');
         const elEnableDRCLabel = document.getElementById('enableDRCLabel');
         const elDrcIgnoreCopperPourLabel = document.getElementById('drcIgnoreCopperPourLabel');
@@ -1202,10 +1164,8 @@
             const enabledText = (api && api.sys_I18n) ? api.sys_I18n.text('启用') : '启用';
             const disabledText = (api && api.sys_I18n) ? api.sys_I18n.text('禁用') : '禁用';
 
-            elSyncWidthLabel.textContent = elSyncWidth.checked ? enabledText : disabledText;
             elDebugLabel.textContent = elDebug.checked ? enabledText : disabledText;
             elExperimentalFastRestoreLabel.textContent = elExperimentalFastRestore.checked ? enabledText : disabledText;
-            elProtectPadAndViaNodesLabel.textContent = elProtectPadAndViaNodes.checked ? enabledText : disabledText;
             elProtectDifferentialAndEqualLengthLabel.textContent = elProtectDifferentialAndEqualLength.checked ? enabledText : disabledText;
             elForceArcLabel.textContent = elForceArc.checked ? enabledText : disabledText;
             elEnableDRCLabel.textContent = elEnableDRC.checked ? enabledText : disabledText;
@@ -1213,10 +1173,8 @@
             elRebuildCopperPourLabel.textContent = elRebuildCopperPour.checked ? enabledText : disabledText;
 
             // Visual feedback color for label
-            elSyncWidthLabel.style.color = elSyncWidth.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elDebugLabel.style.color = elDebug.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elExperimentalFastRestoreLabel.style.color = elExperimentalFastRestore.checked ? 'var(--primary)' : 'var(--text-secondary)';
-            elProtectPadAndViaNodesLabel.style.color = elProtectPadAndViaNodes.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elProtectDifferentialAndEqualLengthLabel.style.color = elProtectDifferentialAndEqualLength.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elForceArcLabel.style.color = elForceArc.checked ? 'var(--primary)' : 'var(--text-secondary)';
             elEnableDRCLabel.style.color = elEnableDRC.checked ? 'var(--primary)' : 'var(--text-secondary)';
@@ -1253,10 +1211,7 @@
                     elCornerRadiusRatio.setAttribute('data-last-valid', config.cornerRadiusRatio);
                 }
 
-                if (elProtectPadAndViaNodes) elProtectPadAndViaNodes.checked = config.protectPadAndViaNodes !== undefined ? config.protectPadAndViaNodes : true;
                 if (elProtectDifferentialAndEqualLength) elProtectDifferentialAndEqualLength.checked = config.protectDifferentialAndEqualLength !== undefined ? config.protectDifferentialAndEqualLength : true;
-                if (elSyncWidth) elSyncWidth.checked = config.syncWidthTransition;
-
                 if (elSegments) {
                     elSegments.value = config.widthTransitionSegments;
                     elSegments.setAttribute('data-last-valid', config.widthTransitionSegments);
@@ -1370,9 +1325,7 @@
 
             const settings = {
                 cornerRadiusRatio: radiusRatio,
-                protectPadAndViaNodes: elProtectPadAndViaNodes.checked,
                 protectDifferentialAndEqualLength: elProtectDifferentialAndEqualLength.checked,
-                syncWidthTransition: elSyncWidth.checked,
                 widthTransitionSegments: segments,
                 widthTransitionRatio: ratio,
                 widthTransitionBalance: elDirection ? Number(elDirection.value) : 50,
@@ -1757,7 +1710,7 @@
         bindShortcutInput(elShortcutUndoOperation);
         bindShortcutInput(elShortcutCreateSnapshot);
 
-        [elSyncWidth, elExperimentalFastRestore, elProtectPadAndViaNodes, elProtectDifferentialAndEqualLength, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
+        [elExperimentalFastRestore, elProtectDifferentialAndEqualLength, elForceArc, elEnableDRC, elDrcIgnoreCopperPour, elRebuildCopperPour].forEach((el) => {
             if (el) el.addEventListener('change', () => saveSettings());
         });
         if (elDebug) {
