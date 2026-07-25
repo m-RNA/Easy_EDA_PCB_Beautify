@@ -299,20 +299,31 @@ Selected and All beautify/width-transition entry points call the smart wrapper, 
 
 ## Experimental Mutation Acceleration
 
-`@jlceda/pro-api-types` `0.3.11` exposes `PCB_Document.stopCanvasUpdateCalculation()`, `startCanvasUpdateCalculation()`, `getCanvasUpdateCalculationStatus()`, and `triggerCanvasUpdateCalculation()` as Alpha APIs. It also exposes `PCB_PrimitivePour.rebuildCopperRegions()` for rebuilding multiple or all copper regions in one call. The current host also exposes the ratline calculation status/start/stop APIs.
+`@jlceda/pro-api-types` `0.3.11` exposes `PCB_Document.stopCanvasUpdateCalculation()`, `startCanvasUpdateCalculation()`, `getCanvasUpdateCalculationStatus()`, and `triggerCanvasUpdateCalculation()` as Alpha APIs. It also exposes `PCB_PrimitivePour.rebuildCopperRegions()` for rebuilding multiple or all copper regions in one call. The current host also exposes the ratline calculation status/start/stop APIs. Canvas suspension remains implemented but is hard-disabled by `ENABLE_EXPERIMENTAL_CANVAS_SUSPENSION = false` until it has been validated in the host.
 
 Production safety rules:
 
 - Keep the experiment behind the default-on `experimentalFastRestore` setting so users can still disable it. Alpha APIs may be unavailable to a production extension even when present in the type package.
 - Detect every required method at runtime. Unsupported or failed optional calls must fall back to the normal restore path rather than fail the geometry restore.
-- Read the current status before stopping either subsystem, and restart only a subsystem that this extension actually stopped.
-- Resume canvas and ratline calculation from `finally`, including when deletion, creation, or verification throws.
-- Beautify suspends calculations only after the Before snapshot and path analysis. Keep deletion, initial redraw, DRC repair redraws, output verification, and optional synchronized width transition inside the guard; resume before the After snapshot, copper post-processing, final DRC, or rollback.
+- Read the current ratline status before stopping it, and restart it only when this extension actually stopped it.
+- Resume ratline calculation from `finally`, including when deletion, creation, or verification throws. Keep the equivalent canvas resume path intact while canvas suspension is hard-disabled.
+- Beautify suspends ratline calculation only after the Before snapshot and path analysis. Keep deletion, initial redraw, DRC repair redraws, and output verification inside the guard; resume before the After snapshot, copper post-processing, final DRC, or rollback.
 - `getAllPrimitiveId()` may accelerate deletion-loop enumeration, but a stable-empty decision must still be confirmed with full `getAll()` reads.
 - Restore may try `PCB_PrimitivePour.rebuildCopperRegions()` once after geometry verification. Keep the existing per-pour `rebuildCopperRegion()` loop as the runtime fallback and preserve the configured copper-region count limit.
 - Restore and undo must run one final DRC check after copper rebuilding and before the After snapshot or completion toast. Show a progress toast when this final check starts. A failed check or remaining violations must produce a terminal warning instead of a success message.
 - Do not use `PCB_Document.clearRouting('all')` for snapshot restore. It can clear routing objects outside the Line/Arc snapshot model, including vias.
 - The experiment changes only calculation scheduling and ID enumeration. Full restore still clears all Line/Arc primitives, confirms a stable empty board, recreates the target, and performs the same geometry verification.
+
+### Field Performance Evidence
+
+- Board: a copy of the **Sipeed Lushan Pi Lite K230D CanMV development board** project (“立创·庐山派 Lite-K230D-CanMV 开发板”).
+- Host: JLCEDA Pro `V3.2.148`.
+- Scale: approximately `5276–5278` Line primitives; the beautified state contained approximately `2258–2303` Arc primitives.
+- Comparable full restore direction, from roughly 2300 arcs to 4 arcs:
+  - Alpha enabled: mutation plus verification `13.0s`, copper `7.2s`, After snapshot `0.2s`, total `20.3s`.
+  - Alpha disabled: mutation plus verification `21.9s`, copper `7.0s`, After snapshot `0.2s`, total `29.2s`.
+- The measured total reduction was approximately `30%`; Line creation fell from about `17.4s` to `9.2s`. Ratline suspension and fast ID enumeration were enabled together, so the data does not isolate either API's individual contribution.
+- Beautify was also observed at `85.1s` versus `31.7s`, but DRC convergence changed from 29 rounds to 8 rounds. Treat that as an operational observation, not a controlled benchmark.
 
 ## Copper Pour ID Spaces: Three Non-Overlapping Systems
 
