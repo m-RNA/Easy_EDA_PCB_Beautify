@@ -22,11 +22,17 @@ import { undoLastOperation as undoTask } from './lib/snapshot';
 import * as Snapshot from './lib/snapshot';
 import { addWidthTransitionsAll, addWidthTransitionsSelected } from './lib/widthTransition';
 
-export async function finalizeRoutingOperation(cachedCopperViolation?: CopperViolationInfo): Promise<number> {
+export async function finalizeRoutingOperation(
+	cachedCopperViolation?: CopperViolationInfo,
+	completionMessage?: string,
+): Promise<number> {
 	const rebuildResult = await rebuildAllCopperPoursIfEnabled(cachedCopperViolation);
 	const settings = await getSettings();
-	if (!settings.enableDRC)
+	if (!settings.enableDRC) {
+		if (completionMessage)
+			eda.sys_Message?.showToastMessage(completionMessage, 'success' as any, 3);
 		return rebuildResult;
+	}
 
 	const drcResult = await runDrcCheckAndParse();
 	if (!drcResult.valid) {
@@ -37,6 +43,18 @@ export async function finalizeRoutingOperation(cachedCopperViolation?: CopperVio
 	debugLog(
 		`[FinalDRC] completed violations=${drcResult.violatedIds.size} copper-issues=${drcResult.copperViolation.issueCount}`,
 	);
+	if (completionMessage) {
+		if (drcResult.violatedIds.size > 0) {
+			eda.sys_Message?.showToastMessage(
+				`${completionMessage}，最终 DRC 仍有 ${drcResult.violatedIds.size} 个违规对象`,
+				'warn' as any,
+				4,
+			);
+		}
+		else {
+			eda.sys_Message?.showToastMessage(completionMessage, 'success' as any, 3);
+		}
+	}
 	return rebuildResult;
 }
 
@@ -110,7 +128,7 @@ export async function beautifySelected() {
 
 		// 重铺覆铜，并在整个美化流程完成后执行最终 DRC
 		if (result.completed)
-			await finalizeRoutingOperation(result.copperViolation);
+			await finalizeRoutingOperation(result.copperViolation, '圆滑布线（选中）已完成');
 	}
 	catch (e: any) {
 		handleError(e);
@@ -130,7 +148,10 @@ export async function beautifyAll() {
 
 		// 重铺覆铜，并在整个美化流程完成后执行最终 DRC
 		if (result.completed) {
-			const rebuildResult = await finalizeRoutingOperation(result.copperViolation);
+			const rebuildResult = await finalizeRoutingOperation(
+				result.copperViolation,
+				'圆滑布线（全部）已完成',
+			);
 			copperDrcSource = rebuildResult === -2
 				? 'disabled'
 				: result.copperViolation !== undefined ? 'reused' : 'fresh';
@@ -178,10 +199,15 @@ export async function undoOperation() {
 export async function widthTransitionSelected() {
 	debugLog('[Smooth] widthTransitionSelected triggered');
 	try {
-		await addWidthTransitionsSelected();
+		const transitionCount = await addWidthTransitionsSelected();
+		if (transitionCount === null)
+			return;
 
 		// 重铺覆铜，并在整个操作完成后执行最终 DRC
-		await finalizeRoutingOperation();
+		await finalizeRoutingOperation(
+			undefined,
+			`过渡线宽（选中）已完成，处理了 ${transitionCount} 个连接点`,
+		);
 	}
 	catch (e: any) {
 		logError(`Width Transition Error: ${e.message || e}`);
@@ -203,12 +229,15 @@ export async function widthTransitionSelected() {
 export async function widthTransitionAll() {
 	debugLog('[Smooth] widthTransitionAll triggered');
 	try {
-		await addWidthTransitionsAll();
+		const transitionCount = await addWidthTransitionsAll();
+		if (transitionCount === null)
+			return;
 
 		// 重铺覆铜，并在整个操作完成后执行最终 DRC
-		await finalizeRoutingOperation();
-
-		eda.sys_Message?.showToastMessage('线宽过渡完成', 'success' as any, 2);
+		await finalizeRoutingOperation(
+			undefined,
+			`过渡线宽（全部）已完成，处理了 ${transitionCount} 个连接点`,
+		);
 	}
 	catch (e: any) {
 		logError(`Width Transition Error: ${e.message || e}`);

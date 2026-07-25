@@ -7,6 +7,7 @@ async function main() {
 	let experimentalFastRestore = false;
 	let batchShouldFail = false;
 	const events: string[] = [];
+	const toastMessages: string[] = [];
 	const pour = {
 		getState_Layer: () => 1,
 		rebuildCopperRegion: async () => {
@@ -30,7 +31,11 @@ async function main() {
 			},
 		},
 		sys_Log: { add: () => undefined },
-		sys_Message: { showToastMessage: () => undefined },
+		sys_Message: {
+			showToastMessage: (message: string, type: string) => {
+				toastMessages.push(`${type}:${message}`);
+			},
+		},
 		sys_Storage: {
 			getExtensionAllUserConfigs: async () => ({
 				enableDRC,
@@ -45,25 +50,44 @@ async function main() {
 	const { finalizeRoutingOperation } = await import('../src/index');
 	const { rebuildAllCopperPoursAfterRestoreIfEnabled } = await import('../src/lib/eda_utils');
 
-	await finalizeRoutingOperation({
-		issueCount: 1,
-		violatedLayers: new Set([1]),
-	});
+	await finalizeRoutingOperation(
+		{
+			issueCount: 1,
+			violatedLayers: new Set([1]),
+		},
+		'圆滑布线（全部）已完成',
+	);
 	assert.deepEqual(events, ['rebuild', 'drc'], '美化后应先完成覆铜重铺，再执行最终 DRC');
+	assert.equal(
+		toastMessages.at(-1),
+		'success:圆滑布线（全部）已完成',
+		'真正的完成提示必须位于覆铜和最终 DRC 之后',
+	);
 
 	rebuildCopper = false;
 	events.length = 0;
+	toastMessages.length = 0;
 	await finalizeRoutingOperation();
 	assert.deepEqual(events, ['drc'], '即使未启用或未发生覆铜重铺，美化完成后也必须执行最终 DRC');
+	assert.equal(toastMessages.length, 0, '未提供顶层完成文案时不应产生伪完成提示');
 
 	rebuildCopper = true;
 	enableDRC = false;
 	events.length = 0;
-	await finalizeRoutingOperation({
-		issueCount: 1,
-		violatedLayers: new Set([1]),
-	});
+	toastMessages.length = 0;
+	await finalizeRoutingOperation(
+		{
+			issueCount: 1,
+			violatedLayers: new Set([1]),
+		},
+		'过渡线宽（选中）已完成',
+	);
 	assert.deepEqual(events, ['rebuild'], '关闭 DRC 时仍应重铺覆铜，但不能运行最终 DRC');
+	assert.equal(
+		toastMessages.at(-1),
+		'success:过渡线宽（选中）已完成',
+		'关闭 DRC 时应在覆铜完成后显示最终完成提示',
+	);
 
 	enableDRC = true;
 	events.length = 0;

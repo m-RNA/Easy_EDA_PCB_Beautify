@@ -1647,7 +1647,12 @@ export async function applySnapshotFullRestore(
 /**
  * 恢复快照
  */
-export async function restoreSnapshot(snapshotId: number, showToast: boolean = true, requireConfirmation: boolean = false): Promise<boolean> {
+export async function restoreSnapshot(
+	snapshotId: number,
+	showToast: boolean = true,
+	requireConfirmation: boolean = false,
+	completionMessage?: string,
+): Promise<boolean> {
 	try {
 		const currentPcb = await getCurrentPcbInfoSafe();
 		if (!currentPcb)
@@ -1756,20 +1761,6 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		const copperStartedAt = Date.now();
 		const copperResult = await rebuildAllCopperPoursAfterRestoreIfEnabled();
 		logPerformance(`[SnapshotRestore] copper=${Date.now() - copperStartedAt}ms copper-result=${copperResult}`);
-		if (copperResult === -1) {
-			eda.sys_Message?.showToastMessage('布线已恢复，但覆铜重铺失败，请手动执行 Shift+B', 'warn' as any, 4);
-		}
-
-		if (showToast && eda.sys_Message) {
-			const totalKept = lineRes.kept + arcRes.kept;
-			const totalChanged = lineRes.created + arcRes.created + lineRes.deleted + arcRes.deleted;
-			if (totalChanged === 0) {
-				eda.sys_Message.showToastMessage('当前状态与快照完全一致', 'info' as any, 2);
-			}
-			else {
-				eda.sys_Message.showToastMessage(`恢复成功：保持 ${totalKept}，更新 ${lineRes.created + arcRes.created} 处`, 'success' as any, 2);
-			}
-		}
 
 		// 如果是手动或跨 PCB，恢复后存个 After
 		if (snapshot.isManual || isMismatch) {
@@ -1779,6 +1770,26 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 
 		setLastRestoredId(snapshot.id);
 		notifySnapshotChange();
+
+		if (eda.sys_Message) {
+			if (copperResult === -1) {
+				const prefix = completionMessage || (showToast ? '恢复完成' : '布线已恢复');
+				eda.sys_Message.showToastMessage(`${prefix}，但覆铜重铺失败，请手动执行 Shift+B`, 'warn' as any, 4);
+			}
+			else if (completionMessage) {
+				eda.sys_Message.showToastMessage(completionMessage, 'success' as any, 3);
+			}
+			else if (showToast) {
+				const totalKept = lineRes.kept + arcRes.kept;
+				const totalChanged = lineRes.created + arcRes.created + lineRes.deleted + arcRes.deleted;
+				if (totalChanged === 0) {
+					eda.sys_Message.showToastMessage('恢复完成：当前状态与快照一致', 'info' as any, 3);
+				}
+				else {
+					eda.sys_Message.showToastMessage(`恢复完成：保持 ${totalKept}，更新 ${lineRes.created + arcRes.created} 处`, 'success' as any, 3);
+				}
+			}
+		}
 		return true;
 	}
 	catch (e: any) {
@@ -1862,11 +1873,8 @@ export async function undoLastOperation() {
 
 		if (targetIdx < autoSnaps.length) {
 			const target = autoSnaps[targetIdx];
-			const ok = await restoreSnapshot(target.id, false, false);
-			if (ok) {
-				const dispName = target.name.replace(/^\[.*?\]\s*/, '');
-				eda.sys_Message?.showToastMessage(`已撤销至: ${dispName}`, 'info' as any, 2);
-			}
+			const dispName = target.name.replace(/^\[.*?\]\s*/, '');
+			await restoreSnapshot(target.id, false, false, `撤销完成：已恢复至 ${dispName}`);
 		}
 		else {
 			eda.sys_Message?.showToastMessage('已到达撤销记录尽头', 'info' as any, 2);

@@ -492,6 +492,7 @@ async function main() {
 		arcs: [],
 	};
 	let copperRebuilds = 0;
+	const restoreToastMessages: string[] = [];
 	(globalThis as any).eda.dmt_Pcb = {
 		getCurrentPcbInfo: async () => ({ uuid: restorePcbId, name: 'Restore Test' }),
 	};
@@ -520,7 +521,9 @@ async function main() {
 		destroyLoading: () => undefined,
 	};
 	(globalThis as any).eda.sys_Message = {
-		showToastMessage: () => undefined,
+		showToastMessage: (message: string, type: string) => {
+			restoreToastMessages.push(`${type}:${message}`);
+		},
 	};
 	(globalThis as any).eda.sys_Storage = {
 		getExtensionAllUserConfigs: async () => ({
@@ -536,8 +539,17 @@ async function main() {
 		manual: [],
 		auto: [restoreTarget],
 	};
-	assert.equal(await restoreSnapshot(restoreTarget.id, false, false), true, '快照恢复应成功');
+	assert.equal(
+		await restoreSnapshot(restoreTarget.id, false, false, '撤销完成：已恢复至 Beautify (Selected) Before'),
+		true,
+		'快照恢复应成功',
+	);
 	assert.equal(copperRebuilds, 1, '快照恢复成功后应重新覆铜；撤销复用同一恢复路径');
+	assert.equal(
+		restoreToastMessages.at(-1),
+		'success:撤销完成：已恢复至 Beautify (Selected) Before',
+		'撤销完成提示必须在几何恢复和覆铜完成之后显示',
+	);
 
 	console.log('snapshot restore tests passed');
 }

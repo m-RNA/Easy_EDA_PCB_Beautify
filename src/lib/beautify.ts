@@ -1163,7 +1163,6 @@ export async function beautifyRouting(scope: 'selected' | 'all' = 'selected'): P
 		perfResult = 'completed';
 		routingResult.completed = true;
 		routingResult.copperViolation = latestCopperViolation;
-		eda.sys_Message?.showToastMessage('美化完成', 'success' as any, 2);
 	}
 	catch (e: any) {
 		if (rollbackSnapshotId !== null) {

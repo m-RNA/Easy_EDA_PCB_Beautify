@@ -56,7 +56,7 @@ async function saveTransitionData(data: TransitionData): Promise<void> {
 /**
  * 添加线宽过渡 - 处理选中的线段（菜单调用）
  */
-export async function addWidthTransitionsSelected() {
+export async function addWidthTransitionsSelected(): Promise<number | null> {
 	const settings = await getSettings();
 
 	// 提前显示进度条
@@ -69,7 +69,7 @@ export async function addWidthTransitionsSelected() {
 		const allSelectedIds = await eda.pcb_SelectControl.getAllSelectedPrimitives_PrimitiveId();
 		if (!allSelectedIds || allSelectedIds.length === 0) {
 			eda.sys_Message?.showToastMessage('请先选择要处理的导线', 'warn' as any, 3);
-			return; // finally会处理进度条
+			return null; // finally会处理进度条
 		}
 
 		// 读取已保存的过渡数据
@@ -89,19 +89,13 @@ export async function addWidthTransitionsSelected() {
 
 			if (selectedTracks.length === 0) {
 				eda.sys_Message?.showToastMessage('没有找到导线', 'info' as any, 2);
-				return;
+				return null;
 			}
 
 			const result = await processWidthTransitions(selectedTracks, savedData, settings);
 
 			// 保存数据
 			await saveTransitionData(result.data);
-
-			eda.sys_Message?.showToastMessage(
-				`线宽过渡完成，处理了 ${result.count} 个连接点`,
-				'success' as any,
-				2,
-			);
 
 			// 保存操作后的快照
 			try {
@@ -110,22 +104,26 @@ export async function addWidthTransitionsSelected() {
 			catch (e: any) {
 				logError(`Failed to create result snapshot: ${e.message || e}`);
 			}
+			return result.count;
 		}
 		catch (e: any) {
 			eda.sys_Dialog?.showInformationMessage(e.message, 'Width Transition Error');
+			return null;
 		}
 		finally {
 			eda.sys_LoadingAndProgressBar?.destroyLoading?.();
 		}
 	}
-	catch { }
+	catch {
+		return null;
+	}
 }
 
 /**
  * 添加线宽过渡 - 处理所有线段（熔化时自动调用）
  * @param createBackup 是否创建快照 (如果是 Beautify 调用，通常已经创建了快照，这里可以选择 false)
  */
-export async function addWidthTransitionsAll(createBackup: boolean = true) {
+export async function addWidthTransitionsAll(createBackup: boolean = true): Promise<number | null> {
 	const settings = await getSettings();
 
 	// 读取已保存的过渡数据
@@ -148,7 +146,7 @@ export async function addWidthTransitionsAll(createBackup: boolean = true) {
 		// 获取所有导线
 		const allTracks = await eda.pcb_PrimitiveLine.getAll();
 		if (!allTracks || allTracks.length === 0) {
-			return;
+			return null;
 		}
 
 		const result = await processWidthTransitions(allTracks, savedData, settings);
@@ -167,9 +165,11 @@ export async function addWidthTransitionsAll(createBackup: boolean = true) {
 				logError(`Failed to create result snapshot: ${e.message || e}`);
 			}
 		}
+		return result.count;
 	}
 	catch (e: any) {
 		logError(e.message, 'Transitions');
+		return null;
 	}
 	finally {
 		eda.sys_LoadingAndProgressBar?.destroyLoading?.();
