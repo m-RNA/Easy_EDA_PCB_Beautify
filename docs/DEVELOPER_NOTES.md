@@ -278,7 +278,7 @@ The feature uses a two-layer design:
 2. **`rebuildAllCopperPoursIfEnabled()`** — Settings-aware wrapper: reads `rebuildCopperPourAfterBeautify`, reuses or runs DRC to rebuild only affected layers, and falls back to all pours only if smart detection fails. Returns -2 if disabled.
 3. **`rebuildAllCopperPoursAfterRestoreIfEnabled()`** — Restore-specific wrapper: respects the same setting but rebuilds every pour because the pre-rebuild filled copper is stale after routing restoration and cannot safely drive smart DRC selection.
 
-Selected and All beautify/width-transition entry points call the smart wrapper. Snapshot restore calls the restore-specific wrapper after geometry verification; undo reuses the same restore path.
+Selected and All beautify/width-transition entry points call the smart wrapper, then run one final DRC after all post-processing. Snapshot restore calls only the restore-specific copper wrapper after geometry verification; undo reuses the same restore path.
 
 ### Notes
 
@@ -286,7 +286,7 @@ Selected and All beautify/width-transition entry points call the smart wrapper. 
 - Each pour is rebuilt independently. For boards with many copper zones, this may take noticeable time.
 - The API is marked `@beta`, so host behavior and performance should still be checked after EDA updates.
 - Automatic per-pour rebuilding is intentionally capped by the user setting `copperPourRebuildLimit` (default `30`) because `rebuildCopperRegion()` recalculates regions one at a time. When the affected count exceeds the limit, preserve responsiveness and prompt the user to run the host's full-board `Shift + B` command manually.
-- After one or more copper regions are rebuilt, run one additional global DRC check when DRC is enabled. This final check must happen after the pour workers complete so the result reflects the new filled copper.
+- After a beautify or width-transition operation completes successfully, run one final global DRC check when DRC is enabled. The check belongs to operation finalization, not the copper helper: it must run after copper post-processing even when rebuilding is disabled, skipped, or unnecessary.
 
 ## Snapshot Operation Boundaries
 

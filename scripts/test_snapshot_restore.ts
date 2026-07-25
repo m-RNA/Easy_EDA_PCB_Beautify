@@ -382,7 +382,6 @@ async function main() {
 		arcs: [],
 	};
 	let copperRebuilds = 0;
-	let finalDrcChecks = 0;
 	(globalThis as any).eda.dmt_Pcb = {
 		getCurrentPcbInfo: async () => ({ uuid: restorePcbId, name: 'Restore Test' }),
 	};
@@ -405,13 +404,6 @@ async function main() {
 				copperRebuilds++;
 			},
 		}],
-	};
-	(globalThis as any).eda.pcb_Drc = {
-		check: async () => {
-			finalDrcChecks++;
-			assert.equal(copperRebuilds, 1, '最终 DRC 必须在覆铜重铺完成后执行');
-			return [];
-		},
 	};
 	(globalThis as any).eda.sys_LoadingAndProgressBar = {
 		showLoading: () => undefined,
@@ -436,7 +428,6 @@ async function main() {
 	};
 	assert.equal(await restoreSnapshot(restoreTarget.id, false, false), true, '快照恢复应成功');
 	assert.equal(copperRebuilds, 1, '快照恢复成功后应重新覆铜；撤销复用同一恢复路径');
-	assert.equal(finalDrcChecks, 1, '恢复覆铜完成后应追加一次最终 DRC');
 
 	console.log('snapshot restore tests passed');
 }

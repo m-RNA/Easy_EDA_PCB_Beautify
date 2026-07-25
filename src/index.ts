@@ -11,7 +11,9 @@
  * https://prodocs.lceda.cn/cn/api/guide/
  */
 
+import type { CopperViolationInfo } from './lib/drc';
 import { beautifyRouting as beautifyTask } from './lib/beautify';
+import { runDrcCheckAndParse } from './lib/drc';
 import { rebuildAllCopperPoursIfEnabled } from './lib/eda_utils';
 import { debugLog, debugWarn, logError, logPerformance } from './lib/logger';
 import { getDefaultSettings, getSettings } from './lib/settings';
@@ -19,6 +21,24 @@ import { clearAllExtensionShortcuts, diagnoseShortcuts, initShortcuts } from './
 import { undoLastOperation as undoTask } from './lib/snapshot';
 import * as Snapshot from './lib/snapshot';
 import { addWidthTransitionsAll, addWidthTransitionsSelected } from './lib/widthTransition';
+
+export async function finalizeRoutingOperation(cachedCopperViolation?: CopperViolationInfo): Promise<number> {
+	const rebuildResult = await rebuildAllCopperPoursIfEnabled(cachedCopperViolation);
+	const settings = await getSettings();
+	if (!settings.enableDRC)
+		return rebuildResult;
+
+	const drcResult = await runDrcCheckAndParse();
+	if (!drcResult.valid) {
+		eda.sys_Message?.showToastMessage('操作已完成，但最终 DRC 检查失败，请手动检查', 'warn' as any, 4);
+		return rebuildResult;
+	}
+
+	debugLog(
+		`[FinalDRC] completed violations=${drcResult.violatedIds.size} copper-issues=${drcResult.copperViolation.issueCount}`,
+	);
+	return rebuildResult;
+}
 
 export async function activate(_status?: 'onStartupFinished', _arg?: string): Promise<void> {
 	// 初始化设置（加载到缓存）
@@ -88,9 +108,9 @@ export async function beautifySelected() {
 	try {
 		const result = await beautifyTask('selected');
 
-		// 重铺覆铜
+		// 重铺覆铜，并在整个美化流程完成后执行最终 DRC
 		if (result.completed)
-			await rebuildAllCopperPoursIfEnabled(result.copperViolation);
+			await finalizeRoutingOperation(result.copperViolation);
 	}
 	catch (e: any) {
 		handleError(e);
@@ -108,9 +128,9 @@ export async function beautifyAll() {
 		const coreFinishedAt = Date.now();
 		let copperDrcSource = 'skipped';
 
-		// 重铺覆铜
+		// 重铺覆铜，并在整个美化流程完成后执行最终 DRC
 		if (result.completed) {
-			const rebuildResult = await rebuildAllCopperPoursIfEnabled(result.copperViolation);
+			const rebuildResult = await finalizeRoutingOperation(result.copperViolation);
 			copperDrcSource = rebuildResult === -2
 				? 'disabled'
 				: result.copperViolation !== undefined ? 'reused' : 'fresh';
@@ -160,8 +180,8 @@ export async function widthTransitionSelected() {
 	try {
 		await addWidthTransitionsSelected();
 
-		// 重铺覆铜
-		await rebuildAllCopperPoursIfEnabled();
+		// 重铺覆铜，并在整个操作完成后执行最终 DRC
+		await finalizeRoutingOperation();
 	}
 	catch (e: any) {
 		logError(`Width Transition Error: ${e.message || e}`);
@@ -185,8 +205,8 @@ export async function widthTransitionAll() {
 	try {
 		await addWidthTransitionsAll();
 
-		// 重铺覆铜
-		await rebuildAllCopperPoursIfEnabled();
+		// 重铺覆铜，并在整个操作完成后执行最终 DRC
+		await finalizeRoutingOperation();
 
 		eda.sys_Message?.showToastMessage('线宽过渡完成', 'success' as any, 2);
 	}
