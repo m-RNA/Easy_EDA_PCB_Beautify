@@ -286,6 +286,7 @@ Selected and All beautify/width-transition entry points call the smart wrapper. 
 - Each pour is rebuilt independently. For boards with many copper zones, this may take noticeable time.
 - The API is marked `@beta`, so host behavior and performance should still be checked after EDA updates.
 - Automatic per-pour rebuilding is intentionally capped by the user setting `copperPourRebuildLimit` (default `30`) because `rebuildCopperRegion()` recalculates regions one at a time. When the affected count exceeds the limit, preserve responsiveness and prompt the user to run the host's full-board `Shift + B` command manually.
+- After one or more copper regions are rebuilt, run one additional global DRC check when DRC is enabled. This final check must happen after the pour workers complete so the result reflects the new filled copper.
 
 ## Snapshot Operation Boundaries
 

@@ -1,5 +1,5 @@
 import type { CopperViolationInfo } from './drc';
-import { getViolatedCopperPours } from './drc';
+import { getViolatedCopperPours, runDrcCheckAndParse } from './drc';
 import { debugLog, debugWarn, logError } from './logger';
 import { getSettings } from './settings';
 
@@ -192,6 +192,26 @@ export async function rebuildViolatedCopperPours(cachedViolation?: CopperViolati
 	}
 }
 
+async function runDrcAfterCopperRebuild(rebuiltCount: number): Promise<number> {
+	if (rebuiltCount <= 0)
+		return rebuiltCount;
+
+	const settings = await getSettings();
+	if (!settings.enableDRC)
+		return rebuiltCount;
+
+	const drcResult = await runDrcCheckAndParse();
+	if (!drcResult.valid) {
+		eda.sys_Message?.showToastMessage('覆铜已完成，但最终 DRC 检查失败，请手动检查', 'warn' as any, 4);
+		return rebuiltCount;
+	}
+
+	debugLog(
+		`[CopperPour] Post-rebuild DRC completed: violations=${drcResult.violatedIds.size}, copper-issues=${drcResult.copperViolation.issueCount}`,
+	);
+	return rebuiltCount;
+}
+
 /**
  * 根据设置判断是否重铺覆铜，若启用则显示提示并执行重铺
  * 统一入口，供 beautify / widthTransition 等流程复用
@@ -207,12 +227,12 @@ export async function rebuildAllCopperPoursIfEnabled(cachedViolation?: CopperVio
 	const smartCount = await rebuildViolatedCopperPours(cachedViolation);
 	if (smartCount >= 0) {
 		// 0=无违规或因数量多跳过, >0=局部重铺完成
-		return smartCount;
+		return runDrcAfterCopperRebuild(smartCount);
 	}
 
 	// smartCount < 0: 执行异常，回退到全量重铺
 	debugLog('[CopperPour] Smart rebuild failed, falling back to full rebuild.');
-	return rebuildAllCopperPours();
+	return runDrcAfterCopperRebuild(await rebuildAllCopperPours());
 }
 
 /**
@@ -223,5 +243,5 @@ export async function rebuildAllCopperPoursAfterRestoreIfEnabled(): Promise<numb
 	const settings = await getSettings();
 	if (!settings.rebuildCopperPourAfterBeautify)
 		return -2;
-	return rebuildAllCopperPours();
+	return runDrcAfterCopperRebuild(await rebuildAllCopperPours());
 }
