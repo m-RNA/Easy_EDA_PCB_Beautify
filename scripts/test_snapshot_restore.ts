@@ -492,7 +492,9 @@ async function main() {
 		arcs: [],
 	};
 	let copperRebuilds = 0;
+	let restoreDrcShouldFail = false;
 	const restoreToastMessages: string[] = [];
+	const restoreCompletionEvents: string[] = [];
 	(globalThis as any).eda.dmt_Pcb = {
 		getCurrentPcbInfo: async () => ({ uuid: restorePcbId, name: 'Restore Test' }),
 	};
@@ -513,8 +515,17 @@ async function main() {
 		getAll: async () => [{
 			rebuildCopperRegion: async () => {
 				copperRebuilds++;
+				restoreCompletionEvents.push('copper');
 			},
 		}],
+	};
+	(globalThis as any).eda.pcb_Drc = {
+		check: async () => {
+			restoreCompletionEvents.push('drc');
+			if (restoreDrcShouldFail)
+				throw new Error('expected restore DRC failure');
+			return [];
+		},
 	};
 	(globalThis as any).eda.sys_LoadingAndProgressBar = {
 		showLoading: () => undefined,
@@ -523,11 +534,14 @@ async function main() {
 	(globalThis as any).eda.sys_Message = {
 		showToastMessage: (message: string, type: string) => {
 			restoreToastMessages.push(`${type}:${message}`);
+			if (message.startsWith('撤销完成') || message.startsWith('恢复完成'))
+				restoreCompletionEvents.push('completion');
 		},
 	};
 	(globalThis as any).eda.sys_Storage = {
 		getExtensionAllUserConfigs: async () => ({
 			debug: false,
+			enableDRC: true,
 			rebuildCopperPourAfterBeautify: true,
 			copperPourRebuildLimit: 30,
 		}),
@@ -545,10 +559,34 @@ async function main() {
 		'快照恢复应成功',
 	);
 	assert.equal(copperRebuilds, 1, '快照恢复成功后应重新覆铜；撤销复用同一恢复路径');
+	assert.ok(
+		restoreToastMessages.includes('info:正在执行最终 DRC 检查...'),
+		'恢复和撤销运行最终 DRC 时应显示进度提示',
+	);
+	assert.deepEqual(
+		restoreCompletionEvents,
+		['copper', 'drc', 'completion'],
+		'恢复与撤销必须在覆铜后执行最终 DRC，再显示完成提示',
+	);
 	assert.equal(
 		restoreToastMessages.at(-1),
 		'success:撤销完成：已恢复至 Beautify (Selected) Before',
 		'撤销完成提示必须在几何恢复和覆铜完成之后显示',
+	);
+
+	restoreDrcShouldFail = true;
+	restoreToastMessages.length = 0;
+	restoreCompletionEvents.length = 0;
+	assert.equal(await restoreSnapshot(restoreTarget.id, true, false), true, '最终 DRC 失败不应否定已经完成的几何恢复');
+	assert.deepEqual(
+		restoreCompletionEvents,
+		['copper', 'drc', 'completion'],
+		'最终 DRC 失败时仍必须在检查结束后显示终态警告',
+	);
+	assert.match(
+		restoreToastMessages.at(-1) || '',
+		/^warn:恢复完成，但最终 DRC 检查失败/,
+		'最终 DRC 调用失败时不能显示恢复成功',
 	);
 
 	console.log('snapshot restore tests passed');

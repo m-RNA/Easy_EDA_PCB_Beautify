@@ -34,6 +34,7 @@ export async function finalizeRoutingOperation(
 		return rebuildResult;
 	}
 
+	eda.sys_Message?.showToastMessage('正在执行最终 DRC 检查...', 'info' as any, 2);
 	const drcResult = await runDrcCheckAndParse();
 	if (!drcResult.valid) {
 		eda.sys_Message?.showToastMessage('操作已完成，但最终 DRC 检查失败，请手动检查', 'warn' as any, 4);

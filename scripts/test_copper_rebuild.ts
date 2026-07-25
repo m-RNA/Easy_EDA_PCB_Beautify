@@ -58,6 +58,10 @@ async function main() {
 		'圆滑布线（全部）已完成',
 	);
 	assert.deepEqual(events, ['rebuild', 'drc'], '美化后应先完成覆铜重铺，再执行最终 DRC');
+	assert.ok(
+		toastMessages.includes('info:正在执行最终 DRC 检查...'),
+		'运行最终 DRC 时应显示进度提示',
+	);
 	assert.equal(
 		toastMessages.at(-1),
 		'success:圆滑布线（全部）已完成',
@@ -69,7 +73,11 @@ async function main() {
 	toastMessages.length = 0;
 	await finalizeRoutingOperation();
 	assert.deepEqual(events, ['drc'], '即使未启用或未发生覆铜重铺，美化完成后也必须执行最终 DRC');
-	assert.equal(toastMessages.length, 0, '未提供顶层完成文案时不应产生伪完成提示');
+	assert.deepEqual(
+		toastMessages,
+		['info:正在执行最终 DRC 检查...'],
+		'未提供顶层完成文案时只能显示 DRC 进度，不能产生伪完成提示',
+	);
 
 	rebuildCopper = true;
 	enableDRC = false;

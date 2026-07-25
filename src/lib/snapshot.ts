@@ -1,5 +1,6 @@
 import { mapWithConcurrency } from './asyncPool';
 import { getArcWidthByGeoMap, makeArcWidthGeoKey } from './beautify';
+import { runDrcCheckAndParse } from './drc';
 import { rebuildAllCopperPoursAfterRestoreIfEnabled } from './eda_utils';
 import { debugLog, debugWarn, logError, logPerformance, logWarn } from './logger';
 import { isClose } from './math';
@@ -1762,6 +1763,23 @@ export async function restoreSnapshot(
 		const copperResult = await rebuildAllCopperPoursAfterRestoreIfEnabled();
 		logPerformance(`[SnapshotRestore] copper=${Date.now() - copperStartedAt}ms copper-result=${copperResult}`);
 
+		const postRestoreSettings = restoreSettings ?? await getSettings();
+		let finalDrcValid = true;
+		let finalDrcViolationCount = 0;
+		if (postRestoreSettings.enableDRC) {
+			eda.sys_Message?.showToastMessage('正在执行最终 DRC 检查...', 'info' as any, 2);
+			const finalDrcStartedAt = Date.now();
+			const finalDrcResult = await runDrcCheckAndParse();
+			finalDrcValid = finalDrcResult.valid;
+			finalDrcViolationCount = finalDrcResult.violatedIds.size;
+			logPerformance(
+				`[SnapshotRestore] final-drc=${Date.now() - finalDrcStartedAt}ms valid=${finalDrcValid} violations=${finalDrcViolationCount} copper-issues=${finalDrcResult.copperViolation.issueCount}`,
+			);
+		}
+		else {
+			logPerformance('[SnapshotRestore] final-drc=skipped');
+		}
+
 		// 如果是手动或跨 PCB，恢复后存个 After
 		if (snapshot.isManual || isMismatch) {
 			const snapName = snapshot.name.replace(/^\[.*?\]\s*/, '');
@@ -1772,9 +1790,17 @@ export async function restoreSnapshot(
 		notifySnapshotChange();
 
 		if (eda.sys_Message) {
-			if (copperResult === -1) {
+			const warnings: string[] = [];
+			if (copperResult === -1)
+				warnings.push('覆铜重铺失败，请手动执行 Shift+B');
+			if (!finalDrcValid)
+				warnings.push('最终 DRC 检查失败，请手动检查');
+			else if (finalDrcViolationCount > 0)
+				warnings.push(`最终 DRC 仍有 ${finalDrcViolationCount} 个违规对象`);
+
+			if (warnings.length > 0) {
 				const prefix = completionMessage || (showToast ? '恢复完成' : '布线已恢复');
-				eda.sys_Message.showToastMessage(`${prefix}，但覆铜重铺失败，请手动执行 Shift+B`, 'warn' as any, 4);
+				eda.sys_Message.showToastMessage(`${prefix}，但${warnings.join('；')}`, 'warn' as any, 4);
 			}
 			else if (completionMessage) {
 				eda.sys_Message.showToastMessage(completionMessage, 'success' as any, 3);

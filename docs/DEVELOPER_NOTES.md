@@ -310,6 +310,7 @@ Production safety rules:
 - Beautify suspends calculations only after the Before snapshot and path analysis. Keep deletion, initial redraw, DRC repair redraws, output verification, and optional synchronized width transition inside the guard; resume before the After snapshot, copper post-processing, final DRC, or rollback.
 - `getAllPrimitiveId()` may accelerate deletion-loop enumeration, but a stable-empty decision must still be confirmed with full `getAll()` reads.
 - Restore may try `PCB_PrimitivePour.rebuildCopperRegions()` once after geometry verification. Keep the existing per-pour `rebuildCopperRegion()` loop as the runtime fallback and preserve the configured copper-region count limit.
+- Restore and undo must run one final DRC check after copper rebuilding and before the After snapshot or completion toast. Show a progress toast when this final check starts. A failed check or remaining violations must produce a terminal warning instead of a success message.
 - Do not use `PCB_Document.clearRouting('all')` for snapshot restore. It can clear routing objects outside the Line/Arc snapshot model, including vias.
 - The experiment changes only calculation scheduling and ID enumeration. Full restore still clears all Line/Arc primitives, confirms a stable empty board, recreates the target, and performs the same geometry verification.
 
