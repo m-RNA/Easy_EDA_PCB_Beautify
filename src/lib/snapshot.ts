@@ -12,6 +12,8 @@ const FULL_RESTORE_CLEAR_MAX_PASSES = 5;
 const SNAPSHOT_GEOMETRY_EPSILON = 0.002;
 const SNAPSHOT_GEOMETRY_BUCKET_SIZE = 0.01;
 const SNAPSHOT_LINE_COVERAGE_EPSILON = 0.003;
+const SNAPSHOT_ARC_CIRCLE_EPSILON = 0.01;
+const SNAPSHOT_ARC_ANGLE_EPSILON = 0.05;
 
 const SNAPSHOT_STORAGE_KEY_V2 = 'jlc_eda_beautify_snapshots_v2';
 const SNAPSHOT_STORAGE_KEY_V3_PREFIX = 'jlc_eda_beautify_snapshots_v3_';
@@ -576,9 +578,123 @@ interface HostNormalizedEvaluation {
 	reason: string;
 }
 
-function evaluateSnapshotHostNormalizedEquivalent(target: RoutingSnapshot, actual: RoutingSnapshot): HostNormalizedEvaluation {
-	if (!isPrimitiveGeometryMultisetEqual('arc', target.arcs, actual.arcs))
-		return { equivalent: false, reason: `arc-geometry-mismatch target=${target.arcs.length} actual=${actual.arcs.length}` };
+interface ArcCoverageDescriptor {
+	arc: any;
+	centerX: number;
+	centerY: number;
+	radius: number;
+	intervals: Array<[number, number]>;
+}
+
+function normalizeDegrees(angle: number): number {
+	let normalized = angle % 360;
+	if (normalized < 0)
+		normalized += 360;
+	if (normalized >= 360 - SNAPSHOT_ARC_ANGLE_EPSILON || normalized <= SNAPSHOT_ARC_ANGLE_EPSILON)
+		return 0;
+	return normalized;
+}
+
+function getArcCoverageDescriptor(arc: any): ArcCoverageDescriptor | null {
+	const startX = getPrimitiveCoordinate(arc, 'sx');
+	const startY = getPrimitiveCoordinate(arc, 'sy');
+	const endX = getPrimitiveCoordinate(arc, 'ex');
+	const endY = getPrimitiveCoordinate(arc, 'ey');
+	const sweepAngle = Number(arc.a ?? arc.arcAngle);
+	const chordX = endX - startX;
+	const chordY = endY - startY;
+	const chordLength = Math.hypot(chordX, chordY);
+	const absoluteSweep = Math.abs(sweepAngle);
+	if (!Number.isFinite(sweepAngle) || absoluteSweep < SNAPSHOT_ARC_ANGLE_EPSILON || absoluteSweep >= 360 || chordLength < SNAPSHOT_GEOMETRY_EPSILON)
+		return null;
+
+	const halfAngleRadians = absoluteSweep * Math.PI / 360;
+	const sinHalf = Math.sin(halfAngleRadians);
+	const tanHalf = Math.tan(halfAngleRadians);
+	if (Math.abs(sinHalf) < 1e-9 || Math.abs(tanHalf) < 1e-9)
+		return null;
+
+	const midpointX = (startX + endX) / 2;
+	const midpointY = (startY + endY) / 2;
+	const leftNormalX = -chordY / chordLength;
+	const leftNormalY = chordX / chordLength;
+	const centerOffset = Math.sign(sweepAngle) * chordLength / (2 * tanHalf);
+	const centerX = midpointX + leftNormalX * centerOffset;
+	const centerY = midpointY + leftNormalY * centerOffset;
+	const radius = chordLength / (2 * sinHalf);
+	const startAngle = normalizeDegrees(Math.atan2(startY - centerY, startX - centerX) * 180 / Math.PI);
+	const positiveStart = sweepAngle >= 0 ? startAngle : normalizeDegrees(startAngle + sweepAngle);
+	const intervalEnd = positiveStart + absoluteSweep;
+	const intervals: Array<[number, number]> = intervalEnd <= 360
+		? [[positiveStart, intervalEnd]]
+		: [[positiveStart, 360], [0, intervalEnd - 360]];
+	return { arc, centerX, centerY, radius, intervals };
+}
+
+function isSameArcCoverageGroup(target: ArcCoverageDescriptor, candidate: ArcCoverageDescriptor): boolean {
+	const targetArc = target.arc;
+	const candidateArc = candidate.arc;
+	if ((targetArc.n ?? targetArc.net ?? '') !== (candidateArc.n ?? candidateArc.net ?? ''))
+		return false;
+	if ((targetArc.l ?? targetArc.layer ?? 0) !== (candidateArc.l ?? candidateArc.layer ?? 0))
+		return false;
+	if (!isClose(targetArc.w ?? targetArc.lineWidth, candidateArc.w ?? candidateArc.lineWidth, SNAPSHOT_GEOMETRY_EPSILON))
+		return false;
+	const circleTolerance = Math.max(
+		SNAPSHOT_ARC_CIRCLE_EPSILON,
+		Math.max(target.radius, candidate.radius) * 0.0001,
+	);
+	return Math.hypot(target.centerX - candidate.centerX, target.centerY - candidate.centerY) <= circleTolerance
+		&& Math.abs(target.radius - candidate.radius) <= circleTolerance;
+}
+
+function isAngularIntervalCovered(target: [number, number], candidates: Array<[number, number]>): boolean {
+	const sorted = candidates
+		.filter(candidate => candidate[1] >= target[0] - SNAPSHOT_ARC_ANGLE_EPSILON && candidate[0] <= target[1] + SNAPSHOT_ARC_ANGLE_EPSILON)
+		.sort((a, b) => a[0] - b[0]);
+	let coveredUntil = target[0];
+	for (const candidate of sorted) {
+		if (candidate[0] > coveredUntil + SNAPSHOT_ARC_ANGLE_EPSILON)
+			break;
+		coveredUntil = Math.max(coveredUntil, candidate[1]);
+		if (coveredUntil >= target[1] - SNAPSHOT_ARC_ANGLE_EPSILON)
+			return true;
+	}
+	return false;
+}
+
+function isArcCoveredByDescriptors(target: ArcCoverageDescriptor, candidates: ArcCoverageDescriptor[]): boolean {
+	const compatibleIntervals = candidates
+		.filter(candidate => isSameArcCoverageGroup(target, candidate))
+		.flatMap(candidate => candidate.intervals);
+	return target.intervals.every(interval => isAngularIntervalCovered(interval, compatibleIntervals));
+}
+
+function evaluateArcCoverageEquivalent(targetArcs: any[], actualArcs: any[]): HostNormalizedEvaluation {
+	const targetDescriptors = targetArcs.map(getArcCoverageDescriptor);
+	const actualDescriptors = actualArcs.map(getArcCoverageDescriptor);
+	const invalidTargetIndex = targetDescriptors.findIndex(descriptor => descriptor === null);
+	const invalidActualIndex = actualDescriptors.findIndex(descriptor => descriptor === null);
+	if (invalidTargetIndex >= 0 || invalidActualIndex >= 0)
+		return { equivalent: false, reason: `arc-descriptor-invalid target-index=${invalidTargetIndex} actual-index=${invalidActualIndex}` };
+	const target = targetDescriptors as ArcCoverageDescriptor[];
+	const actual = actualDescriptors as ArcCoverageDescriptor[];
+	const uncoveredTargetIndex = target.findIndex(descriptor => !isArcCoveredByDescriptors(descriptor, actual));
+	if (uncoveredTargetIndex >= 0)
+		return { equivalent: false, reason: `arc-target-uncovered index=${uncoveredTargetIndex}` };
+	const uncoveredActualIndex = actual.findIndex(descriptor => !isArcCoveredByDescriptors(descriptor, target));
+	if (uncoveredActualIndex >= 0)
+		return { equivalent: false, reason: `arc-actual-uncovered index=${uncoveredActualIndex}` };
+	return { equivalent: true, reason: 'arc-coverage-equivalent' };
+}
+
+export function evaluateSnapshotHostNormalizedEquivalent(target: RoutingSnapshot, actual: RoutingSnapshot): HostNormalizedEvaluation {
+	const exactArcs = isPrimitiveGeometryMultisetEqual('arc', target.arcs, actual.arcs);
+	const arcCoverage = exactArcs
+		? { equivalent: true, reason: 'arc-exact' }
+		: evaluateArcCoverageEquivalent(target.arcs, actual.arcs);
+	if (!arcCoverage.equivalent)
+		return { equivalent: false, reason: `arc-geometry-mismatch target=${target.arcs.length} actual=${actual.arcs.length} detail=${arcCoverage.reason}` };
 
 	const maxLineCountDelta = Math.max(10, Math.ceil(target.lines.length * 0.01));
 	const lineCountDelta = Math.abs(target.lines.length - actual.lines.length);
@@ -621,7 +737,7 @@ function evaluateSnapshotHostNormalizedEquivalent(target: RoutingSnapshot, actua
 	}
 	return {
 		equivalent: true,
-		reason: `accepted line-count-delta=${lineCountDelta} uncovered=${targetUncovered}/${actualUncovered}`,
+		reason: `accepted arcs=${exactArcs ? 'exact' : 'coverage-normalized'} line-count-delta=${lineCountDelta} uncovered=${targetUncovered}/${actualUncovered}`,
 	};
 }
 

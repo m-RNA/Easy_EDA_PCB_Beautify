@@ -39,6 +39,7 @@ async function main() {
 		applySnapshotStateDiff,
 		canReuseIdenticalSnapshot,
 		deleteStateDiffPrimitives,
+		evaluateSnapshotHostNormalizedEquivalent,
 		getSnapshotGeometryDiff,
 		getSnapshotRestoreStrategy,
 		isSnapshotHostNormalizedEquivalent,
@@ -210,6 +211,40 @@ async function main() {
 		isSnapshotHostNormalizedEquivalent(snappedShortLineTarget, { ...snappedShortLineActual, lines: [] }),
 		false,
 		'宿主规范化校验不能接受整条导线丢失',
+	);
+	const quarterArc = {
+		i: 'quarter-arc',
+		n: 'GND',
+		l: 1,
+		sX: 10,
+		sY: 0,
+		eX: 0,
+		eY: 10,
+		a: 90,
+		w: 1,
+	};
+	const splitArcState = {
+		...mergedCurrent,
+		arcs: [
+			{ ...quarterArc, i: 'split-arc-a', eX: Math.SQRT1_2 * 10, eY: Math.SQRT1_2 * 10, a: 45 },
+			{ ...quarterArc, i: 'split-arc-b', sX: Math.SQRT1_2 * 10, sY: Math.SQRT1_2 * 10, a: 45 },
+		],
+	};
+	const splitArcEvaluation = evaluateSnapshotHostNormalizedEquivalent({ ...mergedCurrent, arcs: [quarterArc] }, splitArcState);
+	assert.equal(splitArcEvaluation.equivalent, true, `全量恢复应接受宿主将同一圆弧拆分为多个等价子圆弧：${splitArcEvaluation.reason}`);
+	assert.equal(
+		isSnapshotHostNormalizedEquivalent(
+			{ ...mergedCurrent, arcs: [quarterArc] },
+			{
+				...splitArcState,
+				arcs: [
+					...splitArcState.arcs,
+					{ ...quarterArc, i: 'unrelated-extra-arc', sX: 30, eX: 20 },
+				],
+			},
+		),
+		false,
+		'宿主规范化校验不能接受覆盖范围之外的真实多余圆弧',
 	);
 	const targetWithDegenerateLines = {
 		...mergedCurrent,
