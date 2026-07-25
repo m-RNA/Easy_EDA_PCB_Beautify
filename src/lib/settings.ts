@@ -5,7 +5,7 @@ export interface BeautifySettings {
 	cornerRadiusRatio: number; // 圆角半径与线宽的比率 (半径 = 线宽 * 比率)
 	protectDifferentialAndEqualLength: boolean; // 保护差分对/等长组，使用同心圆弧或保守跳过
 	debug: boolean; // 调试模式
-	experimentalFastRestore: boolean; // 实验性操作加速：暂停飞线/画布计算，并尝试批量覆铜
+	experimentalFastRestore: boolean; // 实验性操作加速：暂停飞线计算、快速枚举图元，并尝试批量覆铜
 	forceArc: boolean; // 强制生成圆弧 (即使线段太短导致被截断)
 	enableDRC: boolean; // 启用 DRC 检查
 	drcIgnoreCopperPour: boolean; // DRC 忽略覆铜相关规则

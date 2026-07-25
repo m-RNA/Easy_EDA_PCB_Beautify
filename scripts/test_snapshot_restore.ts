@@ -400,14 +400,10 @@ async function main() {
 		[
 			'ratline-status',
 			'ratline-stop',
-			'canvas-status',
-			'canvas-stop',
 			'operation',
-			'canvas-start',
-			'canvas-trigger',
 			'ratline-start',
 		],
-		'Alpha 恢复即使中途失败也必须恢复画布与飞线计算',
+		'Alpha 恢复必须恢复飞线计算，画布暂停在完成宿主实测前必须保持关闭',
 	);
 
 	let quantizedDeletes = 0;

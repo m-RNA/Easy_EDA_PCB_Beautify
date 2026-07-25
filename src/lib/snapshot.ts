@@ -16,6 +16,8 @@ const SNAPSHOT_GEOMETRY_BUCKET_SIZE = 0.01;
 const SNAPSHOT_LINE_COVERAGE_EPSILON = 0.003;
 const SNAPSHOT_ARC_CIRCLE_EPSILON = 0.01;
 const SNAPSHOT_ARC_ANGLE_EPSILON = 0.05;
+// 类型库已声明画布暂停 API，但当前版本尚未完成宿主实测，正式路径强制保持关闭。
+const ENABLE_EXPERIMENTAL_CANVAS_SUSPENSION = false;
 
 export interface RestoreCalculationGuardMetrics {
 	enabled: boolean;
@@ -41,7 +43,8 @@ function createRestoreCalculationGuardMetrics(enabled: boolean): RestoreCalculat
 
 /**
  * Alpha 图元变更计算保护器。
- * 仅在用户显式开启时暂停宿主的飞线与画布更新计算，并始终在 finally 中恢复原状态。
+ * 用户开启加速时暂停宿主飞线计算，并始终在 finally 中恢复原状态。
+ * 画布暂停能力保留检测与恢复代码，但在完成宿主实测前由常量强制关闭。
  * 任一可选 API 不可用或调用失败时继续执行原操作，不把性能优化失败升级为业务失败。
  */
 export async function runWithPcbCalculationSuspension<T>(
@@ -80,7 +83,10 @@ export async function runWithPcbCalculationSuspension<T>(
 		debugLog(`[${logScope}] ratline suspension API unavailable; using normal calculation`);
 	}
 
-	if (metrics.canvasSupported) {
+	if (!ENABLE_EXPERIMENTAL_CANVAS_SUSPENSION) {
+		debugLog(`[${logScope}] Alpha canvas suspension is reserved but disabled pending host validation`);
+	}
+	else if (metrics.canvasSupported) {
 		try {
 			const status = await documentApi.getCanvasUpdateCalculationStatus();
 			if (status === 'active')
