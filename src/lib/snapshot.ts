@@ -1,5 +1,6 @@
 import { mapWithConcurrency } from './asyncPool';
 import { getArcWidthByGeoMap, makeArcWidthGeoKey } from './beautify';
+import { rebuildAllCopperPoursAfterRestoreIfEnabled } from './eda_utils';
 import { debugLog, debugWarn, logError, logPerformance, logWarn } from './logger';
 import { isClose } from './math';
 
@@ -1467,6 +1468,13 @@ export async function restoreSnapshot(snapshotId: number, showToast: boolean = t
 		logPerformance(
 			`[SnapshotRestore] result=${normalizedEquivalent ? 'verified-normalized' : 'verified'} mode=${restoreMode} lines-created=${lineRes.created} lines-deleted=${lineRes.deleted} arcs-created=${arcRes.created} arcs-deleted=${arcRes.deleted} mutation=${mutationFinishedAt - restoreStartedAt}ms verify=${Date.now() - mutationFinishedAt}ms${phaseTimings ? ` delete-arcs=${phaseTimings.deleteArcs}ms delete-lines=${phaseTimings.deleteLines}ms verify-empty=${phaseTimings.verifyEmpty}ms create-lines=${phaseTimings.createLines}ms create-arcs=${phaseTimings.createArcs}ms` : ''}`,
 		);
+
+		const copperStartedAt = Date.now();
+		const copperResult = await rebuildAllCopperPoursAfterRestoreIfEnabled();
+		logPerformance(`[SnapshotRestore] copper=${Date.now() - copperStartedAt}ms copper-result=${copperResult}`);
+		if (copperResult === -1) {
+			eda.sys_Message?.showToastMessage('布线已恢复，但覆铜重铺失败，请手动执行 Shift+B', 'warn' as any, 4);
+		}
 
 		if (showToast && eda.sys_Message) {
 			const totalKept = lineRes.kept + arcRes.kept;

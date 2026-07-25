@@ -214,3 +214,14 @@ export async function rebuildAllCopperPoursIfEnabled(cachedViolation?: CopperVio
 	debugLog('[CopperPour] Smart rebuild failed, falling back to full rebuild.');
 	return rebuildAllCopperPours();
 }
+
+/**
+ * 快照恢复会直接改变布线几何，旧覆铜填充不能用于判断哪些区域受影响。
+ * 因此恢复成功后按同一用户设置重铺全部覆铜区域，而不是先用旧填充运行智能 DRC。
+ */
+export async function rebuildAllCopperPoursAfterRestoreIfEnabled(): Promise<number> {
+	const settings = await getSettings();
+	if (!settings.rebuildCopperPourAfterBeautify)
+		return -2;
+	return rebuildAllCopperPours();
+}

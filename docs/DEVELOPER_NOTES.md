@@ -276,8 +276,9 @@ The feature uses a two-layer design:
 
 1. **`rebuildAllCopperPours()`** — Pure execution: iterates all pours, calls `rebuildCopperRegion()`, returns count (0 = no pours, -1 = error).
 2. **`rebuildAllCopperPoursIfEnabled()`** — Settings-aware wrapper: reads `rebuildCopperPourAfterBeautify`, reuses or runs DRC to rebuild only affected layers, and falls back to all pours only if smart detection fails. Returns -2 if disabled.
+3. **`rebuildAllCopperPoursAfterRestoreIfEnabled()`** — Restore-specific wrapper: respects the same setting but rebuilds every pour because the pre-rebuild filled copper is stale after routing restoration and cannot safely drive smart DRC selection.
 
-Selected and All beautify/width-transition entry points call the high-level wrapper, keeping rebuild logic out of the core mutation modules.
+Selected and All beautify/width-transition entry points call the smart wrapper. Snapshot restore calls the restore-specific wrapper after geometry verification; undo reuses the same restore path.
 
 ### Notes
 
@@ -292,6 +293,7 @@ Selected and All beautify/width-transition entry points call the high-level wrap
 - Snapshot geometry deduplication must not reuse an explicit Before snapshot across different operation names or restore strategies. Geometrically identical `Beautify (All) Before` and `Beautify (Selected) Before` states are different undo boundaries.
 - Selected operations use state-diff restore; All operations use authoritative full restore and may accept only verified host-normalized geometric equivalence.
 - Full restore must repeatedly enumerate and delete every live Line and Arc until both APIs report a stable empty board before recreating the target snapshot. Do not rely only on IDs captured before deletion because the host may reassign or expose primitives during mutation.
+- After any successful snapshot restore, rebuild every copper pour when automatic rebuilding is enabled. This applies to both manual restore and undo because undo delegates to `restoreSnapshot()`.
 
 ## Copper Pour ID Spaces: Three Non-Overlapping Systems
 

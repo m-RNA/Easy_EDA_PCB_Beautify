@@ -43,6 +43,7 @@ async function main() {
 		getSnapshotRestoreStrategy,
 		isSnapshotHostNormalizedEquivalent,
 		isSnapshotGeometryIdentical,
+		restoreSnapshot,
 		verifySnapshotStateStable,
 	} = await import('../src/lib/snapshot');
 
@@ -369,6 +370,64 @@ async function main() {
 	);
 	assert.equal(duplicateDiff.extraLines.reduce((count, item) => count + item.count, 0), 3);
 	assert.equal(duplicateDiff.missingLines.length, 0, '重复创建应表现为只有 extra、没有 missing');
+
+	const restorePcbId = 'pcb-restore';
+	const restoreTarget = {
+		id: 18,
+		name: 'Beautify (Selected) Before',
+		timestamp: 18,
+		pcbId: restorePcbId,
+		restoreStrategy: 'incremental' as const,
+		lines: [{ ...targetLine, k: false }],
+		arcs: [],
+	};
+	let copperRebuilds = 0;
+	(globalThis as any).eda.dmt_Pcb = {
+		getCurrentPcbInfo: async () => ({ uuid: restorePcbId, name: 'Restore Test' }),
+	};
+	(globalThis as any).eda.dmt_Board = {
+		getCurrentBoardInfo: async () => undefined,
+	};
+	(globalThis as any).eda.pcb_PrimitiveLine = {
+		delete: async () => true,
+		getAll: async () => [makeLine('target-line')],
+		create: async () => makeLine('target-line'),
+	};
+	(globalThis as any).eda.pcb_PrimitiveArc = {
+		delete: async () => true,
+		getAll: async () => [],
+		create: async () => undefined,
+	};
+	(globalThis as any).eda.pcb_PrimitivePour = {
+		getAll: async () => [{
+			rebuildCopperRegion: async () => {
+				copperRebuilds++;
+			},
+		}],
+	};
+	(globalThis as any).eda.sys_LoadingAndProgressBar = {
+		showLoading: () => undefined,
+		destroyLoading: () => undefined,
+	};
+	(globalThis as any).eda.sys_Message = {
+		showToastMessage: () => undefined,
+	};
+	(globalThis as any).eda.sys_Storage = {
+		getExtensionAllUserConfigs: async () => ({
+			debug: false,
+			rebuildCopperPourAfterBeautify: true,
+			copperPourRebuildLimit: 30,
+		}),
+		getExtensionUserConfig: async () => undefined,
+		setExtensionAllUserConfigs: async () => true,
+		deleteExtensionUserConfig: async () => true,
+	};
+	(globalThis as any).eda[`_jlc_beautify_snapshots_cache_v3_${restorePcbId}`] = {
+		manual: [],
+		auto: [restoreTarget],
+	};
+	assert.equal(await restoreSnapshot(restoreTarget.id, false, false), true, '快照恢复应成功');
+	assert.equal(copperRebuilds, 1, '快照恢复成功后应重新覆铜；撤销复用同一恢复路径');
 
 	console.log('snapshot restore tests passed');
 }
